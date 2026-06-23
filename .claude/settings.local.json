@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e ':*)",
+      "WebFetch(domain:docs.expo.dev)",
+      "WebFetch(domain:github.com)",
+      "Bash(npx expo:*)",
+      "Bash(rm \"/c/Users/Windows/OneDrive/Desktop/FloodTrack/FloodTrack/app/report/[id].tsx\")",
+      "Bash(rm \"/c/Users/Windows/OneDrive/Desktop/FloodTrack/FloodTrack/app/responder/[id].tsx\")"
+    ]
+  }
+}
