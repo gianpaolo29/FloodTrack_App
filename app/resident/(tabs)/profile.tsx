@@ -2,22 +2,26 @@
  * Profile screen — premium redesign
  * Hero header with avatar ring · stat cards · icon-tinted rows · smooth toggles
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  Linking,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
 } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
+import { useAlert } from '@/context/AlertContext';
 
 // ─── Row icon colors per key ──────────────────────────────────────────────────
 
@@ -25,6 +29,7 @@ const ICON_COLORS: Record<string, string> = {
   'person-outline':            '#4F8EF7',
   'lock-closed-outline':       '#A855F7',
   'call-outline':              '#10B981',
+  'call':                      '#10B981',
   'alert-circle-outline':      colors.severity.critical,
   'information-circle-outline':'#F59E0B',
   'document-text-outline':     colors.brand[500],
@@ -69,8 +74,8 @@ function SettingRow({
         onPress={onPress}
         style={({ pressed }) => [
           styles.row,
-          isDark && { backgroundColor: colors.slate[900] },
-          pressed && onPress && { backgroundColor: isDark ? '#1a2030' : colors.slate[50] },
+          isDark && { backgroundColor: colors.dark.card },
+          pressed && onPress && { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50] },
         ]}
         accessibilityRole={onPress ? 'button' : 'none'}
         accessibilityLabel={label}
@@ -131,7 +136,7 @@ function StatTile({
   isDark: boolean;
 }) {
   return (
-    <View style={[styles.statTile, isDark && { backgroundColor: colors.slate[900] }]}>
+    <View style={[styles.statTile, isDark && { backgroundColor: colors.dark.card }]}>
       <View style={[styles.statIcon, { backgroundColor: color + '18' }]}>
         <Ionicons name={icon} size={15} color={color} />
       </View>
@@ -150,13 +155,39 @@ export default function ProfileScreen() {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const { user, logout } = useAuth();
+  const { showAlert } = useAlert();
 
-  const [notifCritical,  setNotifCritical]  = useState(true);
-  const [notifAdvisory,  setNotifAdvisory]  = useState(true);
-  const [notifMyReports, setNotifMyReports] = useState(true);
+  const [notifCritical,    setNotifCritical]    = useState(true);
+  const [notifAdvisory,    setNotifAdvisory]    = useState(true);
+  const [notifMyReports,   setNotifMyReports]   = useState(true);
+  const [emergencyName,    setEmergencyName]    = useState('');
+  const [emergencyPhone,   setEmergencyPhone]   = useState('');
+  const [editingEmergency, setEditingEmergency] = useState(false);
+  const [tempName,         setTempName]         = useState('');
+  const [tempPhone,        setTempPhone]        = useState('');
 
-  const screenBg  = isDark ? '#080C10' : '#F2F4F8';
-  const headerBg  = isDark ? '#0D1117' : colors.brand[600];
+  useEffect(() => {
+    Promise.all([
+      SecureStore.getItemAsync('ft_emergency_name'),
+      SecureStore.getItemAsync('ft_emergency_phone'),
+    ]).then(([name, phone]) => {
+      if (name)  setEmergencyName(name);
+      if (phone) setEmergencyPhone(phone);
+    }).catch(() => {});
+  }, []);
+
+  function saveEmergencyContact() {
+    Promise.all([
+      SecureStore.setItemAsync('ft_emergency_name',  tempName),
+      SecureStore.setItemAsync('ft_emergency_phone', tempPhone),
+    ]).catch(() => {});
+    setEmergencyName(tempName);
+    setEmergencyPhone(tempPhone);
+    setEditingEmergency(false);
+  }
+
+  const screenBg  = isDark ? colors.dark.bg      : '#F2F4F8';
+  const headerBg  = isDark ? colors.dark.surface  : colors.brand[500];
   const roleColor = user?.role === 'Responder' ? colors.accent[500] : colors.brand[300];
   const accentBrand = user?.role === 'Responder' ? colors.accent[500] : colors.brand[500];
 
@@ -242,15 +273,26 @@ export default function ProfileScreen() {
 
           {/* ── Account ── */}
           <SectionLabel title="Account" isDark={isDark} />
-          <View style={[styles.card, isDark && { backgroundColor: colors.slate[900] }]}>
-            <SettingRow icon="person-outline"      label="Edit profile"    description="Name, contact number" onPress={() => {}} isDark={isDark} />
-            <SettingRow icon="lock-closed-outline" label="Change password" onPress={() => {}} isDark={isDark} />
-            <SettingRow icon="call-outline"        label="Mobile number"   description={user?.contact ?? '—'} isDark={isDark} isLast />
+          <View style={[styles.card, isDark && { backgroundColor: colors.dark.card }]}>
+            <SettingRow
+              icon="person-outline"
+              label="Edit profile"
+              description="Name, contact number"
+              onPress={() => showAlert({ type: 'info', title: 'Coming Soon', message: 'Profile editing will be available in the next update.' })}
+              isDark={isDark}
+            />
+            <SettingRow
+              icon="lock-closed-outline"
+              label="Change password"
+              onPress={() => showAlert({ type: 'info', title: 'Coming Soon', message: 'Password change will be available in the next update.' })}
+              isDark={isDark}
+            />
+            <SettingRow icon="call-outline" label="Mobile number" description={user?.contact ?? '—'} isDark={isDark} isLast />
           </View>
 
           {/* ── Notifications ── */}
           <SectionLabel title="Notifications" isDark={isDark} />
-          <View style={[styles.card, isDark && { backgroundColor: colors.slate[900] }]}>
+          <View style={[styles.card, isDark && { backgroundColor: colors.dark.card }]}>
             <SettingRow
               icon="alert-circle-outline"
               label="Critical alerts"
@@ -302,17 +344,103 @@ export default function ProfileScreen() {
             />
           </View>
 
+          {/* ── Emergency contact ── */}
+          <SectionLabel title="Emergency Contact" isDark={isDark} />
+          <View style={[styles.card, isDark && { backgroundColor: colors.dark.card }]}>
+            {editingEmergency ? (
+              <>
+                <View style={[styles.emergencyInputRow, isDark && { backgroundColor: colors.dark.card }]}>
+                  <Ionicons name="person-outline" size={16} color={colors.slate[400]} />
+                  <TextInput
+                    style={[styles.emergencyInput, isDark && { color: colors.white }]}
+                    value={tempName}
+                    onChangeText={setTempName}
+                    placeholder="Contact name"
+                    placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
+                    autoFocus
+                  />
+                </View>
+                <View style={[styles.sep, isDark && { backgroundColor: colors.slate[800] }]} />
+                <View style={[styles.emergencyInputRow, isDark && { backgroundColor: colors.dark.card }]}>
+                  <Ionicons name="call-outline" size={16} color={colors.slate[400]} />
+                  <TextInput
+                    style={[styles.emergencyInput, isDark && { color: colors.white }]}
+                    value={tempPhone}
+                    onChangeText={setTempPhone}
+                    placeholder="Phone number"
+                    placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+                <View style={[styles.sep, isDark && { backgroundColor: colors.slate[800] }]} />
+                <View style={styles.emergencyActions}>
+                  <Pressable
+                    style={[styles.emergencyCancelBtn, isDark && { borderColor: colors.slate[700] }]}
+                    onPress={() => setEditingEmergency(false)}
+                  >
+                    <Text style={[styles.emergencyCancelText, isDark && { color: colors.slate[400] }]}>Cancel</Text>
+                  </Pressable>
+                  <Pressable style={styles.emergencySaveBtn} onPress={saveEmergencyContact}>
+                    <Text style={styles.emergencySaveText}>Save</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <>
+                <SettingRow
+                  icon="call-outline"
+                  label={emergencyName || 'Set emergency contact'}
+                  description={emergencyPhone || 'Tap to add someone to call in emergencies'}
+                  onPress={() => {
+                    setTempName(emergencyName);
+                    setTempPhone(emergencyPhone);
+                    setEditingEmergency(true);
+                  }}
+                  isDark={isDark}
+                  isLast={!emergencyPhone}
+                />
+                {!!emergencyPhone && (
+                  <SettingRow
+                    icon="call"
+                    label="Call now"
+                    description={emergencyPhone}
+                    onPress={() => Linking.openURL(`tel:${emergencyPhone}`)}
+                    isDark={isDark}
+                    isLast
+                  />
+                )}
+              </>
+            )}
+          </View>
+
           {/* ── About ── */}
           <SectionLabel title="About" isDark={isDark} />
-          <View style={[styles.card, isDark && { backgroundColor: colors.slate[900] }]}>
-            <SettingRow icon="shield-outline"      label="Privacy policy" onPress={() => {}} isDark={isDark} />
-            <SettingRow icon="help-circle-outline" label="Help & support" onPress={() => {}} isDark={isDark} />
-            <SettingRow icon="information-outline" label="App version"    description="1.0.0" isDark={isDark} isLast />
+          <View style={[styles.card, isDark && { backgroundColor: colors.dark.card }]}>
+            <SettingRow
+              icon="shield-outline"
+              label="Privacy policy"
+              onPress={() => showAlert({ type: 'info', title: 'Privacy Policy', message: 'Your data is securely stored and never shared with third parties.' })}
+              isDark={isDark}
+            />
+            <SettingRow
+              icon="help-circle-outline"
+              label="Help & support"
+              onPress={() => showAlert({ type: 'info', title: 'Help & Support', message: 'For assistance, contact your local DRRM office or email support@floodtrack.ph.' })}
+              isDark={isDark}
+            />
+            <SettingRow icon="information-outline" label="App version" description="1.0.0" isDark={isDark} isLast />
           </View>
 
           {/* ── Log out ── */}
           <Pressable
-            onPress={logout}
+            onPress={() => showAlert({
+              type: 'confirm',
+              title: 'Log out?',
+              message: 'You will need to sign in again to access your account.',
+              confirmText: 'Log out',
+              cancelText: 'Cancel',
+              onConfirm: logout,
+            })}
             style={({ pressed }) => [
               styles.logoutBtn,
               pressed && { opacity: 0.8 },
@@ -489,6 +617,32 @@ const styles = StyleSheet.create({
     backgroundColor: colors.slate[100],
     marginLeft: 66,
   },
+
+  // ── Emergency contact edit ──
+  emergencyInputRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingVertical: 13,
+    backgroundColor: colors.white,
+  },
+  emergencyInput: {
+    flex: 1, fontSize: 15, color: colors.slate[900], paddingVertical: 0,
+  },
+  emergencyActions: {
+    flexDirection: 'row', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 12,
+  },
+  emergencyCancelBtn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 11, borderRadius: 10,
+    borderWidth: 1, borderColor: colors.slate[200],
+  },
+  emergencyCancelText: { fontSize: 14, fontWeight: '500', color: colors.slate[600] },
+  emergencySaveBtn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 11, borderRadius: 10,
+    backgroundColor: colors.brand[500],
+  },
+  emergencySaveText: { fontSize: 14, fontWeight: '700', color: colors.white },
 
   // ── Logout ──
   logoutBtn: {

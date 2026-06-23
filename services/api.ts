@@ -139,16 +139,18 @@ function adaptUser(raw: RawUser): User {
 
 function adaptReport(raw: RawReport): Report {
   return {
-    id:         String(raw.id),
-    reference:  raw.reference_number,
-    title:      HAZARD_LABELS[raw.hazard_type] ?? 'Hazard report',
-    type:       HAZARD_TYPE_DISPLAY[raw.hazard_type] ?? raw.hazard_type,
-    severity:   raw.severity,
-    status:     raw.status,
-    address:    raw.address ?? '',
-    latitude:   raw.latitude,
-    longitude:  raw.longitude,
-    reportedAt: formatRelativeTime(raw.created_at),
+    id:           String(raw.id),
+    reference:    raw.reference_number,
+    title:        HAZARD_LABELS[raw.hazard_type] ?? 'Hazard report',
+    type:         HAZARD_TYPE_DISPLAY[raw.hazard_type] ?? raw.hazard_type,
+    severity:     raw.severity,
+    status:       raw.status,
+    address:      raw.address ?? '',
+    latitude:     raw.latitude,
+    longitude:    raw.longitude,
+    reportedAt:   formatRelativeTime(raw.created_at),
+    thumbnailUrl: raw.media?.[0]?.url,
+    mediaCount:   raw.media?.length ?? 0,
   };
 }
 
@@ -179,6 +181,7 @@ function adaptReportDetail(raw: RawReport): ReportDetail {
     description:   raw.description ?? '',
     reportedBy:    raw.user?.name ?? 'Unknown',
     evidenceCount: raw.media?.length ?? 0,
+    mediaUrls:     raw.media?.map(m => m.url) ?? [],
     timeline,
     updates: responderUpdates,
   };
@@ -415,4 +418,18 @@ export async function updateIncidentStatus(
     status: payload.status,
     notes:  payload.notes,
   }, token);
+}
+
+export async function withdrawReport(id: string, token: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/reports/${id}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, err.message ?? `DELETE /reports/${id} → ${res.status}`);
+  }
 }

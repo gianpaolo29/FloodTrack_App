@@ -6,6 +6,7 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { AlertProvider } from '@/context/AlertContext';
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 // Runs on every navigation event. Redirects unauthenticated users to login and
@@ -69,7 +70,9 @@ export const unstable_settings = {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootLayoutInner />
+      <AlertProvider>
+        <RootLayoutInner />
+      </AlertProvider>
     </AuthProvider>
   );
 }

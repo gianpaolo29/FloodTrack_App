@@ -10,14 +10,19 @@
  *   • Google Maps-style bottom sheet on marker tap
  *   • Active reports summary bar above tab
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
+  Keyboard,
+  Linking,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import * as Location from 'expo-location';
@@ -36,6 +41,9 @@ import { colors } from '@/theme/colors';
 import { SeverityChip, type Severity } from '@/components/SeverityChip';
 import { StatusBadge, type ReportStatus } from '@/components/StatusBadge';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAuth } from '@/context/AuthContext';
+import { getAllReports, getReportDetail } from '@/services/api';
+import type { Report as ApiReport } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,6 +57,16 @@ interface Report {
   status: ReportStatus;
   address: string;
   reportedAt: string;
+  latitude: number;
+  longitude: number;
+}
+
+interface EvacCenter {
+  id: string;
+  name: string;
+  address: string;
+  type: 'school' | 'gymnasium' | 'barangay_hall' | 'covered_court' | 'church';
+  capacity: number;
   latitude: number;
   longitude: number;
 }
@@ -93,120 +111,260 @@ const SEVERITY_WEIGHT: Record<Severity, number> = {
   low: 1, moderate: 3, high: 6, critical: 10,
 };
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
+// ─── Flood depth estimates per severity ──────────────────────────────────────
 
-const MOCK_REPORTS: Report[] = [
-  {
-    id: '001',
-    title: 'Flooded road near bridge',
-    hazardType: 'flood',
-    severity: 'critical',
-    status: 'assigned',
-    address: 'Brgy. Reparo, Nasugbu',
-    reportedAt: '12 min ago',
-    latitude: 13.6298, longitude: 120.6231,
-  },
-  {
-    id: '002',
-    title: 'Slippery highway section',
-    hazardType: 'slippery',
-    severity: 'high',
-    status: 'verified',
-    address: 'Maharlika Hi-way, Nasugbu',
-    reportedAt: '38 min ago',
-    latitude: 13.6340, longitude: 120.6260,
-  },
-  {
-    id: '003',
-    title: 'Fallen tree blocking road',
-    hazardType: 'fallen_tree',
-    severity: 'moderate',
-    status: 'pending',
-    address: 'Brgy. Bucana, Nasugbu',
-    reportedAt: '1 hr ago',
-    latitude: 13.6280, longitude: 120.6190,
-  },
-  {
-    id: '004',
-    title: 'Clogged drainage / debris',
-    hazardType: 'debris',
-    severity: 'low',
-    status: 'resolved',
-    address: 'P. Guanzon St., Nasugbu',
-    reportedAt: '3 hrs ago',
-    latitude: 13.6220, longitude: 120.6230,
-  },
-  {
-    id: '005',
-    title: 'Landslide on mountain road',
-    hazardType: 'landslide',
-    severity: 'critical',
-    status: 'assigned',
-    address: 'Brgy. Mataas na Lupa, Nasugbu',
-    reportedAt: '5 hrs ago',
-    latitude: 13.6380, longitude: 120.6170,
-  },
-  {
-    id: '006',
-    title: 'Road blocked by collapsed wall',
-    hazardType: 'blocked_road',
-    severity: 'high',
-    status: 'verified',
-    address: 'Brgy. Luyahan, Nasugbu',
-    reportedAt: '6 hrs ago',
-    latitude: 13.6260, longitude: 120.6310,
-  },
-];
+const FLOOD_DEPTH: Record<Severity, string> = {
+  low:      '< 30 cm (ankle-deep)',
+  moderate: '30–60 cm (knee-deep)',
+  high:     '60–120 cm (waist-deep)',
+  critical: '> 120 cm — dangerous',
+};
+
+// ─── API → local report adapter ───────────────────────────────────────────────
+
+const API_TYPE_TO_HAZARD: Record<string, Exclude<HazardType, 'all'>> = {
+  'Flood':       'flood',
+  'Road damage': 'blocked_road',
+  'Debris':      'debris',
+  'Drainage':    'debris',
+  'Other':       'debris',
+};
+
+function fromApiReport(r: ApiReport): Report {
+  return {
+    id:         r.id,
+    title:      r.title,
+    hazardType: API_TYPE_TO_HAZARD[r.type] ?? 'debris',
+    severity:   r.severity,
+    status:     r.status,
+    address:    r.address,
+    reportedAt: r.reportedAt,
+    latitude:   r.latitude,
+    longitude:  r.longitude,
+  };
+}
 
 const INITIAL_REGION: Region = {
-  latitude: 13.6298, longitude: 120.6231,
+  latitude: 14.0771, longitude: 120.6361,
   latitudeDelta: 0.06, longitudeDelta: 0.06,
 };
 
-// ─── Custom marker ────────────────────────────────────────────────────────────
+// ─── Evacuation centers — Nasugbu, Batangas ───────────────────────────────────
+
+const EVAC_TYPE_META: Record<EvacCenter['type'], { icon: keyof typeof Ionicons.glyphMap; label: string }> = {
+  school:        { icon: 'school',          label: 'School'         },
+  gymnasium:     { icon: 'fitness',         label: 'Gymnasium'      },
+  barangay_hall: { icon: 'business',        label: 'Barangay Hall'  },
+  covered_court: { icon: 'tennisball',      label: 'Covered Court'  },
+  church:        { icon: 'location',        label: 'Church'         },
+};
+
+const EVAC_COLOR = '#0E9E6E'; // teal-green
+
+// ─── Distance utility (Haversine, km) ────────────────────────────────────────
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(a));
+}
+
+function fmtDist(km: number): string {
+  return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
+}
+
+const EVACUATION_CENTERS: EvacCenter[] = [
+  {
+    id: 'evac-1',
+    name: 'Nasugbu Municipal Gymnasium',
+    address: 'J.P. Laurel St., Poblacion, Nasugbu, Batangas',
+    type: 'gymnasium',
+    capacity: 1200,
+    latitude: 14.07780,
+    longitude: 120.63820,
+  },
+  {
+    id: 'evac-2',
+    name: 'Nasugbu West Central School',
+    address: 'Concepcion St., Brgy. IV, Nasugbu, Batangas',
+    type: 'school',
+    capacity: 2000,
+    latitude: 14.07362,
+    longitude: 120.63332,
+  },
+  {
+    id: 'evac-3',
+    name: 'Nasugbu East Central School',
+    address: 'Poblacion, Nasugbu, Batangas',
+    type: 'school',
+    capacity: 900,
+    latitude: 14.07620,
+    longitude: 120.63680,
+  },
+  {
+    id: 'evac-4',
+    name: 'Nasugbu National High School',
+    address: 'Brgy. Poblacion, Nasugbu, Batangas',
+    type: 'school',
+    capacity: 1500,
+    latitude: 14.08100,
+    longitude: 120.63900,
+  },
+  {
+    id: 'evac-5',
+    name: 'Pantalan Elementary School',
+    address: 'Brgy. Pantalan, Nasugbu, Batangas',
+    type: 'school',
+    capacity: 450,
+    latitude: 14.08560,
+    longitude: 120.62950,
+  },
+  {
+    id: 'evac-6',
+    name: 'Pantalan Senior High School',
+    address: 'Brgy. Pantalan, Nasugbu, Batangas',
+    type: 'school',
+    capacity: 600,
+    latitude: 14.08720,
+    longitude: 120.62870,
+  },
+  {
+    id: 'evac-7',
+    name: 'Banilad Elementary School',
+    address: 'Brgy. Banilad, Nasugbu, Batangas',
+    type: 'school',
+    capacity: 380,
+    latitude: 14.07920,
+    longitude: 120.62780,
+  },
+  {
+    id: 'evac-8',
+    name: 'Munting Indang Elementary School',
+    address: 'Brgy. Munting Indang, Nasugbu, Batangas',
+    type: 'school',
+    capacity: 350,
+    latitude: 14.06650,
+    longitude: 120.64220,
+  },
+  {
+    id: 'evac-9',
+    name: 'Kaylaway Elementary School',
+    address: 'Brgy. Kaylaway, Nasugbu, Batangas',
+    type: 'school',
+    capacity: 420,
+    latitude: 14.09750,
+    longitude: 120.64780,
+  },
+  {
+    id: 'evac-10',
+    name: 'Kaylaway National High School',
+    address: 'Brgy. Kaylaway, Nasugbu, Batangas',
+    type: 'school',
+    capacity: 700,
+    latitude: 14.09650,
+    longitude: 120.64950,
+  },
+  {
+    id: 'evac-11',
+    name: 'Riparo Elementary School',
+    address: 'Brgy. Riparo, Nasugbu, Batangas',
+    type: 'school',
+    capacity: 320,
+    latitude: 14.05650,
+    longitude: 120.64480,
+  },
+  {
+    id: 'evac-12',
+    name: 'Bilaran High School',
+    address: 'Catandaan, Brgy. Bilaran, Nasugbu, Batangas',
+    type: 'school',
+    capacity: 550,
+    latitude: 14.05400,
+    longitude: 120.63100,
+  },
+  {
+    id: 'evac-13',
+    name: 'BatStateU Nasugbu Campus',
+    address: 'Brgy. Lanas, Nasugbu, Batangas',
+    type: 'school',
+    capacity: 1800,
+    latitude: 14.07450,
+    longitude: 120.63560,
+  },
+  {
+    id: 'evac-14',
+    name: 'Aga Elementary School',
+    address: 'Brgy. Aga, Nasugbu, Batangas',
+    type: 'school',
+    capacity: 280,
+    latitude: 14.06300,
+    longitude: 120.62600,
+  },
+];
+
+// ─── Custom marker — flat circle, center-anchored (fixes zoom tracking) ──────
 
 function HazardMarker({ report }: { report: Report }) {
-  const pinColor = colors.severity[report.severity];
-  const hazardColor = report.hazardType !== 'all'
-    ? HAZARD_META[report.hazardType].color
-    : colors.brand[500];
-  const isCritical = report.severity === 'critical';
-  const iconName = report.hazardType !== 'all'
-    ? HAZARD_META[report.hazardType].icon
-    : 'alert-circle';
+  const meta     = report.hazardType !== 'all' ? HAZARD_META[report.hazardType] : null;
+  const color    = meta?.color ?? colors.brand[500];
+  const iconName = (meta?.icon ?? 'alert-circle') as keyof typeof Ionicons.glyphMap;
+  const isCrit   = report.severity === 'critical';
 
   return (
     <View style={mk.wrapper}>
-      {isCritical && (
-        <View style={[mk.pulseRing, { borderColor: pinColor }]} />
-      )}
-      <View style={[mk.pin, { backgroundColor: hazardColor, borderColor: colors.white }]}>
-        <Ionicons name={iconName as keyof typeof Ionicons.glyphMap} size={13} color={colors.white} />
+      {isCrit && <View style={[mk.pulse, { borderColor: color }]} />}
+      <View style={[mk.circle, { backgroundColor: color }]}>
+        <Ionicons name={iconName} size={13} color={colors.white} />
       </View>
-      <View style={[mk.tail, { borderTopColor: hazardColor }]} />
     </View>
   );
 }
 
 const mk = StyleSheet.create({
-  wrapper:    { alignItems: 'center', width: 44, height: 52 },
-  pulseRing: {
+  // Fixed size square wrapper — anchor (0.5,0.5) centers it on the coordinate
+  wrapper: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  pulse: {
     position: 'absolute',
-    top: 0, width: 44, height: 44,
-    borderRadius: 22, borderWidth: 2, opacity: 0.4,
-  },
-  pin: {
     width: 36, height: 36, borderRadius: 18,
-    borderWidth: 2.5, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, opacity: 0.35,
+  },
+  circle: {
+    width: 28, height: 28, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: colors.white,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3, shadowRadius: 4, elevation: 5,
+    shadowOpacity: 0.28, shadowRadius: 4, elevation: 5,
   },
-  tail: {
-    width: 0, height: 0,
-    borderLeftWidth: 5, borderRightWidth: 5, borderTopWidth: 8,
-    borderLeftColor: 'transparent', borderRightColor: 'transparent',
-    marginTop: -1,
+});
+
+// ─── Evacuation center marker ─────────────────────────────────────────────────
+
+function EvacuationMarker() {
+  return (
+    <View style={em.wrapper}>
+      <View style={em.circle}>
+        <Ionicons name="shield-checkmark" size={13} color={colors.white} />
+      </View>
+    </View>
+  );
+}
+
+const em = StyleSheet.create({
+  wrapper: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  circle: {
+    width: 30, height: 30, borderRadius: 10,
+    backgroundColor: EVAC_COLOR,
+    borderWidth: 2, borderColor: colors.white,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: EVAC_COLOR,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4, shadowRadius: 4, elevation: 5,
   },
 });
 
@@ -303,12 +461,16 @@ function ReportSheet({
   onViewDetail,
   isDark,
   bottomInset,
+  photoUrls,
+  photosLoading,
 }: {
   report: Report;
   onClose: () => void;
   onViewDetail: (id: string) => void;
   isDark: boolean;
   bottomInset: number;
+  photoUrls: string[];
+  photosLoading: boolean;
 }) {
   const bg         = isDark ? colors.slate[900] : colors.white;
   const textMain   = isDark ? colors.white      : colors.slate[900];
@@ -316,17 +478,16 @@ function ReportSheet({
   const sepColor   = isDark ? colors.slate[800] : colors.slate[100];
   const pinColor   = colors.severity[report.severity];
   const hazardMeta = report.hazardType !== 'all' ? HAZARD_META[report.hazardType] : null;
+  const thumbBg    = isDark ? colors.slate[800] : colors.slate[100];
 
   return (
     <View style={[bs.sheet, { backgroundColor: bg, paddingBottom: bottomInset + 16 }]}>
       {/* Accent bar */}
       <View style={[bs.accentBar, { backgroundColor: pinColor }]} />
-
       <View style={bs.handle} />
 
       {/* Header */}
       <View style={bs.header}>
-        {/* Hazard icon */}
         <View style={[bs.hazardIcon, { backgroundColor: (hazardMeta?.color ?? colors.brand[500]) + '1A' }]}>
           <Ionicons
             name={hazardMeta?.icon ?? 'alert-circle'}
@@ -334,9 +495,7 @@ function ReportSheet({
             color={hazardMeta?.color ?? colors.brand[500]}
           />
         </View>
-
         <View style={{ flex: 1, gap: 3 }}>
-          {/* Hazard type label */}
           {hazardMeta && (
             <Text style={[bs.hazardLabel, { color: hazardMeta.color }]}>
               {hazardMeta.label.toUpperCase()}
@@ -352,7 +511,6 @@ function ReportSheet({
             </Text>
           </View>
         </View>
-
         <Pressable
           onPress={onClose}
           style={[bs.closeBtn, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]}
@@ -363,8 +521,54 @@ function ReportSheet({
         </Pressable>
       </View>
 
+      {/* Photo strip */}
+      {(photosLoading || photoUrls.length > 0) && (
+        <>
+          <View style={[bs.divider, { backgroundColor: sepColor }]} />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={bs.photoScroll}
+          >
+            {photosLoading
+              ? [1, 2, 3].map(i => (
+                  <View key={i} style={[bs.photoThumb, { backgroundColor: thumbBg }]}>
+                    <ActivityIndicator size="small" color={colors.slate[400]} />
+                  </View>
+                ))
+              : photoUrls.map((url, i) => (
+                  <Pressable
+                    key={i}
+                    onPress={() => onViewDetail(report.id)}
+                    style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+                  >
+                    <Image
+                      source={{ uri: url }}
+                      style={bs.photoThumb}
+                      resizeMode="cover"
+                    />
+                  </Pressable>
+                ))
+            }
+          </ScrollView>
+        </>
+      )}
+
       {/* Divider */}
       <View style={[bs.divider, { backgroundColor: sepColor }]} />
+
+      {/* Flood depth gauge */}
+      {report.hazardType === 'flood' && (
+        <View style={[bs.depthRow, { borderColor: sepColor }]}>
+          <View style={bs.depthIconWrap}>
+            <Ionicons name="water" size={14} color="#1F6FBF" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[bs.depthLabel, { color: textSub }]}>Estimated flood depth</Text>
+            <Text style={[bs.depthValue, { color: '#1F6FBF' }]}>{FLOOD_DEPTH[report.severity]}</Text>
+          </View>
+        </View>
+      )}
 
       {/* Status row */}
       <View style={bs.statusRow}>
@@ -385,7 +589,6 @@ function ReportSheet({
           <Ionicons name="document-text-outline" size={15} color={colors.white} />
           <Text style={bs.primaryBtnText}>View full report</Text>
         </Pressable>
-
         <Pressable
           style={({ pressed }) => [bs.secondaryBtn, {
             backgroundColor: isDark ? colors.slate[800] : colors.slate[100],
@@ -442,6 +645,165 @@ const bs = StyleSheet.create({
     width: 46, height: 46, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
   },
+  photoScroll: { paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
+  photoThumb: {
+    width: 90, height: 72, borderRadius: 10,
+    overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  depthRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 10,
+    marginBottom: 4,
+    borderWidth: 1, borderRadius: 10,
+    marginHorizontal: 16,
+    backgroundColor: '#1F6FBF0D',
+  },
+  depthIconWrap: {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: '#1F6FBF1A',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  depthLabel: { fontSize: 11, fontWeight: '500' },
+  depthValue: { fontSize: 13, fontWeight: '700', marginTop: 1 },
+});
+
+// ─── Evacuation center bottom sheet ──────────────────────────────────────────
+
+function EvacSheet({
+  center,
+  onClose,
+  onGetDirections,
+  isDark,
+  bottomInset,
+  distanceKm,
+}: {
+  center: EvacCenter;
+  onClose: () => void;
+  onGetDirections: () => void;
+  isDark: boolean;
+  bottomInset: number;
+  distanceKm: number | null;
+}) {
+  const bg       = isDark ? colors.slate[900] : colors.white;
+  const textMain = isDark ? colors.white      : colors.slate[900];
+  const textSub  = isDark ? colors.slate[400] : colors.slate[500];
+  const sepColor = isDark ? colors.slate[800] : colors.slate[100];
+  const meta     = EVAC_TYPE_META[center.type];
+
+  return (
+    <View style={[evs.sheet, { backgroundColor: bg, paddingBottom: bottomInset + 16 }]}>
+      <View style={evs.accentBar} />
+      <View style={evs.handle} />
+
+      <View style={evs.header}>
+        <View style={evs.iconWrap}>
+          <Ionicons name="shield-checkmark" size={24} color={colors.white} />
+        </View>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text style={[evs.typeLabel, { color: EVAC_COLOR }]}>
+            EVACUATION CENTER · {meta.label.toUpperCase()}
+          </Text>
+          <Text style={[evs.title, { color: textMain }]} numberOfLines={2}>
+            {center.name}
+          </Text>
+          <View style={evs.addressRow}>
+            <Ionicons name="location-sharp" size={12} color={EVAC_COLOR} />
+            <Text style={[evs.address, { color: textSub }]} numberOfLines={1}>
+              {center.address}
+            </Text>
+          </View>
+        </View>
+        <Pressable
+          onPress={onClose}
+          style={[evs.closeBtn, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]}
+          hitSlop={8}
+          accessibilityLabel="Close"
+        >
+          <Ionicons name="close" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
+        </Pressable>
+      </View>
+
+      <View style={[evs.divider, { backgroundColor: sepColor }]} />
+
+      <View style={evs.statsRow}>
+        <View style={[evs.statPill, { backgroundColor: EVAC_COLOR + '18' }]}>
+          <Ionicons name="people" size={14} color={EVAC_COLOR} />
+          <Text style={[evs.statText, { color: EVAC_COLOR }]}>
+            Capacity {center.capacity.toLocaleString()}
+          </Text>
+        </View>
+        {distanceKm !== null && (
+          <View style={[evs.statPill, { backgroundColor: colors.brand[500] + '18' }]}>
+            <Ionicons name="walk" size={14} color={colors.brand[500]} />
+            <Text style={[evs.statText, { color: colors.brand[500] }]}>
+              ~{fmtDist(distanceKm)} away
+            </Text>
+          </View>
+        )}
+        <View style={[evs.statPill, { backgroundColor: EVAC_COLOR + '18' }]}>
+          <Ionicons name="checkmark-circle" size={14} color={EVAC_COLOR} />
+          <Text style={[evs.statText, { color: EVAC_COLOR }]}>Open</Text>
+        </View>
+      </View>
+
+      <View style={evs.actions}>
+        <Pressable
+          style={({ pressed }) => [evs.dirBtn, { opacity: pressed ? 0.85 : 1 }]}
+          onPress={onGetDirections}
+          accessibilityLabel="Get directions"
+        >
+          <Ionicons name="navigate" size={16} color={colors.white} />
+          <Text style={evs.dirBtnText}>Start — Get Directions</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const evs = StyleSheet.create({
+  sheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15, shadowRadius: 20, elevation: 16,
+  },
+  accentBar: { height: 4, backgroundColor: EVAC_COLOR },
+  handle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: colors.slate[200],
+    alignSelf: 'center', marginTop: 12, marginBottom: 16,
+  },
+  header:      { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, marginBottom: 14 },
+  iconWrap: {
+    width: 48, height: 48, borderRadius: 14,
+    backgroundColor: EVAC_COLOR,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  typeLabel:   { fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
+  title:       { fontSize: 16, fontWeight: '700', lineHeight: 22 },
+  addressRow:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  address:     { fontSize: 12, flex: 1 },
+  closeBtn: {
+    width: 30, height: 30, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  divider:   { height: StyleSheet.hairlineWidth, marginBottom: 14 },
+  statsRow:  { flexDirection: 'row', gap: 10, paddingHorizontal: 16 },
+  statPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
+  },
+  statText: { fontSize: 13, fontWeight: '600' },
+  actions: { paddingHorizontal: 16, paddingTop: 12 },
+  dirBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: EVAC_COLOR,
+    paddingVertical: 14, borderRadius: 14,
+  },
+  dirBtnText: { color: colors.white, fontWeight: '700', fontSize: 15 },
 });
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -452,29 +814,57 @@ export default function MapScreen() {
   const scheme  = useColorScheme();
   const isDark  = scheme === 'dark';
   const mapRef  = useRef<MapView>(null);
+  const { token } = useAuth();
 
-  const [filter,        setFilter]        = useState<HazardType>('all');
-  const [mapType,       setMapType]       = useState<MapType>('standard');
-  const [selected,      setSelected]      = useState<Report | null>(null);
-  const [layersVisible, setLayersVisible] = useState(false);
-  const [locating,      setLocating]      = useState(false);
+  const [reports,            setReports]            = useState<Report[]>([]);
+  const [filter,             setFilter]             = useState<HazardType>('all');
+  const [mapType,            setMapType]            = useState<MapType>('standard');
+  const [selected,           setSelected]           = useState<Report | null>(null);
+  const [selectedEvac,       setSelectedEvac]       = useState<EvacCenter | null>(null);
+  const [layersVisible,      setLayersVisible]      = useState(false);
+  const [locating,           setLocating]           = useState(false);
+  const [searchQuery,        setSearchQuery]        = useState('');
+  const [searchFocused,      setSearchFocused]      = useState(false);
+  const [topCardHeight,      setTopCardHeight]      = useState(0);
+  const [userLocation,       setUserLocation]       = useState<{ latitude: number; longitude: number } | null>(null);
+  const [photoUrls,          setPhotoUrls]          = useState<string[]>([]);
+  const [photosLoading,      setPhotosLoading]      = useState(false);
+  const [sosVisible,         setSOSVisible]         = useState(false);
+  const [advisoryDismissed,  setAdvisoryDismissed]  = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    getAllReports(token)
+      .then(data => setReports(data.map(fromApiReport)))
+      .catch(() => {}); // map stays empty on error — non-blocking
+  }, [token]);
 
   const filtered = filter === 'all'
-    ? MOCK_REPORTS
-    : MOCK_REPORTS.filter(r => r.hazardType === filter);
+    ? reports
+    : reports.filter(r => r.hazardType === filter);
 
-  const heatmapPoints = MOCK_REPORTS.map(r => ({
+  const heatmapPoints = reports.map(r => ({
     latitude: r.latitude, longitude: r.longitude,
     weight: SEVERITY_WEIGHT[r.severity],
   }));
 
   function handleMarkerPress(report: Report) {
     setSelected(report);
+    setPhotoUrls([]);
+    setSelectedEvac(null);
     mapRef.current?.animateToRegion({
       latitude: report.latitude - 0.01,
       longitude: report.longitude,
       latitudeDelta: 0.03, longitudeDelta: 0.03,
     }, 450);
+    // Async load photos
+    if (token) {
+      setPhotosLoading(true);
+      getReportDetail(report.id, token)
+        .then(detail => setPhotoUrls(detail.mediaUrls ?? []))
+        .catch(() => setPhotoUrls([]))
+        .finally(() => setPhotosLoading(false));
+    }
   }
 
   async function handleLocateMe() {
@@ -497,6 +887,60 @@ export default function MapScreen() {
     }
   }
 
+  // ── Search helpers ──────────────────────────────────────────────────────────
+
+  async function fetchUserLocation() {
+    if (userLocation) return;
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+    } catch { /* silent */ }
+  }
+
+  const trimmed = searchQuery.trim().toLowerCase();
+  const searchResults: EvacCenter[] = trimmed.length >= 2
+    ? EVACUATION_CENTERS.filter(c =>
+        c.name.toLowerCase().includes(trimmed) ||
+        c.address.toLowerCase().includes(trimmed) ||
+        EVAC_TYPE_META[c.type].label.toLowerCase().includes(trimmed) ||
+        'evacuation'.includes(trimmed) ||
+        'center'.includes(trimmed) ||
+        'shelter'.includes(trimmed)
+      )
+    : [];
+
+  function handleEvacResultPress(center: EvacCenter) {
+    Keyboard.dismiss();
+    setSearchQuery('');
+    setSelectedEvac(center);
+    setSelected(null);
+    mapRef.current?.animateToRegion({
+      latitude:       center.latitude - 0.008,
+      longitude:      center.longitude,
+      latitudeDelta:  0.025,
+      longitudeDelta: 0.025,
+    }, 500);
+  }
+
+  function openDirections(center: EvacCenter) {
+    const { latitude: lat, longitude: lng } = center;
+    const label = encodeURIComponent(center.name);
+    // iOS → Apple Maps natively; Android → Google Maps app via navigation intent
+    const url = Platform.OS === 'ios'
+      ? `maps://?daddr=${lat},${lng}&dirflg=d`
+      : `google.navigation:q=${lat},${lng}&mode=d`;
+    Linking.canOpenURL(url).then(supported => {
+      if (supported) {
+        Linking.openURL(url);
+      } else {
+        // Fallback: geo: URI opens whichever maps app is installed on Android
+        Linking.openURL(`geo:${lat},${lng}?q=${lat},${lng}(${label})`);
+      }
+    });
+  }
+
   const cardBg   = isDark ? 'rgba(13,17,23,0.97)'    : '#FFFFFF';
   const ctrlBg   = isDark ? 'rgba(13,17,23,0.95)'    : '#FFFFFF';
   const textMain = isDark ? colors.white              : colors.slate[900];
@@ -516,18 +960,20 @@ export default function MapScreen() {
         showsMyLocationButton={false}
         showsCompass={false}
         showsScale={false}
-        onPress={() => selected && setSelected(null)}
+        onPress={() => { setSelected(null); setSelectedEvac(null); setPhotoUrls([]); }}
       >
-        <Heatmap
-          points={heatmapPoints}
-          radius={40}
-          opacity={mapType === 'satellite' || mapType === 'hybrid' ? 0.5 : 0.65}
-          gradient={{
-            colors: colors.heatmap,
-            startPoints: [0, 0.25, 0.5, 0.75, 1],
-            colorMapSize: 256,
-          }}
-        />
+        {heatmapPoints.length > 0 && (
+          <Heatmap
+            points={heatmapPoints}
+            radius={40}
+            opacity={mapType === 'satellite' || mapType === 'hybrid' ? 0.5 : 0.65}
+            gradient={{
+              colors: colors.heatmap,
+              startPoints: [0, 0.25, 0.5, 0.75, 1],
+              colorMapSize: 256,
+            }}
+          />
+        )}
 
         {filtered.map(report => (
           <Marker
@@ -535,26 +981,59 @@ export default function MapScreen() {
             coordinate={{ latitude: report.latitude, longitude: report.longitude }}
             onPress={() => handleMarkerPress(report)}
             tracksViewChanges={false}
+            anchor={{ x: 0.5, y: 0.5 }}
           >
             <HazardMarker report={report} />
           </Marker>
         ))}
+
+        {selectedEvac && (
+          <Marker
+            key={selectedEvac.id}
+            coordinate={{ latitude: selectedEvac.latitude, longitude: selectedEvac.longitude }}
+            tracksViewChanges={false}
+            anchor={{ x: 0.5, y: 0.5 }}
+            zIndex={10}
+          >
+            <EvacuationMarker />
+          </Marker>
+        )}
       </MapView>
 
       {/* ── Top header (solid card, chips fully contained) ── */}
       <View
         style={[s.topCard, { paddingTop: insets.top + 8, backgroundColor: cardBg }]}
+        onLayout={e => setTopCardHeight(e.nativeEvent.layout.height)}
       >
         {/* Search bar row */}
         <View style={s.searchRow}>
           <View style={[
             s.searchBar,
             isDark && { backgroundColor: colors.slate[800], borderColor: colors.slate[700] },
+            searchQuery.length > 0 && { borderColor: EVAC_COLOR },
           ]}>
-            <Ionicons name="search" size={16} color={colors.slate[400]} />
-            <Text style={[s.searchPlaceholder, { color: textSub }]}>
-              Search hazards in Nasugbu...
-            </Text>
+            <Ionicons
+              name="search"
+              size={16}
+              color={searchQuery.length > 0 ? EVAC_COLOR : colors.slate[400]}
+            />
+            <TextInput
+              style={[s.searchInput, { color: isDark ? colors.white : colors.slate[900] }]}
+              placeholder="Search evacuation centers..."
+              placeholderTextColor={textSub}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onFocus={() => { setSearchFocused(true); fetchUserLocation(); }}
+              onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+              returnKeyType="search"
+              clearButtonMode="never"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+                <Ionicons name="close-circle" size={18} color={colors.slate[400]} />
+              </Pressable>
+            )}
           </View>
 
           {/* Active count badge */}
@@ -563,7 +1042,7 @@ export default function MapScreen() {
             borderColor:     colors.severity.critical + '40',
           }]}>
             <View style={[s.countDot, { backgroundColor: colors.severity.critical }]} />
-            <Text style={[s.countNum, { color: colors.severity.critical }]}>{filtered.length}</Text>
+            <Text style={[s.countNum, { color: colors.severity.critical }]}>{reports.length}</Text>
           </View>
         </View>
 
@@ -634,10 +1113,102 @@ export default function MapScreen() {
         </View>
       </View>
 
+      {/* ── Search dropdown (suggestions or results) ── */}
+      {searchFocused && topCardHeight > 0 && (
+        <View style={[
+          s.dropdown,
+          { top: topCardHeight, backgroundColor: isDark ? colors.dark.surface : colors.white },
+        ]}>
+          {trimmed.length < 2 ? (
+            /* ── Smart suggestions ── */
+            <>
+              <View style={[s.dropdownSuggestHeader, { borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
+                <Ionicons name="sparkles" size={13} color={colors.brand[500]} />
+                <Text style={[s.dropdownSuggestTitle, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
+                  Quick search
+                </Text>
+              </View>
+              {[
+                { icon: 'shield-checkmark' as const, label: 'Evacuation centers near me', query: 'evacuation' },
+                { icon: 'school'           as const, label: 'Schools',                    query: 'school'     },
+                { icon: 'fitness'          as const, label: 'Gymnasium',                  query: 'gymnasium'  },
+                { icon: 'people'           as const, label: 'High-capacity shelters',     query: 'high'       },
+              ].map((s2, idx, arr) => (
+                <Pressable
+                  key={s2.query}
+                  style={({ pressed }) => [
+                    s.dropdownItem,
+                    idx < arr.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] },
+                    pressed && { backgroundColor: isDark ? colors.dark.card : colors.slate[50] },
+                  ]}
+                  onPress={() => setSearchQuery(s2.query)}
+                >
+                  <View style={[s.dropdownIcon, { backgroundColor: colors.brand[500] + '18' }]}>
+                    <Ionicons name={s2.icon} size={16} color={colors.brand[500]} />
+                  </View>
+                  <Text style={[s.dropdownName, { color: isDark ? colors.slate[300] : colors.slate[700], fontWeight: '500' }]}>
+                    {s2.label}
+                  </Text>
+                  <Ionicons name="arrow-forward" size={13} color={colors.slate[400]} />
+                </Pressable>
+              ))}
+            </>
+          ) : (
+            /* ── Filtered results ── */
+            searchResults.length === 0 ? (
+              <View style={s.dropdownEmpty}>
+                <Ionicons name="search-outline" size={22} color={colors.slate[300]} />
+                <Text style={[s.dropdownEmptyText, { color: isDark ? colors.slate[500] : colors.slate[400] }]}>
+                  No results for "{searchQuery}"
+                </Text>
+              </View>
+            ) : (
+              searchResults.map((center, idx) => {
+                const distKm = userLocation
+                  ? haversineKm(userLocation.latitude, userLocation.longitude, center.latitude, center.longitude)
+                  : null;
+                const isLast = idx === searchResults.length - 1;
+                return (
+                  <Pressable
+                    key={center.id}
+                    style={({ pressed }) => [
+                      s.dropdownItem,
+                      !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] },
+                      pressed && { backgroundColor: isDark ? colors.dark.card : colors.slate[50] },
+                    ]}
+                    onPress={() => handleEvacResultPress(center)}
+                    accessibilityLabel={center.name}
+                  >
+                    <View style={s.dropdownIcon}>
+                      <Ionicons name="shield-checkmark" size={16} color={colors.white} />
+                    </View>
+                    <View style={s.dropdownText}>
+                      <Text style={[s.dropdownName, { color: isDark ? colors.white : colors.slate[900] }]} numberOfLines={1}>
+                        {center.name}
+                      </Text>
+                      <Text style={[s.dropdownAddr, { color: isDark ? colors.slate[400] : colors.slate[500] }]} numberOfLines={1}>
+                        {center.address}
+                      </Text>
+                    </View>
+                    {distKm !== null && (
+                      <View style={s.dropdownDist}>
+                        <Ionicons name="walk-outline" size={12} color={EVAC_COLOR} />
+                        <Text style={s.dropdownDistText}>{fmtDist(distKm)}</Text>
+                      </View>
+                    )}
+                    <Ionicons name="chevron-forward" size={14} color={colors.slate[400]} />
+                  </Pressable>
+                );
+              })
+            )
+          )}
+        </View>
+      )}
+
       {/* ── Right-side controls — stacked above each other (Google Maps style) ── */}
-      {!selected && (
+      {!selected && !selectedEvac && (
         <>
-          {/* Layers button — top of stack */}
+          {/* Layers button */}
           <Pressable
             style={({ pressed }) => [
               s.ctrlBtn,
@@ -655,7 +1226,7 @@ export default function MapScreen() {
             />
           </Pressable>
 
-          {/* Locate me — below layers */}
+          {/* Locate me */}
           <Pressable
             style={({ pressed }) => [
               s.ctrlBtn,
@@ -677,15 +1248,97 @@ export default function MapScreen() {
       {/* Legend is now inside the top card — no standalone bottom legend */}
 
 
-      {/* ── Bottom sheet ── */}
+      {/* ── Report bottom sheet ── */}
       {selected && (
         <ReportSheet
           report={selected}
-          onClose={() => setSelected(null)}
+          onClose={() => { setSelected(null); setPhotoUrls([]); }}
           onViewDetail={id => router.push(`/resident/report/${id}`)}
           isDark={isDark}
           bottomInset={insets.bottom}
+          photoUrls={photoUrls}
+          photosLoading={photosLoading}
         />
+      )}
+
+      {/* ── Evacuation center bottom sheet ── */}
+      {selectedEvac && (
+        <EvacSheet
+          center={selectedEvac}
+          onClose={() => setSelectedEvac(null)}
+          onGetDirections={() => openDirections(selectedEvac)}
+          isDark={isDark}
+          bottomInset={insets.bottom}
+          distanceKm={
+            userLocation
+              ? haversineKm(userLocation.latitude, userLocation.longitude, selectedEvac.latitude, selectedEvac.longitude)
+              : null
+          }
+        />
+      )}
+
+      {/* ── Flood advisory banner ── */}
+      {!advisoryDismissed && !selected && !selectedEvac && topCardHeight > 0 && (() => {
+        const highCount = reports.filter(r => r.severity === 'critical' || r.severity === 'high').length;
+        if (highCount === 0) return null;
+        return (
+          <View style={[s.advisoryBanner, { top: topCardHeight }]}>
+            <Ionicons name="warning" size={13} color="#fff" />
+            <Text style={s.advisoryText} numberOfLines={1}>
+              Flood advisory: {highCount} high-risk hazard{highCount > 1 ? 's' : ''} active
+            </Text>
+            <Pressable onPress={() => setAdvisoryDismissed(true)} hitSlop={10}>
+              <Ionicons name="close" size={14} color="rgba(255,255,255,0.8)" />
+            </Pressable>
+          </View>
+        );
+      })()}
+
+      {/* ── SOS button ── */}
+      {!selected && !selectedEvac && (
+        <Pressable
+          style={({ pressed }) => [s.sosBtn, { bottom: tabClear + 14, left: 12 }, pressed && { opacity: 0.85 }]}
+          onPress={() => setSOSVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Emergency SOS"
+        >
+          <Ionicons name="call" size={16} color="#fff" />
+          <Text style={s.sosBtnText}>SOS</Text>
+        </Pressable>
+      )}
+
+      {/* ── SOS modal ── */}
+      {sosVisible && (
+        <Modal transparent visible animationType="fade" onRequestClose={() => setSOSVisible(false)}>
+          <Pressable style={sosm.backdrop} onPress={() => setSOSVisible(false)} />
+          <View style={[sosm.sheet, { backgroundColor: isDark ? colors.slate[900] : colors.white }]}>
+            <View style={sosm.iconWrap}>
+              <Ionicons name="call" size={28} color="#fff" />
+            </View>
+            <Text style={[sosm.title, isDark && { color: colors.white }]}>Emergency Call</Text>
+            <Text style={[sosm.sub, isDark && { color: colors.slate[400] }]}>
+              Call MDRRMO Nasugbu emergency hotline?
+            </Text>
+            <View style={sosm.actions}>
+              <Pressable
+                style={[sosm.cancelBtn, isDark && { backgroundColor: colors.slate[800], borderColor: colors.slate[700] }]}
+                onPress={() => setSOSVisible(false)}
+              >
+                <Text style={[sosm.cancelText, isDark && { color: colors.slate[300] }]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={sosm.callBtn}
+                onPress={() => {
+                  setSOSVisible(false);
+                  Linking.openURL('tel:09175093121');
+                }}
+              >
+                <Ionicons name="call" size={15} color="#fff" />
+                <Text style={sosm.callText}>Call Now</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
       )}
 
       {/* ── Map type modal ── */}
@@ -726,6 +1379,7 @@ const s = StyleSheet.create({
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
   },
   searchPlaceholder: { fontSize: 14, flex: 1 },
+  searchInput: { flex: 1, fontSize: 14, paddingVertical: 0 },
   countBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6,
@@ -768,7 +1422,97 @@ const s = StyleSheet.create({
     textTransform: 'uppercase', flexShrink: 0,
   },
   legendScroll: { gap: 12, paddingRight: 4 },
-  legendPill:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendLabel: { fontSize: 11, fontWeight: '500' },
+  // ── Search dropdown ──
+  dropdown: {
+    position: 'absolute', left: 0, right: 0,
+    zIndex: 99,
+    borderBottomLeftRadius: 16, borderBottomRightRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.14, shadowRadius: 12, elevation: 12,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 12, gap: 10,
+  },
+  dropdownIcon: {
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: EVAC_COLOR,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  dropdownText: { flex: 1, gap: 2 },
+  dropdownName: { fontSize: 14, fontWeight: '600' },
+  dropdownAddr: { fontSize: 12 },
+  dropdownDist: { flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 0 },
+  dropdownDistText: { fontSize: 12, fontWeight: '600', color: EVAC_COLOR },
+  dropdownSuggestHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  dropdownSuggestTitle: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  dropdownEmpty: { alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 24 },
+  dropdownEmptyText: { fontSize: 13 },
 
+  legendPill:      { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendPillEvac:  { borderLeftWidth: 1, borderLeftColor: colors.slate[200], paddingLeft: 12 },
+  legendLabel:     { fontSize: 11, fontWeight: '500' },
+
+  // ── Advisory banner ──
+  advisoryBanner: {
+    position: 'absolute', left: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#D97706',
+    paddingHorizontal: 14, paddingVertical: 8,
+    zIndex: 50,
+  },
+  advisoryText: { flex: 1, fontSize: 12, fontWeight: '600', color: '#fff' },
+
+  // ── SOS button ──
+  sosBtn: {
+    position: 'absolute',
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: colors.severity.critical,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: 24,
+    shadowColor: colors.severity.critical,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.45, shadowRadius: 8, elevation: 8,
+  },
+  sosBtnText: { color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: 0.5 },
+});
+
+// ─── SOS modal styles ─────────────────────────────────────────────────────────
+const sosm = StyleSheet.create({
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  sheet: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    padding: 28, paddingBottom: 44, alignItems: 'center', gap: 10,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.2, shadowRadius: 20, elevation: 20,
+  },
+  iconWrap: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: colors.severity.critical,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 4,
+  },
+  title: { fontSize: 20, fontWeight: '800', color: colors.slate[900] },
+  sub:   { fontSize: 14, color: colors.slate[500], textAlign: 'center', lineHeight: 20 },
+  actions: { flexDirection: 'row', gap: 12, marginTop: 8, width: '100%' },
+  cancelBtn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 14, borderRadius: 14,
+    borderWidth: 1, borderColor: colors.slate[200],
+  },
+  cancelText: { fontSize: 15, fontWeight: '600', color: colors.slate[600] },
+  callBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 7, paddingVertical: 14, borderRadius: 14,
+    backgroundColor: colors.severity.critical,
+  },
+  callText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 });

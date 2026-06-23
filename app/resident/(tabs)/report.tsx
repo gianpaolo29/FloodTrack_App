@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
+  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -23,13 +23,34 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
+import * as SecureStore from 'expo-secure-store';
 
 import { colors } from '@/theme/colors';
 import { SeverityChip, type Severity } from '@/components/SeverityChip';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { submitReport } from '@/services/api';
+import { useAlert } from '@/context/AlertContext';
+import type { AlertConfig } from '@/components/AppAlert';
+import { getAllReports, submitReport } from '@/services/api';
+
+// ─── Draft key ────────────────────────────────────────────────────────────────
+const DRAFT_KEY = 'ft_report_draft';
+
+// ─── Video detection helper ───────────────────────────────────────────────────
+function isVideoUri(uri: string): boolean {
+  const ext = uri.split('.').pop()?.toLowerCase();
+  return ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext ?? '');
+}
+
+// ─── Haversine distance (km) ──────────────────────────────────────────────────
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371, toRad = (d: number) => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(a));
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -104,16 +125,19 @@ function LocationStep({
   onLocationChange: (loc: LocationData) => void;
 }) {
   const [detecting, setDetecting] = useState(false);
+  const { showAlert } = useAlert();
 
   async function detectLocation() {
     setDetecting(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
-          'Permission denied',
-          'Location permission is needed to auto-detect where you are. You can still type your address manually.',
-        );
+        showAlert({
+          type: 'warning',
+          title: 'Location Access Needed',
+          message: 'Allow location permission to auto-detect where the hazard is.',
+          confirmText: 'OK',
+        });
         setDetecting(false);
         return;
       }
@@ -136,7 +160,7 @@ function LocationStep({
         address,
       });
     } catch {
-      Alert.alert('Error', 'Could not detect your location. Please try again.');
+      showAlert({ type: 'error', title: 'Location Error', message: 'Could not detect your location. Please try again.' });
     } finally {
       setDetecting(false);
     }
@@ -335,44 +359,167 @@ function SeverityStep({
 
 // ─── Step 4 — Evidence ───────────────────────────────────────────────────────
 
-function EvidenceStep({ isDark }: { isDark: boolean }) {
+function EvidenceStep({
+  isDark,
+  photos,
+  onPhotosChange,
+  onShowAlert,
+}: {
+  isDark: boolean;
+  photos: string[];
+  onPhotosChange: (p: string[]) => void;
+  onShowAlert: (config: AlertConfig) => void;
+}) {
+  const remaining = 5 - photos.length;
+
+  async function openCamera() {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      onShowAlert({ type: 'warning', title: 'Camera Access Needed', message: 'Allow camera permission to take photos or videos for your report.' });
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images', 'videos'],
+      quality: 0.8,
+      videoMaxDuration: 30,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      onPhotosChange([...photos, result.assets[0].uri].slice(0, 5));
+    }
+  }
+
+  async function openGallery() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      onShowAlert({ type: 'warning', title: 'Gallery Access Needed', message: 'Allow gallery permission to attach photos or videos to your report.' });
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images', 'videos'],
+      allowsMultipleSelection: true,
+      quality: 0.8,
+      selectionLimit: remaining,
+    });
+    if (!result.canceled) {
+      onPhotosChange([...photos, ...result.assets.map(a => a.uri)].slice(0, 5));
+    }
+  }
+
+  function removePhoto(uri: string) {
+    onPhotosChange(photos.filter(p => p !== uri));
+  }
+
   return (
     <View style={styles.stepBody}>
       <Text style={[styles.stepTitle, isDark && { color: colors.white }]}>
-        Add photo evidence
+        Add photo/video evidence
       </Text>
       <Text style={[styles.stepSubtitle, isDark && { color: colors.slate[400] }]}>
         Optional but strongly recommended. Helps admins verify faster.
       </Text>
 
-      <View style={styles.evidenceGrid}>
-        {/* Add photo button */}
-        <Pressable
-          style={[styles.evidenceAdd, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[600] }]}
-          accessibilityRole="button"
-          accessibilityLabel="Take a photo"
-        >
-          <Ionicons name="camera" size={28} color={colors.brand[500]} />
-          <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[400] }]}>
-            Camera
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.evidenceAdd, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[600] }]}
-          accessibilityRole="button"
-          accessibilityLabel="Choose from gallery"
-        >
-          <Ionicons name="images" size={28} color={colors.brand[500]} />
-          <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[400] }]}>
-            Gallery
-          </Text>
-        </Pressable>
-      </View>
+      {/* Photo grid */}
+      {photos.length > 0 && (
+        <View style={styles.photoGrid}>
+          {photos.map((uri, idx) => (
+            <View key={uri} style={styles.photoCell}>
+              <Image source={{ uri }} style={styles.photoImg} resizeMode="cover" />
+              {/* Video play overlay */}
+              {isVideoUri(uri) && (
+                <View style={styles.videoOverlay}>
+                  <Ionicons name="play-circle" size={30} color={colors.white} />
+                </View>
+              )}
+              {/* Counter badge */}
+              <View style={styles.photoBadge}>
+                <Text style={styles.photoBadgeText}>{idx + 1}</Text>
+              </View>
+              {/* Remove button */}
+              <Pressable
+                style={styles.photoRemove}
+                onPress={() => removePhoto(uri)}
+                accessibilityLabel="Remove photo"
+                hitSlop={6}
+              >
+                <View style={styles.photoRemoveInner}>
+                  <Ionicons name="close" size={12} color={colors.white} />
+                </View>
+              </Pressable>
+            </View>
+          ))}
+
+          {/* Add more cell (inline in grid) */}
+          {remaining > 0 && (
+            <Pressable
+              style={[styles.photoAddCell, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}
+              onPress={openGallery}
+              accessibilityLabel="Add more photos"
+            >
+              <Ionicons name="add" size={28} color={colors.brand[500]} />
+              <Text style={[styles.photoAddLabel, isDark && { color: colors.slate[400] }]}>
+                {remaining} left
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+
+      {/* Buttons when no photos yet */}
+      {photos.length === 0 && (
+        <View style={styles.evidenceGrid}>
+          <Pressable
+            style={[styles.evidenceAdd, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[600] }]}
+            onPress={openCamera}
+            accessibilityRole="button"
+            accessibilityLabel="Take a photo"
+          >
+            <Ionicons name="camera" size={30} color={colors.brand[500]} />
+            <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[400] }]}>
+              Camera
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.evidenceAdd, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[600] }]}
+            onPress={openGallery}
+            accessibilityRole="button"
+            accessibilityLabel="Choose from gallery"
+          >
+            <Ionicons name="images" size={30} color={colors.brand[500]} />
+            <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[400] }]}>
+              Gallery
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* Camera / Gallery row when photos already added */}
+      {photos.length > 0 && remaining > 0 && (
+        <View style={styles.evidenceRowBtns}>
+          <Pressable
+            style={[styles.evidenceRowBtn, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}
+            onPress={openCamera}
+            accessibilityLabel="Take a photo"
+          >
+            <Ionicons name="camera-outline" size={18} color={colors.brand[500]} />
+            <Text style={[styles.evidenceRowBtnText, isDark && { color: colors.slate[300] }]}>Camera</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.evidenceRowBtn, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}
+            onPress={openGallery}
+            accessibilityLabel="Choose from gallery"
+          >
+            <Ionicons name="images-outline" size={18} color={colors.brand[500]} />
+            <Text style={[styles.evidenceRowBtnText, isDark && { color: colors.slate[300] }]}>Gallery</Text>
+          </Pressable>
+        </View>
+      )}
 
       <View style={[styles.evidenceHint, isDark && { backgroundColor: colors.slate[900] }]}>
         <Ionicons name="information-circle-outline" size={14} color={colors.brand[500]} />
         <Text style={[styles.evidenceHintText, isDark && { color: colors.slate[400] }]}>
-          You can add up to 5 photos or 1 short video. Install expo-image-picker to enable capture.
+          {photos.length === 0
+            ? 'Add up to 5 photos or videos. Strong evidence helps verify faster.'
+            : `${photos.length}/5 file${photos.length > 1 ? 's' : ''} selected.${remaining > 0 ? ` ${remaining} slot${remaining > 1 ? 's' : ''} remaining.` : ' Maximum reached.'}`}
         </Text>
       </View>
     </View>
@@ -457,18 +604,53 @@ export default function ReportScreen() {
   const scheme   = useColorScheme();
   const isDark   = scheme === 'dark';
   const { token } = useAuth();
+  const { showAlert } = useAlert();
 
   const [step, setStep]                   = useState(0);
   const [location, setLocation]           = useState<LocationData | null>(null);
   const [hazardType, setHazardType]       = useState<HazardKey | null>(null);
   const [severity, setSeverity]           = useState<Severity | null>(null);
+  const [photos, setPhotos]               = useState<string[]>([]);
   const [description, setDescription]     = useState('');
   const [submitted, setSubmitted]         = useState(false);
   const [submittedRef, setSubmittedRef]   = useState('');
   const [loading, setLoading]             = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [checkingDups, setCheckingDups]   = useState(false);
 
-  const screenBg = isDark ? colors.slate[900] : colors.slate[50];
-  const cardBg   = isDark ? '#0D1117' : colors.white;
+  // Load draft on mount
+  useEffect(() => {
+    SecureStore.getItemAsync(DRAFT_KEY).then(json => {
+      if (!json) return;
+      try {
+        const d = JSON.parse(json);
+        if (d.location)    setLocation(d.location);
+        if (d.hazardType)  setHazardType(d.hazardType);
+        if (d.severity)    setSeverity(d.severity);
+        if (d.description) setDescription(d.description);
+        setDraftRestored(true);
+      } catch {}
+    }).catch(() => {});
+  }, []);
+
+  // Auto-save draft
+  useEffect(() => {
+    if (submitted) return;
+    SecureStore.setItemAsync(DRAFT_KEY, JSON.stringify({ location, hazardType, severity, description })).catch(() => {});
+  }, [location, hazardType, severity, description, submitted]);
+
+  function discardDraft() {
+    SecureStore.deleteItemAsync(DRAFT_KEY).catch(() => {});
+    setDraftRestored(false);
+    setLocation(null);
+    setHazardType(null);
+    setSeverity(null);
+    setDescription('');
+    setStep(0);
+  }
+
+  const screenBg = isDark ? colors.dark.bg      : colors.slate[50];
+  const cardBg   = isDark ? colors.dark.surface  : colors.white;
 
   const STEP_TITLES = [
     'Location',
@@ -485,8 +667,29 @@ export default function ReportScreen() {
     return true;
   }
 
-  function handleNext() {
+  async function handleNext() {
     if (step < TOTAL_STEPS - 1) {
+      // Duplicate detection: when leaving hazard type step with location set
+      if (step === 1 && location && hazardType && token) {
+        setCheckingDups(true);
+        try {
+          const all = await getAllReports(token);
+          const nearby = all.filter(r => haversineKm(location.latitude, location.longitude, r.latitude, r.longitude) < 0.3);
+          if (nearby.length > 0) {
+            setCheckingDups(false);
+            showAlert({
+              type: 'warning',
+              title: 'Similar report nearby',
+              message: `${nearby.length} existing report${nearby.length > 1 ? 's' : ''} found within 300m. Is this a new hazard?`,
+              confirmText: 'Continue',
+              cancelText: 'Cancel',
+              onConfirm: () => setStep(s => s + 1),
+            });
+            return;
+          }
+        } catch { /* silent — don't block submit */ }
+        finally { setCheckingDups(false); }
+      }
       setStep(s => s + 1);
     } else {
       handleSubmit();
@@ -504,13 +707,21 @@ export default function ReportScreen() {
           hazardType: hazardType!,
           severity:   severity!,
           description,
+          photos,
         },
         token!,
       );
       setSubmittedRef(result.reference ?? '');
+      SecureStore.deleteItemAsync(DRAFT_KEY).catch(() => {});
       setSubmitted(true);
     } catch {
-      Alert.alert('Submission failed', 'Could not submit your report. Please try again.');
+      showAlert({
+        type: 'error',
+        title: 'Submission Failed',
+        message: 'Could not submit your report. Check your connection and try again.',
+        confirmText: 'Try Again',
+        onConfirm: handleSubmit,
+      });
     } finally {
       setLoading(false);
     }
@@ -526,6 +737,7 @@ export default function ReportScreen() {
           setLocation(null);
           setHazardType(null);
           setSeverity(null);
+          setPhotos([]);
           setDescription('');
           router.replace('/resident');
         }}
@@ -565,11 +777,24 @@ export default function ReportScreen() {
         showsVerticalScrollIndicator={false}
       >
         {step === 0 && (
-          <LocationStep
-            isDark={isDark}
-            location={location}
-            onLocationChange={setLocation}
-          />
+          <>
+            {draftRestored && (
+              <View style={[styles.draftBanner, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}>
+                <Ionicons name="document-text" size={14} color={colors.brand[500]} />
+                <Text style={[styles.draftBannerText, isDark && { color: colors.slate[300] }]}>
+                  Draft restored — tap × to discard
+                </Text>
+                <Pressable onPress={discardDraft} hitSlop={8}>
+                  <Ionicons name="close" size={14} color={colors.slate[400]} />
+                </Pressable>
+              </View>
+            )}
+            <LocationStep
+              isDark={isDark}
+              location={location}
+              onLocationChange={setLocation}
+            />
+          </>
         )}
         {step === 1 && (
           <HazardTypeStep
@@ -585,7 +810,14 @@ export default function ReportScreen() {
             isDark={isDark}
           />
         )}
-        {step === 3 && <EvidenceStep isDark={isDark} />}
+        {step === 3 && (
+          <EvidenceStep
+            isDark={isDark}
+            photos={photos}
+            onPhotosChange={setPhotos}
+            onShowAlert={showAlert}
+          />
+        )}
         {step === 4 && (
           <DescriptionStep
             value={description}
@@ -624,7 +856,7 @@ export default function ReportScreen() {
           label={step < TOTAL_STEPS - 1 ? 'Continue' : 'Submit report'}
           onPress={handleNext}
           disabled={!canAdvance()}
-          loading={loading}
+          loading={loading || checkingDups}
           fullWidth
           size="lg"
         />
@@ -734,28 +966,61 @@ const styles = StyleSheet.create({
   severityLabel: { fontSize: 15, fontWeight: '600', color: colors.slate[900] },
   severityDesc:  { fontSize: 12, color: colors.slate[600] },
 
-  // Evidence step
+  // Evidence step — photo grid
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  photoCell: {
+    width: '47%', aspectRatio: 1,
+    borderRadius: 12, overflow: 'hidden',
+    position: 'relative',
+  },
+  photoImg: { width: '100%', height: '100%' },
+  videoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.28)',
+  },
+  photoBadge: {
+    position: 'absolute', bottom: 7, left: 7,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  photoBadgeText: { color: colors.white, fontSize: 11, fontWeight: '700' },
+  photoRemove: { position: 'absolute', top: 7, right: 7 },
+  photoRemoveInner: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  photoAddCell: {
+    width: '47%', aspectRatio: 1,
+    borderRadius: 12, borderWidth: 2,
+    borderStyle: 'dashed', borderColor: colors.brand[200],
+    backgroundColor: colors.brand[50],
+    alignItems: 'center', justifyContent: 'center', gap: 4,
+  },
+  photoAddLabel: { fontSize: 12, color: colors.brand[500], fontWeight: '600' },
   evidenceGrid: { flexDirection: 'row', gap: 12 },
   evidenceAdd: {
-    flex: 1,
-    aspectRatio: 1,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: colors.brand[100],
+    flex: 1, aspectRatio: 1,
+    borderRadius: 14, borderWidth: 2,
+    borderStyle: 'dashed', borderColor: colors.brand[100],
     backgroundColor: colors.brand[50],
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    maxHeight: 120,
+    alignItems: 'center', justifyContent: 'center',
+    gap: 10, maxHeight: 140,
   },
-  evidenceAddLabel: { fontSize: 13, color: colors.brand[500], fontWeight: '500' },
+  evidenceAddLabel: { fontSize: 14, color: colors.brand[500], fontWeight: '600' },
+  evidenceRowBtns: { flexDirection: 'row', gap: 10 },
+  evidenceRowBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 10, borderRadius: 10,
+    borderWidth: 1, borderColor: colors.slate[200],
+    backgroundColor: colors.white,
+  },
+  evidenceRowBtnText: { fontSize: 13, fontWeight: '500', color: colors.slate[700] },
   evidenceHint: {
-    flexDirection: 'row',
-    gap: 8,
-    backgroundColor: colors.brand[50],
-    borderRadius: 8,
-    padding: 12,
+    flexDirection: 'row', gap: 8,
+    backgroundColor: colors.brand[50], borderRadius: 8, padding: 12,
   },
   evidenceHintText: { flex: 1, fontSize: 12, color: colors.slate[600], lineHeight: 18 },
 
@@ -791,6 +1056,15 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   summaryChipText: { fontSize: 12, color: colors.slate[600], fontWeight: '500' },
+
+  // Draft banner
+  draftBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 24, marginTop: 16,
+    backgroundColor: colors.brand[50], borderRadius: 10, padding: 12,
+    borderWidth: 1, borderColor: colors.brand[100],
+  },
+  draftBannerText: { flex: 1, fontSize: 13, color: colors.brand[700] },
 
   // Confirmation
   confirmRoot: {

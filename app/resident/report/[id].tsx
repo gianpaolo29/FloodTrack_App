@@ -4,11 +4,14 @@
  * Displays: map snippet, evidence carousel, severity, full status timeline,
  * and any responder updates.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Dimensions,
+  Image,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -22,7 +25,8 @@ import { SeverityChip } from '@/components/SeverityChip';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getReportDetail } from '@/services/api';
+import { useAlert } from '@/context/AlertContext';
+import { getReportDetail, withdrawReport } from '@/services/api';
 import type { ReportDetail } from '@/types';
 
 // ─── Timeline item ────────────────────────────────────────────────────────────
@@ -83,48 +87,134 @@ const tlStyles = StyleSheet.create({
   detail:  { fontSize: 13, color: colors.slate[600], lineHeight: 18 },
 });
 
-// ─── Evidence carousel (placeholder) ─────────────────────────────────────────
+// ─── Photo gallery ────────────────────────────────────────────────────────────
 
-function EvidenceCarousel({ isDark }: { isDark: boolean }) {
-  const [active, setActive] = useState(0);
-  const MOCK_COUNT = 3;
+const SCREEN_W = Dimensions.get('window').width;
+// card has 16px horizontal padding on each side, so content width = screen - 32 - 2*16 card padding
+const GALLERY_W = SCREEN_W - 32 - 32; // subtract screen margins + card padding
 
-  return (
-    <View style={evStyles.root}>
-      <View style={[evStyles.slide, isDark && { backgroundColor: colors.slate[900] }]}>
-        <Ionicons name="image-outline" size={40} color={colors.slate[400]} />
-        <Text style={[evStyles.label, isDark && { color: colors.slate[400] }]}>
-          Photo {active + 1} of {MOCK_COUNT}
+function PhotoGallery({ urls, isDark }: { urls: string[]; isDark: boolean }) {
+  const [active, setActive]   = useState(0);
+  const scrollRef             = useRef<ScrollView>(null);
+  const thumbScrollRef        = useRef<ScrollView>(null);
+
+  function goTo(i: number) {
+    setActive(i);
+    scrollRef.current?.scrollTo({ x: i * GALLERY_W, animated: true });
+    thumbScrollRef.current?.scrollTo({ x: Math.max(0, i - 2) * 60, animated: true });
+  }
+
+  if (urls.length === 0) {
+    return (
+      <View style={[gal.empty, isDark && { backgroundColor: colors.slate[900] }]}>
+        <Ionicons name="image-outline" size={32} color={colors.slate[400]} />
+        <Text style={[gal.emptyText, isDark && { color: colors.slate[500] }]}>
+          No photo evidence attached
         </Text>
       </View>
-      <View style={evStyles.dots}>
-        {Array.from({ length: MOCK_COUNT }).map((_, i) => (
-          <Pressable
-            key={i}
-            onPress={() => setActive(i)}
-            style={[evStyles.dot, i === active && { backgroundColor: colors.brand[500], width: 18 }]}
-            accessibilityRole="button"
-            accessibilityLabel={`Photo ${i + 1}`}
-          />
-        ))}
+    );
+  }
+
+  return (
+    <View style={gal.root}>
+      {/* Main swipeable photo */}
+      <View style={gal.slideWrap}>
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onScroll={e => {
+            const idx = Math.round(e.nativeEvent.contentOffset.x / GALLERY_W);
+            if (idx !== active) {
+              setActive(idx);
+              thumbScrollRef.current?.scrollTo({ x: Math.max(0, idx - 2) * 60, animated: true });
+            }
+          }}
+          style={{ width: GALLERY_W }}
+        >
+          {urls.map((url, i) => (
+            <Image
+              key={i}
+              source={{ uri: url }}
+              style={[gal.slide, { width: GALLERY_W }]}
+              resizeMode="cover"
+              accessibilityLabel={`Photo ${i + 1} of ${urls.length}`}
+            />
+          ))}
+        </ScrollView>
+
+        {/* Counter badge */}
+        <View style={gal.badge}>
+          <Ionicons name="camera" size={11} color={colors.white} />
+          <Text style={gal.badgeText}>{active + 1} / {urls.length}</Text>
+        </View>
       </View>
+
+      {/* Thumbnail strip (only when > 1 photo) */}
+      {urls.length > 1 && (
+        <ScrollView
+          ref={thumbScrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={gal.thumbScroll}
+        >
+          {urls.map((url, i) => (
+            <Pressable
+              key={i}
+              onPress={() => goTo(i)}
+              style={({ pressed }) => [
+                gal.thumb,
+                i === active && gal.thumbActive,
+                pressed && { opacity: 0.8 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`View photo ${i + 1}`}
+            >
+              <Image source={{ uri: url }} style={gal.thumbImg} resizeMode="cover" />
+              {i === active && <View style={gal.thumbOverlay} />}
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 }
 
-const evStyles = StyleSheet.create({
+const gal = StyleSheet.create({
   root:  { gap: 10 },
+  slideWrap: { position: 'relative', borderRadius: 12, overflow: 'hidden' },
   slide: {
-    height: 180,
-    borderRadius: 12,
+    height: 240,
     backgroundColor: colors.slate[100],
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
   },
-  label: { fontSize: 13, color: colors.slate[600] },
-  dots:  { flexDirection: 'row', gap: 6, justifyContent: 'center' },
-  dot:   { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.slate[200] },
+  badge: {
+    position: 'absolute', bottom: 10, right: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 20,
+  },
+  badgeText: { fontSize: 12, color: colors.white, fontWeight: '600' },
+  thumbScroll: { gap: 8 },
+  thumb: {
+    width: 56, height: 56, borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 2, borderColor: 'transparent',
+  },
+  thumbActive: { borderColor: colors.brand[500] },
+  thumbImg: { width: '100%', height: '100%' },
+  thumbOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.brand[500] + '30',
+  },
+  empty: {
+    height: 120, borderRadius: 12,
+    backgroundColor: colors.slate[100],
+    alignItems: 'center', justifyContent: 'center', gap: 8,
+  },
+  emptyText: { fontSize: 13, color: colors.slate[500] },
 });
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -137,12 +227,39 @@ export default function ReportDetailScreen() {
   const isDark      = scheme === 'dark';
   const { token }   = useAuth();
 
+  const { showAlert } = useAlert();
   const [report, setReport]   = useState<ReportDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
 
-  const cardBg   = isDark ? '#0D1117' : colors.white;
-  const screenBg = isDark ? '#0D1117' : colors.slate[50];
+  const cardBg   = isDark ? colors.dark.card    : colors.white;
+  const screenBg = isDark ? colors.dark.bg      : colors.slate[50];
+
+  function handleShare() {
+    if (!report) return;
+    Share.share({
+      title: report.title,
+      message: `FloodTrack Report\nRef: ${report.reference}\n${report.title}\nLocation: ${report.address}\nStatus: ${report.status}\nReported: ${report.reportedAt}`,
+    });
+  }
+
+  async function handleWithdraw() {
+    showAlert({
+      type: 'confirm',
+      title: 'Withdraw report?',
+      message: 'This will cancel your pending report. This action cannot be undone.',
+      confirmText: 'Withdraw',
+      cancelText: 'Keep it',
+      onConfirm: async () => {
+        try {
+          await withdrawReport(id, token!);
+          router.back();
+        } catch {
+          showAlert({ type: 'error', title: 'Failed', message: 'Could not withdraw the report. Please try again.' });
+        }
+      },
+    });
+  }
 
   const load = useCallback(async () => {
     try {
@@ -152,6 +269,7 @@ export default function ReportDetailScreen() {
       setReport(data);
     } catch {
       setError('Could not load report details.');
+      showAlert({ type: 'error', title: 'Load Failed', message: 'Could not load report details. Check your connection.' });
     } finally {
       setLoading(false);
     }
@@ -183,6 +301,17 @@ export default function ReportDetailScreen() {
             <Text style={styles.headerTitle}>Report detail</Text>
           )}
         </View>
+        {report && (
+          <Pressable
+            onPress={handleShare}
+            style={styles.headerBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Share report"
+            hitSlop={8}
+          >
+            <Ionicons name="share-outline" size={20} color={colors.white} />
+          </Pressable>
+        )}
       </View>
 
       {/* Loading */}
@@ -249,7 +378,7 @@ export default function ReportDetailScreen() {
           {/* ── Evidence ── */}
           <View style={[styles.card, { backgroundColor: cardBg }]}>
             <Text style={[styles.sectionTitle, isDark && { color: colors.white }]}>Photo evidence</Text>
-            <EvidenceCarousel isDark={isDark} />
+            <PhotoGallery urls={report.mediaUrls} isDark={isDark} />
           </View>
 
           {/* ── Description ── */}
@@ -297,6 +426,23 @@ export default function ReportDetailScreen() {
                 ))}
               </View>
             </View>
+          )}
+
+          {/* ── Withdraw (pending only) ── */}
+          {report.status === 'pending' && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.withdrawBtn,
+                isDark && { borderColor: colors.severity.critical + '44', backgroundColor: colors.severity.critical + '12' },
+                pressed && { opacity: 0.75 },
+              ]}
+              onPress={handleWithdraw}
+              accessibilityRole="button"
+              accessibilityLabel="Withdraw this report"
+            >
+              <Ionicons name="close-circle-outline" size={18} color={colors.severity.critical} />
+              <Text style={styles.withdrawText}>Withdraw this report</Text>
+            </Pressable>
           )}
         </ScrollView>
       )}
@@ -375,4 +521,17 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 14, color: colors.slate[600], textAlign: 'center' },
   retryBtn:  { backgroundColor: colors.brand[500], paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 },
   retryText: { color: colors.white, fontWeight: '600', fontSize: 14 },
+
+  headerBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  withdrawBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 14, borderRadius: 12,
+    borderWidth: 1, borderColor: colors.severity.critical + '33',
+    backgroundColor: colors.severity.critical + '0A',
+  },
+  withdrawText: { fontSize: 14, fontWeight: '600', color: colors.severity.critical },
 });

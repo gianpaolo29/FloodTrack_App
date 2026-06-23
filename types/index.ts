@@ -48,6 +48,8 @@ export interface Report {
   latitude: number;
   longitude: number;
   reportedAt: string;
+  thumbnailUrl?: string;   // first media URL from list response, if included
+  mediaCount?: number;     // total number of photos attached
 }
 
 export interface TimelineEvent {
@@ -70,6 +72,7 @@ export interface ReportDetail extends Report {
   timeline: TimelineEvent[];
   updates: ResponderUpdate[];
   evidenceCount: number;
+  mediaUrls: string[];
 }
 
 export interface ReportSubmission {

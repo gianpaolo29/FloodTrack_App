@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -16,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '@/theme/colors';
+import { useAlert } from '@/context/AlertContext';
 import { SeverityChip } from '@/components/SeverityChip';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -38,46 +40,76 @@ function ReportCard({
   onPress: () => void;
   isDark: boolean;
 }) {
+  const hasPhoto = !!report.thumbnailUrl;
+
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         styles.card,
-        isDark && { backgroundColor: colors.slate[900] },
+        isDark && { backgroundColor: colors.dark.card },
         pressed && { opacity: 0.88 },
       ]}
       accessibilityRole="button"
       accessibilityLabel={`${report.title}, ${report.severity} severity, status ${report.status}`}
     >
-      <View style={[styles.cardBar, { backgroundColor: colors.severity[report.severity] }]} />
-      <View style={styles.cardBody}>
-        <View style={styles.cardTopRow}>
-          <Text style={[styles.cardTitle, isDark && { color: colors.white }]} numberOfLines={1}>
-            {report.title}
-          </Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.slate[400]} />
+      {/* ── Photo header ── */}
+      {hasPhoto && (
+        <View style={styles.photoHeader}>
+          <Image
+            source={{ uri: report.thumbnailUrl }}
+            style={styles.photoHeaderImg}
+            resizeMode="cover"
+          />
+          {/* Gradient-style overlay for readability */}
+          <View style={styles.photoHeaderOverlay} />
+          {/* Photo count badge */}
+          {(report.mediaCount ?? 0) > 1 && (
+            <View style={styles.photoBadge}>
+              <Ionicons name="camera" size={10} color={colors.white} />
+              <Text style={styles.photoBadgeText}>{report.mediaCount}</Text>
+            </View>
+          )}
+          {/* Severity bar overlaid at top of photo */}
+          <View style={[styles.photoSeverityBar, { backgroundColor: colors.severity[report.severity] }]} />
         </View>
-        <View style={styles.cardMeta}>
-          <View style={styles.metaItem}>
-            <Ionicons name="layers-outline" size={12} color={colors.slate[400]} />
-            <Text style={[styles.metaText, isDark && { color: colors.slate[400] }]}>{report.type}</Text>
-          </View>
-          <View style={styles.metaItem}>
-            <Ionicons name="location-outline" size={12} color={colors.slate[400]} />
-            <Text style={[styles.metaText, isDark && { color: colors.slate[400] }]} numberOfLines={1}>
-              {report.address}
+      )}
+
+      <View style={styles.cardRow}>
+        {/* Severity bar (only shown when no photo) */}
+        {!hasPhoto && (
+          <View style={[styles.cardBar, { backgroundColor: colors.severity[report.severity] }]} />
+        )}
+
+        <View style={styles.cardBody}>
+          <View style={styles.cardTopRow}>
+            <Text style={[styles.cardTitle, isDark && { color: colors.white }]} numberOfLines={1}>
+              {report.title}
             </Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.slate[400]} />
           </View>
-        </View>
-        <View style={styles.cardChips}>
-          <SeverityChip level={report.severity} size="sm" />
-          <StatusBadge status={report.status} size="sm" />
-        </View>
-        <View style={styles.cardFooter}>
-          <Text style={[styles.cardRef, isDark && { color: colors.slate[600] }]}>{report.reference}</Text>
-          <View style={styles.metaItem}>
-            <Ionicons name="time-outline" size={11} color={colors.slate[400]} />
-            <Text style={[styles.cardTime, isDark && { color: colors.slate[600] }]}>{report.reportedAt}</Text>
+          <View style={styles.cardMeta}>
+            <View style={styles.metaItem}>
+              <Ionicons name="layers-outline" size={12} color={colors.slate[400]} />
+              <Text style={[styles.metaText, isDark && { color: colors.slate[400] }]}>{report.type}</Text>
+            </View>
+            <View style={styles.metaItem}>
+              <Ionicons name="location-outline" size={12} color={colors.slate[400]} />
+              <Text style={[styles.metaText, isDark && { color: colors.slate[400] }]} numberOfLines={1}>
+                {report.address}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.cardChips}>
+            <SeverityChip level={report.severity} size="sm" />
+            <StatusBadge status={report.status} size="sm" />
+          </View>
+          <View style={styles.cardFooter}>
+            <Text style={[styles.cardRef, isDark && { color: colors.slate[600] }]}>{report.reference}</Text>
+            <View style={styles.metaItem}>
+              <Ionicons name="time-outline" size={11} color={colors.slate[400]} />
+              <Text style={[styles.cardTime, isDark && { color: colors.slate[600] }]}>{report.reportedAt}</Text>
+            </View>
           </View>
         </View>
       </View>
@@ -93,6 +125,7 @@ export default function MyReportsScreen() {
   const scheme  = useColorScheme();
   const isDark  = scheme === 'dark';
   const { token } = useAuth();
+  const { showAlert } = useAlert();
 
   const [reports, setReports]     = useState<Report[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -100,7 +133,7 @@ export default function MyReportsScreen() {
   const [error, setError]         = useState<string | null>(null);
   const [tab, setTab]             = useState<FilterTab>('all');
 
-  const screenBg = isDark ? '#0D1117' : colors.slate[50];
+  const screenBg = isDark ? colors.dark.bg : colors.slate[50];
 
   const load = useCallback(async (isRefresh = false) => {
     try {
@@ -110,6 +143,7 @@ export default function MyReportsScreen() {
       setReports(data);
     } catch {
       setError('Could not load reports. Pull down to retry.');
+      if (!isRefresh) showAlert({ type: 'error', title: 'Load Failed', message: 'Could not load your reports. Check your connection.' });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -140,8 +174,8 @@ export default function MyReportsScreen() {
       {/* Header */}
       <View style={[styles.header, {
         paddingTop: insets.top + 12,
-        backgroundColor: isDark ? '#0D1117' : colors.white,
-        borderBottomColor: isDark ? colors.slate[900] : colors.slate[100],
+        backgroundColor: isDark ? colors.dark.surface : colors.white,
+        borderBottomColor: isDark ? colors.dark.border : colors.slate[100],
       }]}>
         <Text style={[styles.headerTitle, isDark && { color: colors.white }]}>My reports</Text>
         <Pressable
@@ -157,8 +191,8 @@ export default function MyReportsScreen() {
 
       {/* Filter tabs */}
       <View style={[styles.tabRow, {
-        backgroundColor: isDark ? '#0D1117' : colors.white,
-        borderBottomColor: isDark ? colors.slate[900] : colors.slate[100],
+        backgroundColor: isDark ? colors.dark.surface : colors.white,
+        borderBottomColor: isDark ? colors.dark.border : colors.slate[100],
       }]}>
         {TABS.map(t => (
           <Pressable
@@ -272,7 +306,6 @@ const styles = StyleSheet.create({
   listEmpty: { flex: 1 },
 
   card: {
-    flexDirection: 'row',
     backgroundColor: colors.white,
     borderRadius: 12,
     overflow: 'hidden',
@@ -282,8 +315,27 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  cardBar:    { width: 4 },
-  cardBody:   { flex: 1, padding: 14, gap: 8 },
+  // Photo header (shown when thumbnailUrl is set)
+  photoHeader: { position: 'relative', height: 150 },
+  photoHeaderImg: { width: '100%', height: '100%' },
+  photoHeaderOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.12)',
+  },
+  photoSeverityBar: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: 4,
+  },
+  photoBadge: {
+    position: 'absolute', bottom: 8, right: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20,
+  },
+  photoBadgeText: { color: colors.white, fontSize: 11, fontWeight: '700' },
+  // Row that holds the bar + body (used when no photo, or always for body)
+  cardRow:  { flexDirection: 'row' },
+  cardBar:  { width: 4 },
+  cardBody: { flex: 1, padding: 14, gap: 8 },
   cardTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardTitle:  { flex: 1, fontSize: 15, fontWeight: '700', color: colors.slate[900] },
   cardMeta:   { gap: 4 },
