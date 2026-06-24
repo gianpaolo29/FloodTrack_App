@@ -6,7 +6,8 @@
       "WebFetch(domain:github.com)",
       "Bash(npx expo:*)",
       "Bash(rm \"/c/Users/Windows/OneDrive/Desktop/FloodTrack/FloodTrack/app/report/[id].tsx\")",
-      "Bash(rm \"/c/Users/Windows/OneDrive/Desktop/FloodTrack/FloodTrack/app/responder/[id].tsx\")"
+      "Bash(rm \"/c/Users/Windows/OneDrive/Desktop/FloodTrack/FloodTrack/app/responder/[id].tsx\")",
+      "Bash(npx tsc:*)"
     ]
   }
 }

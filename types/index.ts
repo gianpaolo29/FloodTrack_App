@@ -19,8 +19,6 @@ export interface User {
   joinedAt: string;       // ISO date string
 }
 
-// ─── Auth payloads ────────────────────────────────────────────────────────────
-
 export interface LoginPayload {
   email: string;
   password: string;
@@ -48,8 +46,6 @@ export interface Report {
   latitude: number;
   longitude: number;
   reportedAt: string;
-  thumbnailUrl?: string;   // first media URL from list response, if included
-  mediaCount?: number;     // total number of photos attached
 }
 
 export interface TimelineEvent {

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -17,10 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useAuth } from '@/context/AuthContext';
-import { colors as C } from '@/theme/colors';
+import { Colors } from '@/constants/theme';
 
-// ─── Validation ────────────────────────────────────────────────────────────────
 
 const PH_MOBILE_RE = /^(\+639|09)\d{9}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -51,7 +48,8 @@ function validateForm(fields: FormFields): FormErrors {
   return errors;
 }
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
+
+type Role = 'Resident' | 'Responder';
 
 interface FormFields {
   firstName: string;
@@ -64,7 +62,6 @@ interface FormFields {
 
 type FormErrors = Partial<Record<keyof FormFields, string>>;
 
-// ─── InputField ────────────────────────────────────────────────────────────────
 
 type InputFieldProps = TextInputProps & {
   label: string;
@@ -76,167 +73,221 @@ type InputFieldProps = TextInputProps & {
   textColor: string;
 };
 
-function InputField({ label, icon, error, right, isDark, tint, textColor, style, ...rest }: InputFieldProps) {
+function InputField({
+  label,
+  icon,
+  error,
+  right,
+  isDark,
+  tint,
+  textColor,
+  style,
+  ...rest
+}: InputFieldProps) {
   const [focused, setFocused] = useState(false);
 
-  const bg          = isDark ? '#161B22' : C.slate[50];
-  const borderColor = error ? C.severity.critical : focused ? tint : isDark ? '#21262D' : C.slate[200];
-  const iconColor   = error ? C.severity.critical : focused ? tint : C.slate[400];
+  const borderColor = error
+    ? '#D32F2F'
+    : focused
+    ? tint
+    : isDark
+    ? '#2C2C2E'
+    : '#E8ECF0';
+
+  const bg = isDark ? '#1C1C1E' : '#F7F9FB';
+  const iconColor = error ? '#D32F2F' : focused ? tint : isDark ? '#636366' : '#9AA6B2';
 
   return (
-    <View style={f.wrapper}>
-      <Text style={[f.label, { color: isDark ? C.slate[400] : C.slate[500] }]}>{label}</Text>
-      <View style={[
-        f.row,
-        { backgroundColor: bg, borderColor },
-        focused && { borderWidth: 2, shadowColor: error ? C.severity.critical : tint, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 2 },
-      ]}>
-        <View style={[f.iconWrap, focused && { backgroundColor: iconColor + '18' }]}>
-          <Ionicons name={icon} size={17} color={iconColor} />
-        </View>
+    <View style={fieldStyles.wrapper}>
+      <Text style={[fieldStyles.label, { color: isDark ? '#9AA6B2' : '#5A6675' }]}>
+        {label}
+      </Text>
+      <View
+        style={[
+          fieldStyles.inputRow,
+          { backgroundColor: bg, borderColor },
+        ]}
+      >
+        <Ionicons name={icon} size={18} color={iconColor} style={fieldStyles.icon} />
         <TextInput
-          style={[f.input, { color: textColor }, style]}
-          placeholderTextColor={isDark ? '#3D444D' : C.slate[400]}
+          style={[fieldStyles.input, { color: textColor }, style]}
+          placeholderTextColor={isDark ? '#48484A' : '#C7CDD3'}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           {...rest}
         />
         {right}
       </View>
-      {error && (
-        <View style={f.errorRow}>
-          <Ionicons name="alert-circle" size={12} color={C.severity.critical} />
-          <Text style={f.errorText}>{error}</Text>
+      {error ? (
+        <View style={fieldStyles.errorRow}>
+          <Ionicons name="alert-circle" size={13} color="#D32F2F" />
+          <Text style={fieldStyles.errorText}>{error}</Text>
         </View>
-      )}
+      ) : null}
     </View>
   );
 }
 
-const f = StyleSheet.create({
-  wrapper: { gap: 6 },
+const fieldStyles = StyleSheet.create({
+  wrapper: { gap: 7 },
   label: {
-    fontSize: 10, fontWeight: '700',
-    letterSpacing: 0.8, textTransform: 'uppercase', marginLeft: 2,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginLeft: 2,
   },
-  row: {
-    flexDirection: 'row', alignItems: 'center',
-    height: 56, borderRadius: 14, borderWidth: 1.5,
-    paddingRight: 14, gap: 0, overflow: 'hidden',
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 54,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    paddingHorizontal: 14,
+    gap: 10,
   },
-  iconWrap: {
-    width: 52, height: '100%',
-    alignItems: 'center', justifyContent: 'center',
+  icon: { width: 20, textAlign: 'center' },
+  input: {
+    flex: 1,
+    fontSize: 15.5,
+    height: '100%',
   },
-  input: { flex: 1, fontSize: 15, height: '100%' },
-  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginLeft: 2 },
-  errorText: { fontSize: 11, color: C.severity.critical, fontWeight: '500' },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginLeft: 2,
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#D32F2F',
+    fontWeight: '500',
+  },
 });
 
 // ─── Screen ────────────────────────────────────────────────────────────────────
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const isDark = useColorScheme() === 'dark';
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'light'];
+  const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const { register } = useAuth();
-
-  const tint      = C.brand[500];
-  const cardBg    = isDark ? '#0D1117' : C.white;
-  const textColor = isDark ? C.white   : C.slate[900];
-  const subColor  = isDark ? C.slate[400] : C.slate[500];
 
   const [fields, setFields] = useState<FormFields>({
-    firstName: '', lastName: '', email: '',
-    contact: '', password: '', confirmPassword: '',
+    firstName: '',
+    lastName: '',
+    email: '',
+    contact: '',
+    password: '',
+    confirmPassword: '',
   });
+  const [role, setRole] = useState<Role>('Resident');
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm,  setShowConfirm]  = useState(false);
-  const [errors,       setErrors]       = useState<FormErrors>({});
-  const [submitted,    setSubmitted]    = useState(false);
-  const [loading,      setLoading]      = useState(false);
-  const [apiError,     setApiError]     = useState<string | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [submitted, setSubmitted] = useState(false);
 
   function set(key: keyof FormFields) {
     return (value: string) => {
       setFields(prev => ({ ...prev, [key]: value }));
       if (submitted) setErrors(prev => ({ ...prev, [key]: undefined }));
-      setApiError(null);
     };
   }
 
-  async function handleSubmit() {
+  function handleSubmit() {
     setSubmitted(true);
     const errs = validateForm(fields);
-    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
-    setLoading(true);
-    setApiError(null);
-    try {
-      await register({
-        firstName: fields.firstName.trim(),
-        lastName:  fields.lastName.trim(),
-        email:     fields.email.trim(),
-        contact:   fields.contact.trim(),
-        password:  fields.password,
-        role:      'Resident',
-      });
-    } catch {
-      setApiError('Registration failed. Please try again.');
-    } finally {
-      setLoading(false);
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      return;
     }
+    // TODO: POST /api/register
+    router.replace('/(tabs)');
   }
 
+  const cardBg = isDark ? '#0D0D0F' : '#FFFFFF';
+  const screenBg = isDark ? '#0D0D0F' : '#F0F4F8';
+
   return (
-    <View style={[s.root, { backgroundColor: C.brand[700] }]}>
+    <View style={[styles.root, { backgroundColor: colors.tint }]}>
       <StatusBar style="light" />
 
-      {/* ── Hero ── */}
-      <View style={[s.hero, { paddingTop: insets.top + 16 }]}>
-        <View style={s.heroTopRow}>
-          <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={12} accessibilityRole="button">
-            <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.85)" />
-          </Pressable>
+      {/* ── Hero header ── */}
+      <View style={[styles.hero, { paddingTop: insets.top + 12 }]}>
+        <Pressable
+          onPress={() => router.back()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          hitSlop={12}
+        >
+          <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.9)" />
+        </Pressable>
 
-          {/* Logo pill */}
-          <View style={s.logoPill}>
-            <Ionicons name="water" size={14} color={C.white} />
-            <Text style={s.logoPillText}>FloodTrack</Text>
-          </View>
-
-          <View style={{ width: 36 }} />
-        </View>
-
-        <View style={s.heroText}>
-          <Text style={s.heroTitle}>Create account</Text>
-          <Text style={s.heroSub}>Join FloodTrack — stay informed, stay safe.</Text>
+        <View style={styles.heroText}>
+          <Text style={styles.heroTitle}>Create account</Text>
+          <Text style={styles.heroSub}>Join FloodTrack — stay informed, stay safe.</Text>
         </View>
       </View>
 
-      {/* Curve */}
-      <View style={[s.curve, { backgroundColor: cardBg }]} />
-
       {/* ── Form card ── */}
       <KeyboardAvoidingView
-        style={[s.cardShell, { backgroundColor: cardBg }]}
+        style={styles.cardShell}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
-          contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 40 }]}
+          style={[styles.card, { backgroundColor: cardBg }]}
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingBottom: insets.bottom + 40 },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
 
-          {/* ── Divider ── */}
-          <View style={s.divBlock}>
-            <View style={[s.divLine, { backgroundColor: isDark ? '#21262D' : C.slate[100] }]} />
-            <Text style={[s.divText, { color: subColor }]}>Personal info</Text>
-            <View style={[s.divLine, { backgroundColor: isDark ? '#21262D' : C.slate[100] }]} />
+          {/* Role selector */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionLabel, { color: isDark ? '#9AA6B2' : '#5A6675' }]}>
+              I am a
+            </Text>
+            <View style={[styles.roleTrack, { backgroundColor: isDark ? '#1C1C1E' : '#EDF1F5' }]}>
+              {(['Resident', 'Responder'] as Role[]).map(r => {
+                const active = role === r;
+                return (
+                  <Pressable
+                    key={r}
+                    style={[
+                      styles.roleOption,
+                      active && [styles.roleActive, { backgroundColor: colors.tint }],
+                    ]}
+                    onPress={() => setRole(r)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: active }}
+                  >
+                    <Ionicons
+                      name={r === 'Resident' ? 'person' : 'shield-checkmark'}
+                      size={14}
+                      color={active ? '#fff' : isDark ? '#636366' : '#9AA6B2'}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text
+                      style={[
+                        styles.roleText,
+                        { color: active ? '#fff' : isDark ? '#636366' : '#9AA6B2' },
+                      ]}
+                    >
+                      {r}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
 
           {/* Name row */}
-          <View style={s.nameRow}>
-            <View style={{ flex: 1 }}>
+          <View style={styles.nameRow}>
+            <View style={styles.nameHalf}>
               <InputField
                 label="First name"
                 icon="person-outline"
@@ -246,10 +297,12 @@ export default function SignUpScreen() {
                 value={fields.firstName}
                 onChangeText={set('firstName')}
                 error={errors.firstName}
-                isDark={isDark} tint={tint} textColor={textColor}
+                isDark={isDark}
+                tint={colors.tint}
+                textColor={colors.text}
               />
             </View>
-            <View style={{ flex: 1 }}>
+            <View style={styles.nameHalf}>
               <InputField
                 label="Last name"
                 icon="person-outline"
@@ -259,11 +312,14 @@ export default function SignUpScreen() {
                 value={fields.lastName}
                 onChangeText={set('lastName')}
                 error={errors.lastName}
-                isDark={isDark} tint={tint} textColor={textColor}
+                isDark={isDark}
+                tint={colors.tint}
+                textColor={colors.text}
               />
             </View>
           </View>
 
+          {/* Email */}
           <InputField
             label="Email address"
             icon="mail-outline"
@@ -275,9 +331,12 @@ export default function SignUpScreen() {
             value={fields.email}
             onChangeText={set('email')}
             error={errors.email}
-            isDark={isDark} tint={tint} textColor={textColor}
+            isDark={isDark}
+            tint={colors.tint}
+            textColor={colors.text}
           />
 
+          {/* Mobile */}
           <InputField
             label="Mobile number"
             icon="call-outline"
@@ -287,17 +346,16 @@ export default function SignUpScreen() {
             value={fields.contact}
             onChangeText={set('contact')}
             error={errors.contact}
-            isDark={isDark} tint={tint} textColor={textColor}
+            isDark={isDark}
+            tint={colors.tint}
+            textColor={colors.text}
             maxLength={16}
           />
 
-          {/* ── Divider ── */}
-          <View style={s.divBlock}>
-            <View style={[s.divLine, { backgroundColor: isDark ? '#21262D' : C.slate[100] }]} />
-            <Text style={[s.divText, { color: subColor }]}>Security</Text>
-            <View style={[s.divLine, { backgroundColor: isDark ? '#21262D' : C.slate[100] }]} />
-          </View>
+          {/* Divider */}
+          <View style={[styles.divider, { backgroundColor: isDark ? '#2C2C2E' : '#EDF1F5' }]} />
 
+          {/* Password */}
           <InputField
             label="Password"
             icon="lock-closed-outline"
@@ -307,14 +365,25 @@ export default function SignUpScreen() {
             value={fields.password}
             onChangeText={set('password')}
             error={errors.password}
-            isDark={isDark} tint={tint} textColor={textColor}
+            isDark={isDark}
+            tint={colors.tint}
+            textColor={colors.text}
             right={
-              <Pressable onPress={() => setShowPassword(v => !v)} hitSlop={8} style={{ paddingRight: 4 }}>
-                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color={C.slate[400]} />
+              <Pressable
+                onPress={() => setShowPassword(v => !v)}
+                hitSlop={8}
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={18}
+                  color={isDark ? '#636366' : '#9AA6B2'}
+                />
               </Pressable>
             }
           />
 
+          {/* Confirm password */}
           <InputField
             label="Confirm password"
             icon="lock-closed-outline"
@@ -324,152 +393,207 @@ export default function SignUpScreen() {
             value={fields.confirmPassword}
             onChangeText={set('confirmPassword')}
             error={errors.confirmPassword}
-            isDark={isDark} tint={tint} textColor={textColor}
+            isDark={isDark}
+            tint={colors.tint}
+            textColor={colors.text}
             right={
-              <Pressable onPress={() => setShowConfirm(v => !v)} hitSlop={8} style={{ paddingRight: 4 }}>
-                <Ionicons name={showConfirm ? 'eye-off-outline' : 'eye-outline'} size={18} color={C.slate[400]} />
+              <Pressable
+                onPress={() => setShowConfirm(v => !v)}
+                hitSlop={8}
+                accessibilityLabel={showConfirm ? 'Hide password' : 'Show password'}
+              >
+                <Ionicons
+                  name={showConfirm ? 'eye-off-outline' : 'eye-outline'}
+                  size={18}
+                  color={isDark ? '#636366' : '#9AA6B2'}
+                />
               </Pressable>
             }
           />
 
-          {/* API error */}
-          {apiError && (
-            <View style={s.errorBanner}>
-              <View style={s.errorIcon}>
-                <Ionicons name="alert-circle" size={16} color={C.severity.critical} />
-              </View>
-              <Text style={s.errorText}>{apiError}</Text>
-            </View>
-          )}
-
           {/* Submit */}
           <Pressable
             style={({ pressed }) => [
-              s.submitBtn,
-              { backgroundColor: tint },
-              pressed && { opacity: 0.88, transform: [{ scale: 0.99 }] },
-              loading && { opacity: 0.7 },
+              styles.submitBtn,
+              { backgroundColor: colors.tint, opacity: pressed ? 0.88 : 1 },
             ]}
             onPress={handleSubmit}
-            disabled={loading}
             accessibilityRole="button"
             accessibilityLabel="Create account"
           >
-            {loading
-              ? <ActivityIndicator color={C.white} />
-              : (
-                <>
-                  <Text style={s.submitText}>Create account</Text>
-                  <View style={s.submitArrow}>
-                    <Ionicons name="arrow-forward" size={16} color={C.white} />
-                  </View>
-                </>
-              )
-            }
+            <Text style={styles.submitText}>Create account</Text>
+            <Ionicons name="arrow-forward" size={18} color="#fff" style={{ marginLeft: 8 }} />
           </Pressable>
 
           {/* Footer */}
-          <View style={s.footer}>
-            <Text style={[s.footerText, { color: subColor }]}>Already have an account?</Text>
-            <Pressable onPress={() => router.back()} hitSlop={8} accessibilityRole="link">
-              <Text style={[s.footerLink, { color: tint }]}> Log in</Text>
+          <View style={styles.footer}>
+            <Text style={[styles.footerText, { color: isDark ? '#636366' : '#9AA6B2' }]}>
+              Already have an account?
+            </Text>
+            <Pressable
+              onPress={() => router.back()}
+              accessibilityRole="link"
+              hitSlop={8}
+            >
+              <Text style={[styles.footerLink, { color: colors.tint }]}> Log in</Text>
             </Pressable>
           </View>
-
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1 },
-
-  // ── Hero ──
-  hero: {
-    paddingHorizontal: 20,
-    paddingBottom: 48,
-    gap: 16,
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
   },
-  heroTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+
+  // Hero
+  hero: {
+    paddingHorizontal: 24,
+    paddingBottom: 32,
   },
   backBtn: {
-    width: 36, height: 36, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center', justifyContent: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
   },
-  logoPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
+  heroText: {
+    gap: 6,
   },
-  logoPillText: { color: C.white, fontSize: 13, fontWeight: '700' },
-  heroText:  { gap: 6 },
-  heroTitle: { fontSize: 28, fontWeight: '800', color: C.white, letterSpacing: -0.5 },
-  heroSub:   { fontSize: 13, color: 'rgba(255,255,255,0.62)' },
-
-  // Curve
-  curve: {
-    height: 32,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    marginTop: -32,
+  heroTitle: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: -0.5,
+  },
+  heroSub: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.72)',
+    fontWeight: '400',
   },
 
   // Card
-  cardShell: { flex: 1 },
+  cardShell: {
+    flex: 1,
+  },
+  card: {
+    flex: 1,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 16,
+      },
+    }),
+  },
   scroll: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    gap: 14,
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    gap: 16,
+  },
+
+  // Role selector
+  section: {
+    gap: 10,
+    marginBottom: 4,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginLeft: 2,
+  },
+  roleTrack: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    padding: 4,
+    gap: 4,
+  },
+  roleOption: {
+    flex: 1,
+    flexDirection: 'row',
+    height: 44,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roleActive: {
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.18,
+        shadowRadius: 6,
+      },
+      android: { elevation: 3 },
+    }),
+  },
+  roleText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // Name row
+  nameRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  nameHalf: {
+    flex: 1,
   },
 
   // Divider
-  divBlock:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  divLine:   { flex: 1, height: 1 },
-  divText:   { fontSize: 11, fontWeight: '600' },
-
-  // Name row
-  nameRow: { flexDirection: 'row', gap: 12 },
-
-  // Error banner
-  errorBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: C.severity.critical + '10',
-    borderWidth: 1, borderColor: C.severity.critical + '35',
-    borderRadius: 12, padding: 12,
+  divider: {
+    height: 1,
+    marginVertical: 4,
   },
-  errorIcon: {
-    width: 30, height: 30, borderRadius: 9,
-    backgroundColor: C.severity.critical + '15',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  errorText: { flex: 1, fontSize: 13, color: C.severity.critical, fontWeight: '500' },
 
   // Submit
   submitBtn: {
-    height: 56, borderRadius: 16,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    marginTop: 4,
-    shadowColor: C.brand[900],
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35, shadowRadius: 12, elevation: 6,
+    height: 56,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0a7ea4',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.35,
+        shadowRadius: 12,
+      },
+      android: { elevation: 5 },
+    }),
   },
-  submitText:  { color: C.white, fontSize: 16, fontWeight: '700', letterSpacing: 0.2 },
-  submitArrow: {
-    position: 'absolute', right: 18,
-    width: 32, height: 32, borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center', justifyContent: 'center',
+  submitText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 
   // Footer
-  footer:     { flexDirection: 'row', justifyContent: 'center', paddingTop: 4 },
-  footerText: { fontSize: 14 },
-  footerLink: { fontSize: 14, fontWeight: '700' },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingTop: 8,
+  },
+  footerText: {
+    fontSize: 14,
+  },
+  footerLink: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
 });

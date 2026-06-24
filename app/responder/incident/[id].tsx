@@ -1,8 +1,8 @@
 /**
- * Incident detail + navigate screen (Responder role) — loads from API service.
+ * Incident detail — premium responder view
  *
- * Shows: map route placeholder, evidence count, reporter info.
- * Actions: Navigate (opens native maps), Update status, Mark resolved.
+ * Full-bleed accent header · glassmorphism cards · status stepper
+ * Actions: Navigate (native maps), Update status, Call reporter
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -30,7 +30,7 @@ import { useAuth } from '@/context/AuthContext';
 import { getIncidentDetail, updateIncidentStatus } from '@/services/api';
 import type { IncidentDetail, ResponderStatus } from '@/types';
 
-// ─── Status step definitions ──────────────────────────────────────────────────
+// ─── Status definitions ──────────────────────────────────────────────────────
 
 const STATUS_STEPS: {
   key: ResponderStatus;
@@ -59,14 +59,17 @@ const STATUS_COLORS: Record<ResponderStatus, string> = {
   resolved: colors.severity.low,
 };
 
-// ─── Update status modal ──────────────────────────────────────────────────────
+const STATUS_ICONS: Record<ResponderStatus, keyof typeof Ionicons.glyphMap> = {
+  pending:  'time-outline',
+  en_route: 'car-outline',
+  on_scene: 'location-outline',
+  resolved: 'checkmark-circle-outline',
+};
+
+// ─── Update status modal — premium ──────────────────────────────────────────
 
 function UpdateModal({
-  visible,
-  current,
-  onClose,
-  onUpdate,
-  isDark,
+  visible, current, onClose, onUpdate, isDark,
 }: {
   visible: boolean;
   current: ResponderStatus;
@@ -90,100 +93,121 @@ function UpdateModal({
     }
   }
 
-  const modalBg = isDark ? '#0D1117' : colors.white;
-  const overlay = isDark ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.45)';
+  const modalBg = isDark ? colors.dark.elevated : colors.white;
+  const overlay = isDark ? 'rgba(0,0,0,0.75)' : 'rgba(0,0,0,0.5)';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={[modalStyles.overlay, { backgroundColor: overlay }]}>
-        <View style={[modalStyles.sheet, { backgroundColor: modalBg }]}>
-          <View style={modalStyles.handle} />
-          <Text style={[modalStyles.title, isDark && { color: colors.white }]}>Update status</Text>
+      <View style={[ms.overlay, { backgroundColor: overlay }]}>
+        <View style={[ms.sheet, { backgroundColor: modalBg }]}>
+          <View style={ms.handle} />
 
-          <View style={{ gap: 10 }}>
-            {STATUS_STEPS.map(step => {
+          {/* Title row */}
+          <View style={ms.titleRow}>
+            <View style={[ms.titleIcon, { backgroundColor: colors.accent[500] + '18' }]}>
+              <Ionicons name="swap-vertical" size={18} color={colors.accent[500]} />
+            </View>
+            <View>
+              <Text style={[ms.title, isDark && { color: colors.white }]}>Update status</Text>
+              <Text style={[ms.titleSub, isDark && { color: colors.slate[500] }]}>
+                Select the current response phase
+              </Text>
+            </View>
+          </View>
+
+          {/* Steps */}
+          <View style={{ gap: 8 }}>
+            {STATUS_STEPS.map((step, idx) => {
               const stepIdx  = STATUS_ORDER.indexOf(step.key);
               const active   = selected === step.key;
               const disabled = stepIdx < currentIdx;
+              const completed = stepIdx < currentIdx;
+              const stepColor = step.key === 'resolved' ? colors.severity.low : STATUS_COLORS[step.key];
 
               return (
                 <Pressable
                   key={step.key}
                   onPress={() => !disabled && setSelected(step.key)}
-                  style={[
-                    modalStyles.stepCard,
-                    isDark && { backgroundColor: colors.slate[900] },
-                    active && { borderColor: colors.brand[500], backgroundColor: colors.brand[50] },
-                    disabled && { opacity: 0.45 },
-                  ]}
                   disabled={disabled}
+                  style={[
+                    ms.stepCard,
+                    isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
+                    active && { borderColor: stepColor, backgroundColor: stepColor + '0C' },
+                    disabled && { opacity: 0.4 },
+                  ]}
                   accessibilityRole="radio"
                   accessibilityState={{ checked: active, disabled }}
-                  accessibilityLabel={`${step.label}: ${step.description}`}
                 >
-                  <View
-                    style={[
-                      modalStyles.stepIcon,
-                      { backgroundColor: active ? colors.brand[500] + '18' : isDark ? colors.slate[900] : colors.slate[100] },
-                    ]}
-                  >
-                    <Ionicons
-                      name={step.key === 'resolved' ? 'checkmark-circle' : step.icon}
-                      size={20}
-                      color={
-                        step.key === 'resolved'
-                          ? colors.severity.low
-                          : active
-                          ? colors.brand[500]
-                          : colors.slate[400]
-                      }
-                    />
+                  {/* Step number / check */}
+                  <View style={[
+                    ms.stepNum,
+                    { backgroundColor: active ? stepColor : isDark ? colors.dark.elevated : colors.slate[100] },
+                    completed && { backgroundColor: colors.severity.low },
+                  ]}>
+                    {completed ? (
+                      <Ionicons name="checkmark" size={14} color={colors.white} />
+                    ) : (
+                      <Ionicons
+                        name={step.icon}
+                        size={16}
+                        color={active ? colors.white : isDark ? colors.slate[500] : colors.slate[400]}
+                      />
+                    )}
                   </View>
+
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={[modalStyles.stepLabel, isDark && { color: colors.white }, active && { color: colors.brand[500] }]}>
+                    <Text style={[
+                      ms.stepLabel,
+                      isDark && { color: colors.white },
+                      active && { color: stepColor },
+                    ]}>
                       {step.label}
                     </Text>
-                    <Text style={[modalStyles.stepDesc, isDark && { color: colors.slate[400] }]}>
+                    <Text style={[ms.stepDesc, isDark && { color: colors.slate[500] }]}>
                       {step.description}
                     </Text>
                   </View>
-                  {active && <Ionicons name="checkmark-circle" size={18} color={colors.brand[500]} />}
+
+                  {active && (
+                    <View style={[ms.stepCheck, { backgroundColor: stepColor }]}>
+                      <Ionicons name="checkmark" size={12} color={colors.white} />
+                    </View>
+                  )}
                 </Pressable>
               );
             })}
           </View>
 
-          <TextInput
-            style={[
-              modalStyles.notes,
-              isDark && {
-                backgroundColor: colors.slate[900],
-                borderColor: colors.slate[600] + '66',
-                color: colors.white,
-              },
-            ]}
-            placeholder="Add field notes (optional)"
-            placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
-            multiline
-            numberOfLines={3}
-            textAlignVertical="top"
-            value={notes}
-            onChangeText={setNotes}
-            accessibilityLabel="Field notes"
-          />
+          {/* Field notes */}
+          <View>
+            <Text style={[ms.notesLabel, isDark && { color: colors.slate[400] }]}>Field notes</Text>
+            <TextInput
+              style={[
+                ms.notes,
+                isDark && {
+                  backgroundColor: colors.dark.card,
+                  borderColor: colors.dark.border,
+                  color: colors.white,
+                },
+              ]}
+              placeholder="Add observations or notes (optional)"
+              placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+              value={notes}
+              onChangeText={setNotes}
+            />
+          </View>
 
-          <View style={modalStyles.actions}>
-            <Pressable
-              onPress={onClose}
-              style={modalStyles.cancelBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel"
-            >
-              <Text style={[modalStyles.cancelText, isDark && { color: colors.slate[400] }]}>Cancel</Text>
+          {/* Actions */}
+          <View style={ms.actions}>
+            <Pressable onPress={onClose} style={[ms.cancelBtn, isDark && { borderColor: colors.dark.border }]}>
+              <Text style={[ms.cancelText, isDark && { color: colors.slate[400] }]}>Cancel</Text>
             </Pressable>
             <View style={{ flex: 1 }}>
               <PrimaryButton
-                label="Update status"
+                label="Confirm update"
                 onPress={handleSubmit}
                 loading={loading}
                 disabled={selected === current}
@@ -197,59 +221,127 @@ function UpdateModal({
   );
 }
 
-const modalStyles = StyleSheet.create({
+const ms = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
   sheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    gap: 16,
-    paddingBottom: 36,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    padding: 24, gap: 18, paddingBottom: 40,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.15, shadowRadius: 24, elevation: 20,
   },
   handle: {
-    width: 36,
-    height: 4,
+    width: 36, height: 4, borderRadius: 2,
     backgroundColor: colors.slate[200],
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 4,
+    alignSelf: 'center', marginBottom: 4,
   },
-  title:    { fontSize: 18, fontWeight: '700', color: colors.slate[900] },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  titleIcon: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  title:    { fontSize: 18, fontWeight: '800', color: colors.slate[900] },
+  titleSub: { fontSize: 12, color: colors.slate[400], marginTop: 1 },
   stepCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.slate[200],
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: 14, borderRadius: 14,
+    borderWidth: 1.5, borderColor: colors.slate[200],
     backgroundColor: colors.white,
   },
-  stepIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+  stepNum: {
+    width: 38, height: 38, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
   },
-  stepLabel: { fontSize: 14, fontWeight: '600', color: colors.slate[900] },
+  stepLabel: { fontSize: 15, fontWeight: '600', color: colors.slate[900] },
   stepDesc:  { fontSize: 12, color: colors.slate[400] },
+  stepCheck: {
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  notesLabel: {
+    fontSize: 12, fontWeight: '600', color: colors.slate[500],
+    textTransform: 'uppercase', letterSpacing: 0.5,
+    marginBottom: 8,
+  },
   notes: {
-    borderWidth: 1.5,
-    borderColor: colors.slate[200],
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 14,
-    color: colors.slate[900],
-    minHeight: 80,
+    borderWidth: 1.5, borderColor: colors.slate[200],
+    borderRadius: 12, padding: 14, fontSize: 14,
+    color: colors.slate[900], minHeight: 80,
     backgroundColor: colors.white,
   },
   actions:    { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  cancelBtn:  { paddingHorizontal: 16, paddingVertical: 14 },
-  cancelText: { fontSize: 15, color: colors.slate[600], fontWeight: '500' },
+  cancelBtn: {
+    paddingHorizontal: 18, paddingVertical: 14,
+    borderRadius: 12, borderWidth: 1, borderColor: colors.slate[200],
+  },
+  cancelText: { fontSize: 15, color: colors.slate[600], fontWeight: '600' },
 });
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
+// ─── Status stepper (visual progress) ────────────────────────────────────────
+
+function StatusStepper({ current, isDark }: { current: ResponderStatus; isDark: boolean }) {
+  const currentIdx = STATUS_ORDER.indexOf(current);
+
+  return (
+    <View style={st.root}>
+      {STATUS_ORDER.map((status, idx) => {
+        const isDone    = idx < currentIdx;
+        const isCurrent = idx === currentIdx;
+        const color     = STATUS_COLORS[status];
+        const icon      = STATUS_ICONS[status];
+        const isLast    = idx === STATUS_ORDER.length - 1;
+
+        return (
+          <View key={status} style={st.stepRow}>
+            <View style={st.stepVisual}>
+              <View style={[
+                st.stepDot,
+                isDone && { backgroundColor: colors.severity.low },
+                isCurrent && { backgroundColor: color, borderColor: color + '40', borderWidth: 3 },
+                !isDone && !isCurrent && { backgroundColor: isDark ? colors.dark.border : colors.slate[200] },
+              ]}>
+                {isDone && <Ionicons name="checkmark" size={10} color={colors.white} />}
+                {isCurrent && <View style={[st.stepDotInner, { backgroundColor: colors.white }]} />}
+              </View>
+              {!isLast && (
+                <View style={[
+                  st.stepLine,
+                  isDone && { backgroundColor: colors.severity.low },
+                  !isDone && { backgroundColor: isDark ? colors.dark.border : colors.slate[200] },
+                ]} />
+              )}
+            </View>
+            <View style={st.stepText}>
+              <Text style={[
+                st.stepLabel,
+                isDone && { color: colors.severity.low },
+                isCurrent && { color, fontWeight: '700' },
+                !isDone && !isCurrent && { color: isDark ? colors.slate[600] : colors.slate[400] },
+              ]}>
+                {STATUS_LABELS[status]}
+              </Text>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+const st = StyleSheet.create({
+  root:         { gap: 0 },
+  stepRow:      { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  stepVisual:   { alignItems: 'center', width: 22 },
+  stepDot:      {
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  stepDotInner: { width: 6, height: 6, borderRadius: 3 },
+  stepLine:     { width: 2, height: 20 },
+  stepText:     { paddingBottom: 16, flex: 1 },
+  stepLabel:    { fontSize: 13, fontWeight: '500' },
+});
+
+// ─── Screen ──────────────────────────────────────────────────────────────────
 
 export default function IncidentDetailScreen() {
   const { id }     = useLocalSearchParams<{ id: string }>();
@@ -264,8 +356,8 @@ export default function IncidentDetailScreen() {
   const [error, setError]         = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
 
-  const screenBg = isDark ? '#0D1117' : colors.slate[50];
-  const cardBg   = isDark ? colors.slate[900] : colors.white;
+  const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
+  const cardBg   = isDark ? colors.dark.card : colors.white;
 
   const load = useCallback(async () => {
     try {
@@ -285,10 +377,10 @@ export default function IncidentDetailScreen() {
   function openNativeMaps() {
     if (!incident) return;
     const { latitude, longitude, address } = incident;
-    const encodedAddress = encodeURIComponent(address);
+    const encoded = encodeURIComponent(address);
     const url = Platform.select({
-      ios:     `maps:?daddr=${latitude},${longitude}&q=${encodedAddress}`,
-      android: `geo:${latitude},${longitude}?q=${encodedAddress}`,
+      ios:     `maps:?daddr=${latitude},${longitude}&q=${encoded}`,
+      android: `geo:${latitude},${longitude}?q=${encoded}`,
     });
     if (url) Linking.openURL(url);
   }
@@ -300,13 +392,13 @@ export default function IncidentDetailScreen() {
 
   async function handleStatusUpdate(newStatus: ResponderStatus, notes: string) {
     if (!incident) return;
-    await updateIncidentStatus({ incidentId: incident.id, status: newStatus, notes });
+    await updateIncidentStatus({ incidentId: incident.id, status: newStatus, notes }, token!);
     setIncident(prev => prev ? { ...prev, responderStatus: newStatus } : prev);
     setModalVisible(false);
     if (newStatus === 'resolved') {
       Alert.alert(
         'Incident resolved',
-        'The incident has been marked as resolved. Great work!',
+        'Great work! The incident has been marked as resolved.',
         [{ text: 'OK', onPress: () => router.back() }],
       );
     }
@@ -314,34 +406,42 @@ export default function IncidentDetailScreen() {
 
   const statusColor = incident ? STATUS_COLORS[incident.responderStatus] : colors.slate[400];
   const statusLabel = incident ? STATUS_LABELS[incident.responderStatus] : '';
+  const statusIcon  = incident ? STATUS_ICONS[incident.responderStatus] : 'time-outline' as const;
+  const isResolved  = incident?.responderStatus === 'resolved';
 
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
+
       {/* ── Header ── */}
-      <View style={[styles.header, { paddingTop: insets.top + 10, backgroundColor: colors.accent[700] }]}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-          hitSlop={8}
-        >
-          <Ionicons name="chevron-back" size={22} color={colors.white} />
-        </Pressable>
-        <View style={{ flex: 1, gap: 2 }}>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        {/* Background accent */}
+        <View style={[styles.headerBg, { backgroundColor: isDark ? colors.dark.surface : colors.accent[700] }]} />
+
+        <View style={styles.headerContent}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.backBtn}
+            accessibilityRole="button" accessibilityLabel="Go back" hitSlop={8}
+          >
+            <Ionicons name="chevron-back" size={20} color={colors.white} />
+          </Pressable>
+
+          <View style={{ flex: 1, gap: 3 }}>
+            {incident && (
+              <>
+                <Text style={styles.headerRef}>{incident.reference}</Text>
+                <Text style={styles.headerTitle} numberOfLines={1}>{incident.title}</Text>
+              </>
+            )}
+          </View>
+
           {incident && (
-            <>
-              <Text style={styles.headerRef}>{incident.reference}</Text>
-              <Text style={styles.headerTitle} numberOfLines={1}>{incident.title}</Text>
-            </>
+            <View style={[styles.headerStatus, { backgroundColor: statusColor + '28', borderColor: 'rgba(255,255,255,0.25)' }]}>
+              <Ionicons name={statusIcon} size={12} color={colors.white} />
+              <Text style={styles.headerStatusText}>{statusLabel}</Text>
+            </View>
           )}
         </View>
-        {incident && (
-          <View style={[styles.statusPill, { backgroundColor: statusColor + '22', borderColor: 'rgba(255,255,255,0.35)' }]}>
-            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-            <Text style={[styles.statusPillText, { color: colors.white }]}>{statusLabel}</Text>
-          </View>
-        )}
       </View>
 
       {/* Loading */}
@@ -354,10 +454,14 @@ export default function IncidentDetailScreen() {
       {/* Error */}
       {!loading && error && (
         <View style={styles.centered}>
-          <Ionicons name="cloud-offline-outline" size={40} color={colors.slate[200]} />
-          <Text style={[styles.errorText, isDark && { color: colors.slate[400] }]}>{error}</Text>
+          <View style={[styles.errorIconWrap, isDark && { backgroundColor: colors.dark.card }]}>
+            <Ionicons name="cloud-offline-outline" size={36} color={colors.slate[400]} />
+          </View>
+          <Text style={[styles.errorTitle, isDark && { color: colors.white }]}>Connection issue</Text>
+          <Text style={[styles.errorBody, isDark && { color: colors.slate[400] }]}>{error}</Text>
           <Pressable onPress={load} style={styles.retryBtn} accessibilityRole="button">
-            <Text style={styles.retryText}>Retry</Text>
+            <Ionicons name="refresh" size={15} color={colors.white} />
+            <Text style={styles.retryText}>Try again</Text>
           </Pressable>
         </View>
       )}
@@ -366,96 +470,142 @@ export default function IncidentDetailScreen() {
       {!loading && !error && incident && (
         <>
           <ScrollView
-            contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 110 }]}
+            contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 120 }]}
             showsVerticalScrollIndicator={false}
           >
-            {/* ── Severity + description ── */}
+            {/* ── Severity + description card ── */}
             <View style={[styles.card, { backgroundColor: cardBg }]}>
               <View style={styles.severityRow}>
                 <SeverityChip level={incident.severity} size="lg" />
-                <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={[styles.incidentType, isDark && { color: colors.slate[400] }]}>
-                    {incident.type}
-                  </Text>
+                <View style={{ flex: 1, gap: 4 }}>
+                  <View style={styles.typeRow}>
+                    <View style={[styles.typePill, isDark && { backgroundColor: colors.dark.elevated }]}>
+                      <Text style={[styles.typeText, isDark && { color: colors.slate[400] }]}>
+                        {incident.type}
+                      </Text>
+                    </View>
+                  </View>
                   <View style={styles.addressRow}>
-                    <Ionicons name="location-outline" size={13} color={colors.slate[400]} />
+                    <Ionicons name="location" size={13} color={colors.accent[500]} />
                     <Text style={[styles.addressText, isDark && { color: colors.slate[400] }]}>
                       {incident.address}
                     </Text>
                   </View>
                 </View>
               </View>
+
+              <View style={[styles.descDivider, isDark && { backgroundColor: colors.dark.border }]} />
+
               <Text style={[styles.description, isDark && { color: colors.slate[400] }]}>
                 {incident.description}
               </Text>
             </View>
 
-            {/* ── Map / route ── */}
+            {/* ── Response progress card ── */}
             <View style={[styles.card, { backgroundColor: cardBg }]}>
-              <View style={styles.sectionHeader}>
-                <Text style={[styles.sectionTitle, isDark && { color: colors.white }]}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.cardHeaderIcon, { backgroundColor: colors.accent[500] + '18' }]}>
+                  <Ionicons name="git-branch-outline" size={16} color={colors.accent[500]} />
+                </View>
+                <Text style={[styles.cardHeaderTitle, isDark && { color: colors.white }]}>
+                  Response progress
+                </Text>
+              </View>
+              <StatusStepper current={incident.responderStatus} isDark={isDark} />
+            </View>
+
+            {/* ── Route / navigation card ── */}
+            <View style={[styles.card, { backgroundColor: cardBg }]}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.cardHeaderIcon, { backgroundColor: colors.accent[500] + '18' }]}>
+                  <Ionicons name="navigate" size={16} color={colors.accent[500]} />
+                </View>
+                <Text style={[styles.cardHeaderTitle, isDark && { color: colors.white }]}>
                   Route to incident
                 </Text>
                 <Pressable
                   onPress={openNativeMaps}
-                  style={styles.navigateBtn}
+                  style={styles.navChipBtn}
                   accessibilityRole="button"
                   accessibilityLabel="Open navigation"
                 >
-                  <Ionicons name="navigate" size={14} color={colors.white} />
-                  <Text style={styles.navigateBtnText}>Navigate</Text>
+                  <Ionicons name="open-outline" size={12} color={colors.white} />
+                  <Text style={styles.navChipText}>Open Maps</Text>
                 </Pressable>
               </View>
-              <View style={[styles.mapBlock, isDark && { backgroundColor: colors.slate[900] }]}>
-                <View style={styles.mapRouteIcon}>
-                  <Ionicons name="car" size={28} color={colors.accent[500]} />
+
+              <View style={[styles.routeBlock, isDark && { backgroundColor: colors.dark.elevated }]}>
+                <View style={styles.routeVisual}>
+                  <View style={styles.routeStart}>
+                    <Ionicons name="car" size={20} color={colors.accent[500]} />
+                  </View>
+                  <View style={[styles.routeLine, { backgroundColor: colors.accent[500] + '40' }]} />
+                  <View style={[styles.routeEnd, { borderColor: colors.severity[incident.severity] }]}>
+                    <View style={[styles.routeEndDot, { backgroundColor: colors.severity[incident.severity] }]} />
+                  </View>
                 </View>
-                <Ionicons name="ellipsis-vertical" size={14} color={colors.accent[500]} style={{ marginVertical: 4 }} />
-                <View style={[styles.mapDestIcon, { borderColor: colors.severity[incident.severity] }]}>
-                  <View style={[styles.mapDestDot, { backgroundColor: colors.severity[incident.severity] }]} />
+                <View style={styles.routeInfo}>
+                  <Text style={[styles.routeFrom, isDark && { color: colors.slate[400] }]}>Your location</Text>
+                  <Text style={[styles.routeTo, isDark && { color: colors.white }]}>{incident.address}</Text>
                 </View>
-                <Text style={[styles.mapBlockText, isDark && { color: colors.slate[400] }]}>
-                  {incident.address}
+              </View>
+            </View>
+
+            {/* ── Evidence card ── */}
+            <View style={[styles.card, { backgroundColor: cardBg }]}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.cardHeaderIcon, { backgroundColor: colors.brand[500] + '18' }]}>
+                  <Ionicons name="images" size={16} color={colors.brand[500]} />
+                </View>
+                <Text style={[styles.cardHeaderTitle, isDark && { color: colors.white }]}>
+                  Submitted evidence
                 </Text>
-                <Text style={[styles.mapBlockHint, isDark && { color: colors.slate[600] }]}>
-                  Tap Navigate to open in Maps
+                <View style={[styles.evidenceCountPill, isDark && { backgroundColor: colors.dark.elevated }]}>
+                  <Text style={[styles.evidenceCountText, isDark && { color: colors.slate[400] }]}>
+                    {incident.evidenceCount}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={[styles.evidenceGrid, isDark && { backgroundColor: colors.dark.elevated }]}>
+                <Ionicons name="images-outline" size={28} color={colors.slate[400]} />
+                <Text style={[styles.evidenceText, isDark && { color: colors.slate[500] }]}>
+                  {incident.evidenceCount} photo{incident.evidenceCount !== 1 ? 's' : ''} attached
                 </Text>
               </View>
             </View>
 
-            {/* ── Evidence ── */}
+            {/* ── Reporter card ── */}
             <View style={[styles.card, { backgroundColor: cardBg }]}>
-              <Text style={[styles.sectionTitle, isDark && { color: colors.white }]}>
-                Submitted evidence
-              </Text>
-              <View style={[styles.evidencePlaceholder, isDark && { backgroundColor: colors.slate[900] }]}>
-                <Ionicons name="images-outline" size={32} color={colors.slate[400]} />
-                <Text style={[styles.evidenceText, isDark && { color: colors.slate[400] }]}>
-                  {incident.evidenceCount} photo{incident.evidenceCount !== 1 ? 's' : ''} submitted
+              <View style={styles.cardHeader}>
+                <View style={[styles.cardHeaderIcon, { backgroundColor: colors.brand[500] + '18' }]}>
+                  <Ionicons name="person" size={16} color={colors.brand[500]} />
+                </View>
+                <Text style={[styles.cardHeaderTitle, isDark && { color: colors.white }]}>
+                  Reporter
                 </Text>
               </View>
-            </View>
 
-            {/* ── Reporter info ── */}
-            <View style={[styles.card, { backgroundColor: cardBg }]}>
-              <Text style={[styles.sectionTitle, isDark && { color: colors.white }]}>Reporter</Text>
               <View style={styles.reporterRow}>
-                <View style={styles.reporterAvatar}>
-                  <Text style={styles.reporterAvatarText}>
+                <View style={[styles.reporterAvatar, isDark && { backgroundColor: colors.dark.elevated }]}>
+                  <Text style={[styles.reporterInitials, isDark && { color: colors.brand[300] }]}>
                     {incident.reportedBy.split(' ').map(n => n[0]).join('').slice(0, 2)}
                   </Text>
                 </View>
-                <View style={{ flex: 1, gap: 2 }}>
+                <View style={{ flex: 1, gap: 3 }}>
                   <Text style={[styles.reporterName, isDark && { color: colors.white }]}>
                     {incident.reportedBy}
                   </Text>
-                  <Text style={[styles.reporterTime, isDark && { color: colors.slate[400] }]}>
-                    Reported {incident.reportedAt}
-                  </Text>
+                  <View style={styles.reporterMeta}>
+                    <Ionicons name="time-outline" size={11} color={isDark ? colors.slate[600] : colors.slate[400]} />
+                    <Text style={[styles.reporterTime, isDark && { color: colors.slate[500] }]}>
+                      {incident.reportedAt}
+                    </Text>
+                  </View>
                 </View>
                 <Pressable
                   onPress={callReporter}
-                  style={styles.callBtn}
+                  style={[styles.callBtn, isDark && { backgroundColor: colors.dark.elevated }]}
                   accessibilityRole="button"
                   accessibilityLabel={`Call ${incident.reportedBy}`}
                 >
@@ -466,55 +616,53 @@ export default function IncidentDetailScreen() {
           </ScrollView>
 
           {/* ── Bottom action bar ── */}
-          {incident.responderStatus !== 'resolved' ? (
-            <View
-              style={[
-                styles.actionBar,
-                {
-                  paddingBottom: insets.bottom + 12,
-                  backgroundColor: isDark ? '#0D1117' : colors.white,
-                  borderTopColor: isDark ? colors.slate[900] : colors.slate[100],
-                },
-              ]}
-            >
-              <Pressable
-                onPress={openNativeMaps}
-                style={styles.navActionBtn}
-                accessibilityRole="button"
-                accessibilityLabel="Navigate to incident"
-              >
-                <Ionicons name="navigate-outline" size={20} color={colors.accent[500]} />
-                <Text style={styles.navActionText}>Navigate</Text>
-              </Pressable>
-              <View style={{ flex: 1 }}>
-                <PrimaryButton
-                  label="Update status"
-                  onPress={() => setModalVisible(true)}
-                  variant="secondary"
-                  fullWidth
-                  size="lg"
-                />
-              </View>
-            </View>
-          ) : (
-            <View
-              style={[
-                styles.actionBar,
-                {
-                  paddingBottom: insets.bottom + 12,
-                  backgroundColor: isDark ? '#0D1117' : colors.white,
-                  borderTopColor: isDark ? colors.slate[900] : colors.slate[100],
-                },
-              ]}
-            >
+          <View style={[
+            styles.actionBar,
+            {
+              paddingBottom: insets.bottom + 14,
+              backgroundColor: isDark ? colors.dark.surface : colors.white,
+              borderTopColor: isDark ? colors.dark.border : colors.slate[100],
+            },
+          ]}>
+            {isResolved ? (
               <View style={styles.resolvedBanner}>
-                <Ionicons name="checkmark-circle" size={20} color={colors.severity.low} />
-                <Text style={styles.resolvedText}>This incident has been resolved</Text>
+                <View style={styles.resolvedIcon}>
+                  <Ionicons name="checkmark-circle" size={18} color={colors.white} />
+                </View>
+                <Text style={styles.resolvedText}>Incident resolved</Text>
               </View>
-            </View>
-          )}
+            ) : (
+              <>
+                <Pressable
+                  onPress={openNativeMaps}
+                  style={[styles.navActionBtn, isDark && { borderColor: colors.dark.border }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Navigate to incident"
+                >
+                  <Ionicons name="navigate" size={18} color={colors.accent[500]} />
+                </Pressable>
+                <Pressable
+                  onPress={callReporter}
+                  style={[styles.callActionBtn, isDark && { borderColor: colors.dark.border }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Call reporter"
+                >
+                  <Ionicons name="call" size={18} color={colors.brand[500]} />
+                </Pressable>
+                <View style={{ flex: 1 }}>
+                  <PrimaryButton
+                    label="Update status"
+                    onPress={() => setModalVisible(true)}
+                    variant="secondary"
+                    fullWidth
+                    size="lg"
+                  />
+                </View>
+              </>
+            )}
+          </View>
 
-          {/* ── Update status modal ── */}
+          {/* ── Update modal ── */}
           <UpdateModal
             visible={modalVisible}
             current={incident.responderStatus}
@@ -528,166 +676,167 @@ export default function IncidentDetailScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Styles ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   root:    { flex: 1 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 32 },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    gap: 10,
+  // ── Header ──
+  header: { position: 'relative', zIndex: 10 },
+  headerBg: {
+    ...StyleSheet.absoluteFillObject,
+    borderBottomLeftRadius: 24, borderBottomRightRadius: 24,
+  },
+  headerContent: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingBottom: 20, gap: 10,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38, height: 38, borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
   },
-  headerRef:   { fontSize: 11, color: 'rgba(255,255,255,0.65)', fontWeight: '500' },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: colors.white },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+  headerRef:    { fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: '600', letterSpacing: 0.3 },
+  headerTitle:  { fontSize: 17, fontWeight: '800', color: colors.white },
+  headerStatus: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: 1, borderRadius: 20,
+    paddingHorizontal: 10, paddingVertical: 5,
   },
-  statusDot:      { width: 6, height: 6, borderRadius: 3 },
-  statusPillText: { fontSize: 11, fontWeight: '600' },
+  headerStatusText: { fontSize: 11, fontWeight: '700', color: colors.white },
 
-  scroll: { padding: 16, gap: 12 },
+  // ── Scroll ──
+  scroll: { padding: 16, gap: 14, paddingTop: 14 },
 
+  // ── Card ──
   card: {
-    borderRadius: 12,
-    padding: 16,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    borderRadius: 18, padding: 18, gap: 14,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
   },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  sectionTitle:  { fontSize: 14, fontWeight: '700', color: colors.slate[900] },
-  navigateBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: colors.accent[500],
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  cardHeaderIcon: {
+    width: 32, height: 32, borderRadius: 9,
+    alignItems: 'center', justifyContent: 'center',
   },
-  navigateBtnText: { fontSize: 12, color: colors.white, fontWeight: '600' },
+  cardHeaderTitle: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.slate[900] },
 
-  severityRow:  { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
-  incidentType: { fontSize: 13, color: colors.slate[400], fontWeight: '500' },
-  addressRow:   { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  addressText:  { fontSize: 13, color: colors.slate[600], flex: 1 },
-  description:  { fontSize: 13, color: colors.slate[600], lineHeight: 20 },
-
-  mapBlock: {
-    height: 160,
-    borderRadius: 10,
-    backgroundColor: '#D6E8F5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  mapRouteIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.accent[100],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mapDestIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.white,
-  },
-  mapDestDot:   { width: 12, height: 12, borderRadius: 6 },
-  mapBlockText: { fontSize: 12, color: colors.slate[600], fontWeight: '500', marginTop: 4 },
-  mapBlockHint: { fontSize: 10, color: colors.slate[400] },
-
-  evidencePlaceholder: {
-    height: 100,
-    borderRadius: 10,
+  // Severity row
+  severityRow: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
+  typeRow:     { flexDirection: 'row' },
+  typePill: {
     backgroundColor: colors.slate[100],
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
+    paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8,
   },
-  evidenceText: { fontSize: 13, color: colors.slate[600] },
+  typeText:    { fontSize: 12, fontWeight: '600', color: colors.slate[500] },
+  addressRow:  { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  addressText: { fontSize: 13, color: colors.slate[500], flex: 1 },
+  descDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.slate[100] },
+  description: { fontSize: 13, color: colors.slate[600], lineHeight: 21 },
 
-  reporterRow:        { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  reporterAvatar:     {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: colors.brand[100],
-    alignItems: 'center',
-    justifyContent: 'center',
+  // Route block
+  navChipBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: colors.accent[500],
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
   },
-  reporterAvatarText: { fontSize: 14, fontWeight: '700', color: colors.brand[700] },
-  reporterName:       { fontSize: 15, fontWeight: '600', color: colors.slate[900] },
-  reporterTime:       { fontSize: 12, color: colors.slate[400] },
-  callBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  navChipText: { fontSize: 11, color: colors.white, fontWeight: '700' },
+  routeBlock: {
+    borderRadius: 14, padding: 16,
+    backgroundColor: '#EAF4FC',
+    flexDirection: 'row', gap: 14, alignItems: 'center',
+  },
+  routeVisual: { alignItems: 'center', gap: 4 },
+  routeStart: {
+    width: 40, height: 40, borderRadius: 12,
     backgroundColor: colors.accent[100],
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  routeLine: { width: 2, height: 16, borderRadius: 1 },
+  routeEnd: {
+    width: 28, height: 28, borderRadius: 14,
+    borderWidth: 2, backgroundColor: colors.white,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  routeEndDot: { width: 12, height: 12, borderRadius: 6 },
+  routeInfo: { flex: 1, gap: 4 },
+  routeFrom: { fontSize: 11, color: colors.slate[400], fontWeight: '500' },
+  routeTo:   { fontSize: 14, fontWeight: '600', color: colors.slate[900], lineHeight: 20 },
+
+  // Evidence
+  evidenceCountPill: {
+    backgroundColor: colors.slate[100],
+    paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10,
+  },
+  evidenceCountText: { fontSize: 12, fontWeight: '700', color: colors.slate[500] },
+  evidenceGrid: {
+    height: 100, borderRadius: 14,
+    backgroundColor: colors.slate[50],
+    alignItems: 'center', justifyContent: 'center', gap: 8,
+  },
+  evidenceText: { fontSize: 13, color: colors.slate[500], fontWeight: '500' },
+
+  // Reporter
+  reporterRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  reporterAvatar: {
+    width: 46, height: 46, borderRadius: 14,
+    backgroundColor: colors.brand[100],
+    alignItems: 'center', justifyContent: 'center',
+  },
+  reporterInitials: { fontSize: 16, fontWeight: '800', color: colors.brand[700] },
+  reporterName: { fontSize: 15, fontWeight: '700', color: colors.slate[900] },
+  reporterMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  reporterTime: { fontSize: 12, color: colors.slate[400] },
+  callBtn: {
+    width: 44, height: 44, borderRadius: 14,
+    backgroundColor: colors.accent[100],
+    alignItems: 'center', justifyContent: 'center',
   },
 
+  // Action bar
   actionBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingTop: 14,
     borderTopWidth: 1,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08, shadowRadius: 12, elevation: 8,
   },
   navActionBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: colors.accent[500],
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
+    width: 52, height: 52, borderRadius: 14,
+    borderWidth: 1.5, borderColor: colors.accent[500],
+    alignItems: 'center', justifyContent: 'center',
   },
-  navActionText: { fontSize: 9, color: colors.accent[500], fontWeight: '600' },
+  callActionBtn: {
+    width: 52, height: 52, borderRadius: 14,
+    borderWidth: 1.5, borderColor: colors.brand[500],
+    alignItems: 'center', justifyContent: 'center',
+  },
   resolvedBanner: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 10, paddingVertical: 14,
   },
-  resolvedText: { fontSize: 15, color: colors.severity.low, fontWeight: '600' },
+  resolvedIcon: {
+    width: 30, height: 30, borderRadius: 10,
+    backgroundColor: colors.severity.low,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  resolvedText: { fontSize: 16, color: colors.severity.low, fontWeight: '700' },
 
-  errorText: { fontSize: 14, color: colors.slate[600], textAlign: 'center' },
-  retryBtn:  { backgroundColor: colors.accent[500], paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 },
-  retryText: { color: colors.white, fontWeight: '600', fontSize: 14 },
+  // Error
+  errorIconWrap: {
+    width: 72, height: 72, borderRadius: 20,
+    backgroundColor: colors.slate[100],
+    alignItems: 'center', justifyContent: 'center',
+  },
+  errorTitle: { fontSize: 17, fontWeight: '700', color: colors.slate[900] },
+  errorBody:  { fontSize: 13, color: colors.slate[500], textAlign: 'center', lineHeight: 20 },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.accent[500],
+    paddingHorizontal: 20, paddingVertical: 11, borderRadius: 12, marginTop: 4,
+  },
+  retryText: { color: colors.white, fontWeight: '700', fontSize: 14 },
 });

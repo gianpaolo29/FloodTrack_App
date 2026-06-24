@@ -87,6 +87,21 @@ export default function ResponderTabLayout() {
       />
 
       <Tabs.Screen
+        name="map"
+        options={{
+          title: 'Map',
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon
+              name={focused ? 'map' : 'map-outline'}
+              color={color}
+              size={size}
+              focused={focused}
+            />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
         name="alerts"
         options={{
           title: 'Alerts',
