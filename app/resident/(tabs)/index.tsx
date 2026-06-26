@@ -27,7 +27,7 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import MapView, {
-  Heatmap,
+  Circle,
   Marker,
   PROVIDER_GOOGLE,
   type MapType,
@@ -98,11 +98,14 @@ const HAZARD_FILTERS: { key: HazardType; label: string; icon: keyof typeof Ionic
 
 // ─── Map type definitions ─────────────────────────────────────────────────────
 
-const MAP_TYPES: { key: MapType; label: string; icon: keyof typeof Ionicons.glyphMap; desc: string }[] = [
-  { key: 'standard',  label: 'Default',   icon: 'map-outline',   desc: 'Road map'           },
-  { key: 'satellite', label: 'Satellite', icon: 'planet-outline', desc: 'Aerial imagery'    },
+type MapTypeKey = MapType | 'flood';
+
+const MAP_TYPES: { key: MapTypeKey; label: string; icon: keyof typeof Ionicons.glyphMap; desc: string }[] = [
+  { key: 'standard',  label: 'Default',   icon: 'map-outline',    desc: 'Road map'           },
+  { key: 'satellite', label: 'Satellite', icon: 'planet-outline', desc: 'Aerial imagery'     },
   { key: 'hybrid',    label: 'Hybrid',    icon: 'globe-outline',  desc: 'Satellite + labels' },
-  { key: 'terrain',   label: 'Terrain',   icon: 'layers-outline', desc: 'Topographic'       },
+  { key: 'terrain',   label: 'Terrain',   icon: 'layers-outline', desc: 'Topographic'        },
+  { key: 'flood',     label: 'Flood',     icon: 'water',          desc: 'Severity heatmap'   },
 ];
 
 // ─── Severity weights ─────────────────────────────────────────────────────────
@@ -111,13 +114,21 @@ const SEVERITY_WEIGHT: Record<Severity, number> = {
   low: 1, moderate: 3, high: 6, critical: 10,
 };
 
+// Flood overlay dot colors & radii per severity
+const FLOOD_DOT: Record<Severity, { fill: string; stroke: string; radius: number }> = {
+  low:      { fill: 'rgba(34,197,94,0.25)',  stroke: 'rgba(34,197,94,0.6)',  radius: 10 },
+  moderate: { fill: 'rgba(250,204,21,0.25)', stroke: 'rgba(250,204,21,0.6)', radius: 14 },
+  high:     { fill: 'rgba(249,115,22,0.30)', stroke: 'rgba(249,115,22,0.7)', radius: 18 },
+  critical: { fill: 'rgba(239,68,68,0.30)',  stroke: 'rgba(239,68,68,0.7)',  radius: 22 },
+};
+
 // ─── Flood depth estimates per severity ──────────────────────────────────────
 
 const FLOOD_DEPTH: Record<Severity, string> = {
-  low:      '< 30 cm (ankle-deep)',
-  moderate: '30–60 cm (knee-deep)',
-  high:     '60–120 cm (waist-deep)',
-  critical: '> 120 cm — dangerous',
+  low:      '~ 1 ft (ankle-deep)',
+  moderate: '~ 1.5–2 ft (knee-deep)',
+  high:     '~ 3 ft (waist-deep)',
+  critical: '> 4 ft — dangerous',
 };
 
 // ─── API → local report adapter ───────────────────────────────────────────────
@@ -378,8 +389,8 @@ function MapTypeModal({
   isDark,
 }: {
   visible: boolean;
-  current: MapType;
-  onSelect: (t: MapType) => void;
+  current: MapTypeKey;
+  onSelect: (t: MapTypeKey) => void;
   onClose: () => void;
   isDark: boolean;
 }) {
@@ -443,8 +454,8 @@ const mtm = StyleSheet.create({
     alignSelf: 'center', marginBottom: 16,
   },
   heading: { fontSize: 17, fontWeight: '700', marginBottom: 16, letterSpacing: -0.2 },
-  grid:    { flexDirection: 'row', gap: 10 },
-  tile:    { flex: 1, borderRadius: 14, padding: 12, alignItems: 'center', gap: 8 },
+  grid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  tile:    { width: '22%', flexGrow: 1, borderRadius: 14, padding: 12, alignItems: 'center', gap: 8 },
   tileIcon: {
     width: 46, height: 46, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
@@ -818,7 +829,7 @@ export default function MapScreen() {
 
   const [reports,            setReports]            = useState<Report[]>([]);
   const [filter,             setFilter]             = useState<HazardType>('all');
-  const [mapType,            setMapType]            = useState<MapType>('standard');
+  const [mapTypeKey,         setMapTypeKey]          = useState<MapTypeKey>('standard');
   const [selected,           setSelected]           = useState<Report | null>(null);
   const [selectedEvac,       setSelectedEvac]       = useState<EvacCenter | null>(null);
   const [layersVisible,      setLayersVisible]      = useState(false);
@@ -829,8 +840,9 @@ export default function MapScreen() {
   const [userLocation,       setUserLocation]       = useState<{ latitude: number; longitude: number } | null>(null);
   const [photoUrls,          setPhotoUrls]          = useState<string[]>([]);
   const [photosLoading,      setPhotosLoading]      = useState(false);
-  const [sosVisible,         setSOSVisible]         = useState(false);
   const [advisoryDismissed,  setAdvisoryDismissed]  = useState(false);
+  const showFloodHeatmap = mapTypeKey === 'flood';
+  const mapType: MapType = mapTypeKey === 'flood' ? 'standard' : mapTypeKey;
 
   useEffect(() => {
     if (!token) return;
@@ -842,11 +854,6 @@ export default function MapScreen() {
   const filtered = filter === 'all'
     ? reports
     : reports.filter(r => r.hazardType === filter);
-
-  const heatmapPoints = reports.map(r => ({
-    latitude: r.latitude, longitude: r.longitude,
-    weight: SEVERITY_WEIGHT[r.severity],
-  }));
 
   function handleMarkerPress(report: Report) {
     setSelected(report);
@@ -962,18 +969,20 @@ export default function MapScreen() {
         showsScale={false}
         onPress={() => { setSelected(null); setSelectedEvac(null); setPhotoUrls([]); }}
       >
-        {heatmapPoints.length > 0 && (
-          <Heatmap
-            points={heatmapPoints}
-            radius={40}
-            opacity={mapType === 'satellite' || mapType === 'hybrid' ? 0.5 : 0.65}
-            gradient={{
-              colors: colors.heatmap,
-              startPoints: [0, 0.25, 0.5, 0.75, 1],
-              colorMapSize: 256,
-            }}
-          />
-        )}
+        {showFloodHeatmap && reports.map(r => {
+          const dot = FLOOD_DOT[r.severity];
+          return (
+            <Circle
+              key={`flood-${r.id}`}
+              center={{ latitude: r.latitude, longitude: r.longitude }}
+              radius={dot.radius}
+              fillColor={dot.fill}
+              strokeColor={dot.stroke}
+              strokeWidth={1.5}
+              zIndex={SEVERITY_WEIGHT[r.severity]}
+            />
+          );
+        })}
 
         {filtered.map(report => (
           <Marker
@@ -1222,7 +1231,7 @@ export default function MapScreen() {
             <Ionicons
               name="layers-outline"
               size={22}
-              color={mapType !== 'standard' ? colors.brand[500] : (isDark ? colors.slate[300] : colors.slate[700])}
+              color={mapTypeKey !== 'standard' ? colors.brand[500] : (isDark ? colors.slate[300] : colors.slate[700])}
             />
           </Pressable>
 
@@ -1294,58 +1303,11 @@ export default function MapScreen() {
         );
       })()}
 
-      {/* ── SOS button ── */}
-      {!selected && !selectedEvac && (
-        <Pressable
-          style={({ pressed }) => [s.sosBtn, { bottom: tabClear + 14, left: 12 }, pressed && { opacity: 0.85 }]}
-          onPress={() => setSOSVisible(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Emergency SOS"
-        >
-          <Ionicons name="call" size={16} color="#fff" />
-          <Text style={s.sosBtnText}>SOS</Text>
-        </Pressable>
-      )}
-
-      {/* ── SOS modal ── */}
-      {sosVisible && (
-        <Modal transparent visible animationType="fade" onRequestClose={() => setSOSVisible(false)}>
-          <Pressable style={sosm.backdrop} onPress={() => setSOSVisible(false)} />
-          <View style={[sosm.sheet, { backgroundColor: isDark ? colors.slate[900] : colors.white }]}>
-            <View style={sosm.iconWrap}>
-              <Ionicons name="call" size={28} color="#fff" />
-            </View>
-            <Text style={[sosm.title, isDark && { color: colors.white }]}>Emergency Call</Text>
-            <Text style={[sosm.sub, isDark && { color: colors.slate[400] }]}>
-              Call MDRRMO Nasugbu emergency hotline?
-            </Text>
-            <View style={sosm.actions}>
-              <Pressable
-                style={[sosm.cancelBtn, isDark && { backgroundColor: colors.slate[800], borderColor: colors.slate[700] }]}
-                onPress={() => setSOSVisible(false)}
-              >
-                <Text style={[sosm.cancelText, isDark && { color: colors.slate[300] }]}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={sosm.callBtn}
-                onPress={() => {
-                  setSOSVisible(false);
-                  Linking.openURL('tel:09175093121');
-                }}
-              >
-                <Ionicons name="call" size={15} color="#fff" />
-                <Text style={sosm.callText}>Call Now</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
-      )}
-
       {/* ── Map type modal ── */}
       <MapTypeModal
         visible={layersVisible}
-        current={mapType}
-        onSelect={setMapType}
+        current={mapTypeKey}
+        onSelect={setMapTypeKey}
         onClose={() => setLayersVisible(false)}
         isDark={isDark}
       />
@@ -1469,50 +1431,5 @@ const s = StyleSheet.create({
   },
   advisoryText: { flex: 1, fontSize: 12, fontWeight: '600', color: '#fff' },
 
-  // ── SOS button ──
-  sosBtn: {
-    position: 'absolute',
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: colors.severity.critical,
-    paddingHorizontal: 14, paddingVertical: 10,
-    borderRadius: 24,
-    shadowColor: colors.severity.critical,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.45, shadowRadius: 8, elevation: 8,
-  },
-  sosBtnText: { color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: 0.5 },
 });
 
-// ─── SOS modal styles ─────────────────────────────────────────────────────────
-const sosm = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 28, paddingBottom: 44, alignItems: 'center', gap: 10,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.2, shadowRadius: 20, elevation: 20,
-  },
-  iconWrap: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: colors.severity.critical,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 4,
-  },
-  title: { fontSize: 20, fontWeight: '800', color: colors.slate[900] },
-  sub:   { fontSize: 14, color: colors.slate[500], textAlign: 'center', lineHeight: 20 },
-  actions: { flexDirection: 'row', gap: 12, marginTop: 8, width: '100%' },
-  cancelBtn: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 14, borderRadius: 14,
-    borderWidth: 1, borderColor: colors.slate[200],
-  },
-  cancelText: { fontSize: 15, fontWeight: '600', color: colors.slate[600] },
-  callBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 7, paddingVertical: 14, borderRadius: 14,
-    backgroundColor: colors.severity.critical,
-  },
-  callText: { fontSize: 15, fontWeight: '700', color: '#fff' },
-});
