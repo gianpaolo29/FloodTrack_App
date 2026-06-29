@@ -80,6 +80,7 @@ interface RawAlert {
   body: string;
   type: 'advisory' | 'update' | 'critical';
   is_critical: boolean;
+  read?: boolean;
   area?: string | null;
   address?: string | null;
   report_id?: number | null;
@@ -206,7 +207,7 @@ function adaptAlert(raw: RawAlert): AlertItem {
     body:     raw.body,
     area:     raw.area || raw.address || '',
     time:     formatRelativeTime(raw.created_at),
-    read:     false,
+    read:     raw.read ?? false,
     reportId: raw.report_id ? String(raw.report_id) : undefined,
   };
 }
@@ -400,37 +401,19 @@ export async function getAlerts(token: string): Promise<AlertItem[]> {
   return data.map(adaptAlert);
 }
 
-// ─── Alert read tracking (client-side via Storage) ──────────────────────────
+// ─── Alert read tracking (database-backed) ─────────────────────────────────
 
-const READ_ALERTS_KEY = 'ft_read_alerts';
-
-async function getReadAlertIds(): Promise<Set<string>> {
-  const json = await Storage.getItem(READ_ALERTS_KEY);
-  if (!json) return new Set();
-  try { return new Set(JSON.parse(json) as string[]); } catch { return new Set(); }
+export async function markAlertRead(id: string, token: string): Promise<void> {
+  await post(`/alerts/${id}/read`, {}, token);
 }
 
-async function saveReadAlertIds(ids: Set<string>): Promise<void> {
-  await Storage.setItem(READ_ALERTS_KEY, JSON.stringify([...ids]));
+export async function markAllAlertsRead(_alertIds: string[], token: string): Promise<void> {
+  await post('/alerts/read-all', {}, token);
 }
 
-export async function markAlertRead(id: string): Promise<void> {
-  const ids = await getReadAlertIds();
-  ids.add(id);
-  await saveReadAlertIds(ids);
-}
-
-export async function markAllAlertsRead(alertIds: string[]): Promise<void> {
-  const ids = await getReadAlertIds();
-  alertIds.forEach(id => ids.add(id));
-  await saveReadAlertIds(ids);
-}
-
-/** Fetch alerts and merge client-side read state. */
+/** Fetch alerts — read state is now included from the server. */
 export async function getAlertsWithReadState(token: string): Promise<AlertItem[]> {
-  const alerts = await getAlerts(token);
-  const readIds = await getReadAlertIds();
-  return alerts.map(a => ({ ...a, read: readIds.has(a.id) }));
+  return getAlerts(token);
 }
 
 // ─── Profile ─────────────────────────────────────────────────────────────────

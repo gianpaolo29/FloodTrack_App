@@ -315,7 +315,7 @@ export default function AlertsScreen() {
 
   async function handleAlertPress(alert: AlertItem) {
     if (!alert.read) {
-      await markAlertRead(alert.id);
+      await markAlertRead(alert.id, token!);
       setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, read: true } : a));
     }
     if (alert.reportId) {
@@ -332,7 +332,7 @@ export default function AlertsScreen() {
   async function handleMarkAllRead() {
     try {
       const allIds = alerts.map(a => a.id);
-      await markAllAlertsRead(allIds);
+      await markAllAlertsRead(allIds, token!);
       setAlerts(prev => prev.map(a => ({ ...a, read: true })));
     } catch {}
   }
