@@ -51,6 +51,7 @@ function RootLayoutInner() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AuthGuard />
       <Stack>
+        <Stack.Screen name="index"     options={{ headerShown: false }} />
         <Stack.Screen name="login"     options={{ headerShown: false }} />
         <Stack.Screen name="signup"    options={{ headerShown: false }} />
         <Stack.Screen name="resident"  options={{ headerShown: false }} />

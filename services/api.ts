@@ -10,6 +10,7 @@
  */
 import type {
   AlertItem,
+  ChangePasswordPayload,
   Incident,
   IncidentDetail,
   LoginPayload,
@@ -21,9 +22,11 @@ import type {
   ResponderUpdate,
   StatusUpdatePayload,
   TimelineEvent,
+  UpdateProfilePayload,
   User,
   UserRole,
 } from '@/types';
+import * as Storage from '@/utils/storage';
 
 const BASE_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'https://api.floodtrack.ph/api').replace(/\/$/, '');
 
@@ -77,6 +80,9 @@ interface RawAlert {
   body: string;
   type: 'advisory' | 'update' | 'critical';
   is_critical: boolean;
+  area?: string | null;
+  address?: string | null;
+  report_id?: number | null;
   expires_at: string | null;
   created_at: string;
 }
@@ -194,13 +200,14 @@ function adaptAlert(raw: RawAlert): AlertItem {
     update:   'status_update',
   };
   return {
-    id:   String(raw.id),
-    kind: kindMap[raw.type] ?? 'advisory',
-    title: raw.title,
-    body:  raw.body,
-    area:  '',
-    time:  formatRelativeTime(raw.created_at),
-    read:  false,
+    id:       String(raw.id),
+    kind:     kindMap[raw.type] ?? 'advisory',
+    title:    raw.title,
+    body:     raw.body,
+    area:     raw.area || raw.address || '',
+    time:     formatRelativeTime(raw.created_at),
+    read:     false,
+    reportId: raw.report_id ? String(raw.report_id) : undefined,
   };
 }
 
@@ -330,7 +337,7 @@ export async function apiRegister(
     email:           payload.email,
     password:        payload.password,
     password_confirmation: payload.password,
-    role:            payload.role.toLowerCase(),
+    role:            'resident',
     contact_number:  payload.contact,
   });
   return { token: data.token, user: adaptUser(data.user) };
@@ -393,10 +400,55 @@ export async function getAlerts(token: string): Promise<AlertItem[]> {
   return data.map(adaptAlert);
 }
 
-/** Read-state is managed client-side — the API has no per-user read tracking. */
-export async function markAlertRead(_id: string, _token: string): Promise<void> {}
+// ─── Alert read tracking (client-side via Storage) ──────────────────────────
 
-export async function markAllAlertsRead(_token: string): Promise<void> {}
+const READ_ALERTS_KEY = 'ft_read_alerts';
+
+async function getReadAlertIds(): Promise<Set<string>> {
+  const json = await Storage.getItem(READ_ALERTS_KEY);
+  if (!json) return new Set();
+  try { return new Set(JSON.parse(json) as string[]); } catch { return new Set(); }
+}
+
+async function saveReadAlertIds(ids: Set<string>): Promise<void> {
+  await Storage.setItem(READ_ALERTS_KEY, JSON.stringify([...ids]));
+}
+
+export async function markAlertRead(id: string): Promise<void> {
+  const ids = await getReadAlertIds();
+  ids.add(id);
+  await saveReadAlertIds(ids);
+}
+
+export async function markAllAlertsRead(alertIds: string[]): Promise<void> {
+  const ids = await getReadAlertIds();
+  alertIds.forEach(id => ids.add(id));
+  await saveReadAlertIds(ids);
+}
+
+/** Fetch alerts and merge client-side read state. */
+export async function getAlertsWithReadState(token: string): Promise<AlertItem[]> {
+  const alerts = await getAlerts(token);
+  const readIds = await getReadAlertIds();
+  return alerts.map(a => ({ ...a, read: readIds.has(a.id) }));
+}
+
+// ─── Profile ─────────────────────────────────────────────────────────────────
+
+export async function updateProfile(
+  payload: UpdateProfilePayload,
+  token: string,
+): Promise<User> {
+  const raw = await patch<RawUser>('/user/profile', payload, token);
+  return adaptUser(raw);
+}
+
+export async function changePassword(
+  payload: ChangePasswordPayload,
+  token: string,
+): Promise<void> {
+  await post('/user/password', payload, token);
+}
 
 // ─── Responder ────────────────────────────────────────────────────────────────
 

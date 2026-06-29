@@ -15,11 +15,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getAlerts, markAllAlertsRead } from '@/services/api';
+import { getAlertsWithReadState, markAlertRead, markAllAlertsRead } from '@/services/api';
 import type { AlertItem } from '@/types';
 
 // ─── Animated unread pulse dot ────────────────────────────────────────────────
@@ -205,6 +206,7 @@ export default function AlertsScreen() {
   const scheme    = useColorScheme();
   const isDark    = scheme === 'dark';
   const { token } = useAuth();
+  const router    = useRouter();
 
   const [alerts, setAlerts]         = useState<AlertItem[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -215,7 +217,7 @@ export default function AlertsScreen() {
     try {
       if (!isRefresh) setLoading(true);
       setError(null);
-      const data = await getAlerts(token!);
+      const data = await getAlertsWithReadState(token!);
       setAlerts(data);
     } catch {
       setError('Could not load alerts. Pull down to retry.');
@@ -227,9 +229,20 @@ export default function AlertsScreen() {
 
   useEffect(() => { load(); }, [load]);
 
+  async function handleAlertPress(alert: AlertItem) {
+    if (!alert.read) {
+      await markAlertRead(alert.id);
+      setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, read: true } : a));
+    }
+    if (alert.reportId) {
+      router.push(`/responder/incident/${alert.reportId}`);
+    }
+  }
+
   async function handleMarkAllRead() {
     try {
-      await markAllAlertsRead(token!);
+      const allIds = alerts.map(a => a.id);
+      await markAllAlertsRead(allIds);
       setAlerts(prev => prev.map(a => ({ ...a, read: true })));
     } catch {
       // silent — dots persist until next load
@@ -344,7 +357,7 @@ export default function AlertsScreen() {
                 isDark={isDark}
               />
               {criticals.map(a => (
-                <AlertCard key={a.id} alert={a} isDark={isDark} onPress={() => {}} />
+                <AlertCard key={a.id} alert={a} isDark={isDark} onPress={() => handleAlertPress(a)} />
               ))}
             </View>
           )}
@@ -360,7 +373,7 @@ export default function AlertsScreen() {
                 isDark={isDark}
               />
               {nonCriticals.map(a => (
-                <AlertCard key={a.id} alert={a} isDark={isDark} onPress={() => {}} />
+                <AlertCard key={a.id} alert={a} isDark={isDark} onPress={() => handleAlertPress(a)} />
               ))}
             </View>
           )}

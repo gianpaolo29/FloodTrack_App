@@ -30,7 +30,18 @@ export interface RegisterPayload {
   email: string;
   contact: string;
   password: string;
-  role: UserRole;
+  role?: string;
+}
+
+export interface UpdateProfilePayload {
+  name?: string;
+  contact_number?: string;
+}
+
+export interface ChangePasswordPayload {
+  current_password: string;
+  password: string;
+  password_confirmation: string;
 }
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
@@ -46,6 +57,8 @@ export interface Report {
   latitude: number;
   longitude: number;
   reportedAt: string;
+  thumbnailUrl?: string;
+  mediaCount: number;
 }
 
 export interface TimelineEvent {

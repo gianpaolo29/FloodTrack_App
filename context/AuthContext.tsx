@@ -9,7 +9,7 @@
  *   const { user, token, login, register, logout, isLoading } = useAuth();
  */
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import * as SecureStore from 'expo-secure-store';
+import * as Storage from '@/utils/storage';
 
 import { apiLogin, apiLogout, apiRegister } from '@/services/api';
 import type { LoginPayload, RegisterPayload, User } from '@/types';
@@ -47,8 +47,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const [storedToken, storedUser] = await Promise.all([
-          SecureStore.getItemAsync(TOKEN_KEY),
-          SecureStore.getItemAsync(USER_KEY),
+          Storage.getItem(TOKEN_KEY),
+          Storage.getItem(USER_KEY),
         ]);
         if (storedToken && storedUser) {
           setToken(storedToken);
@@ -56,8 +56,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         // Corrupted store — start fresh
-        await SecureStore.deleteItemAsync(TOKEN_KEY);
-        await SecureStore.deleteItemAsync(USER_KEY);
+        await Storage.deleteItem(TOKEN_KEY);
+        await Storage.deleteItem(USER_KEY);
       } finally {
         setIsLoading(false);
       }
@@ -77,8 +77,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function logout() {
     if (token) await apiLogout(token);
     await Promise.all([
-      SecureStore.deleteItemAsync(TOKEN_KEY),
-      SecureStore.deleteItemAsync(USER_KEY),
+      Storage.deleteItem(TOKEN_KEY),
+      Storage.deleteItem(USER_KEY),
     ]);
     setToken(null);
     setUser(null);
@@ -86,8 +86,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function persist(t: string, u: User) {
     await Promise.all([
-      SecureStore.setItemAsync(TOKEN_KEY, t),
-      SecureStore.setItemAsync(USER_KEY, JSON.stringify(u)),
+      Storage.setItem(TOKEN_KEY, t),
+      Storage.setItem(USER_KEY, JSON.stringify(u)),
     ]);
     setToken(t);
     setUser(u);

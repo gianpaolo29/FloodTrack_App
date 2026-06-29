@@ -1,9 +1,9 @@
 /**
- * Login screen — premium animated redesign
+ * Login screen — premium sleek design
  *
- * Flow: Splash animation (logo reveal + tagline) → login form slides up
- * Features: Animated water ripple, staggered field entries, interactive focus
- * states, password toggle, loading spinner, smooth transitions
+ * Tall gradient hero with glassmorphic logo badge · organic wave transition
+ * Frosted inputs with glow focus · gradient CTA · Google button with icon
+ * Staggered entrance animations · shimmer effects · floating particles
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -24,53 +24,17 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 
-import { colors } from '@/theme/colors';
 import { useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const HERO_H = SCREEN_H * 0.42;
 
-// ─── Animated water ripple (decorative) ─────────────────────────────────────
+// ─── Floating particle ─────────────────────────────────────────────────────
 
-function WaterRipple({ delay, size, color }: { delay: number; size: number; color: string }) {
-  const scale   = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(0.4)).current;
-
-  useEffect(() => {
-    const anim = Animated.loop(
-      Animated.sequence([
-        Animated.delay(delay),
-        Animated.parallel([
-          Animated.timing(scale,   { toValue: 1, duration: 3000, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 0, duration: 3000, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-        ]),
-        Animated.parallel([
-          Animated.timing(scale,   { toValue: 0, duration: 0, useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 0.4, duration: 0, useNativeDriver: true }),
-        ]),
-      ]),
-    );
-    anim.start();
-    return () => anim.stop();
-  }, [scale, opacity, delay]);
-
-  return (
-    <Animated.View
-      style={{
-        position: 'absolute',
-        width: size, height: size, borderRadius: size / 2,
-        borderWidth: 1.5, borderColor: color,
-        opacity,
-        transform: [{ scale }],
-      }}
-    />
-  );
-}
-
-// ─── Floating particle ──────────────────────────────────────────────────────
-
-function FloatingDot({ delay, x, y }: { delay: number; x: number; y: number }) {
+function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: number; size?: number }) {
   const translateY = useRef(new Animated.Value(0)).current;
   const opacity    = useRef(new Animated.Value(0)).current;
 
@@ -79,10 +43,10 @@ function FloatingDot({ delay, x, y }: { delay: number; x: number; y: number }) {
       Animated.sequence([
         Animated.delay(delay),
         Animated.parallel([
-          Animated.timing(translateY, { toValue: -40, duration: 2500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(translateY, { toValue: -50, duration: 3000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
           Animated.sequence([
-            Animated.timing(opacity, { toValue: 0.6, duration: 800, useNativeDriver: true }),
-            Animated.delay(900),
+            Animated.timing(opacity, { toValue: 0.7, duration: 800, useNativeDriver: true }),
+            Animated.delay(1400),
             Animated.timing(opacity, { toValue: 0, duration: 800, useNativeDriver: true }),
           ]),
         ]),
@@ -97,15 +61,49 @@ function FloatingDot({ delay, x, y }: { delay: number; x: number; y: number }) {
     <Animated.View
       style={{
         position: 'absolute', left: x, top: y,
-        width: 4, height: 4, borderRadius: 2,
-        backgroundColor: 'rgba(255,255,255,0.6)',
+        width: size, height: size, borderRadius: size / 2,
+        backgroundColor: 'rgba(255,255,255,0.5)',
         opacity, transform: [{ translateY }],
       }}
     />
   );
 }
 
-// ─── Screen ──────────────────────────────────────────────────────────────────
+// ─── Pulse ring ─────────────────────────────────────────────────────────────
+
+function PulseRing({ size, color, delay }: { size: number; color: string; delay: number }) {
+  const scale   = useRef(new Animated.Value(0.6)).current;
+  const opacity = useRef(new Animated.Value(0.35)).current;
+
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.parallel([
+          Animated.timing(scale,   { toValue: 1, duration: 2800, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 0, duration: 2800, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(scale,   { toValue: 0.6, duration: 0, useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 0.35, duration: 0, useNativeDriver: true }),
+        ]),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [scale, opacity, delay]);
+
+  return (
+    <Animated.View style={{
+      position: 'absolute',
+      width: size, height: size, borderRadius: size / 2,
+      borderWidth: 1.5, borderColor: color,
+      opacity, transform: [{ scale }],
+    }} />
+  );
+}
+
+// ─── Screen ─────────────────────────────────────────────────────────────────
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -114,120 +112,95 @@ export default function LoginScreen() {
   const isDark = scheme === 'dark';
   const { login } = useAuth();
 
-  // ── Splash animation values ──
+  // ── Splash ──
   const [showSplash, setShowSplash] = useState(true);
-  const splashLogoScale    = useRef(new Animated.Value(0.3)).current;
-  const splashLogoOpacity  = useRef(new Animated.Value(0)).current;
-  const splashLogoRotate   = useRef(new Animated.Value(0)).current;
-  const splashTextOpacity  = useRef(new Animated.Value(0)).current;
-  const splashTextTransY   = useRef(new Animated.Value(20)).current;
-  const splashSubOpacity   = useRef(new Animated.Value(0)).current;
-  const splashSubTransY    = useRef(new Animated.Value(15)).current;
-  const splashBgOpacity    = useRef(new Animated.Value(1)).current;
-  const splashShimmer      = useRef(new Animated.Value(0)).current;
+  const splashLogoScale   = useRef(new Animated.Value(0.3)).current;
+  const splashLogoOpacity = useRef(new Animated.Value(0)).current;
+  const splashTextOpacity = useRef(new Animated.Value(0)).current;
+  const splashTextTransY  = useRef(new Animated.Value(20)).current;
+  const splashSubOpacity  = useRef(new Animated.Value(0)).current;
+  const splashBgOpacity   = useRef(new Animated.Value(1)).current;
+  const splashShimmer     = useRef(new Animated.Value(0)).current;
 
-  // ── Login form animation values ──
+  // ── Form entrance ──
+  const heroScale     = useRef(new Animated.Value(1.05)).current;
+  const heroOpacity   = useRef(new Animated.Value(0)).current;
   const formOpacity   = useRef(new Animated.Value(0)).current;
   const formTransY    = useRef(new Animated.Value(60)).current;
-  const headerOpacity = useRef(new Animated.Value(0)).current;
-  const headerTransY  = useRef(new Animated.Value(-30)).current;
-  const field1TransX  = useRef(new Animated.Value(-40)).current;
-  const field1Opacity = useRef(new Animated.Value(0)).current;
-  const field2TransX  = useRef(new Animated.Value(-40)).current;
-  const field2Opacity = useRef(new Animated.Value(0)).current;
-  const btnScale      = useRef(new Animated.Value(0.8)).current;
+  const f1Opacity     = useRef(new Animated.Value(0)).current;
+  const f1TransX      = useRef(new Animated.Value(-30)).current;
+  const f2Opacity     = useRef(new Animated.Value(0)).current;
+  const f2TransX      = useRef(new Animated.Value(-30)).current;
   const btnOpacity    = useRef(new Animated.Value(0)).current;
+  const btnScale      = useRef(new Animated.Value(0.85)).current;
+  const gBtnOpacity   = useRef(new Animated.Value(0)).current;
+  const gBtnTransY    = useRef(new Animated.Value(15)).current;
   const footerOpacity = useRef(new Animated.Value(0)).current;
 
   // ── Form state ──
-  const [email, setEmail]         = useState('');
-  const [password, setPassword]   = useState('');
-  const [showPwd, setShowPwd]     = useState(false);
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [showPwd, setShowPwd]   = useState(false);
+  const [remember, setRemember] = useState(false);
+  const [isLoading, setIsLoading]       = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [errorMsg, setErrorMsg]         = useState('');
   const [emailFocus, setEmailFocus]     = useState(false);
   const [pwdFocus, setPwdFocus]         = useState(false);
-  const [isLoading, setIsLoading]       = useState(false);
-  const [errorMsg, setErrorMsg]         = useState('');
 
-  // Animated focus glow
+  // Focus glows (non-native driver for border color interpolation)
   const emailGlow = useRef(new Animated.Value(0)).current;
   const pwdGlow   = useRef(new Animated.Value(0)).current;
+  useEffect(() => { Animated.timing(emailGlow, { toValue: emailFocus ? 1 : 0, duration: 250, useNativeDriver: false }).start(); }, [emailFocus]);
+  useEffect(() => { Animated.timing(pwdGlow,   { toValue: pwdFocus   ? 1 : 0, duration: 250, useNativeDriver: false }).start(); }, [pwdFocus]);
 
+  // ── Splash → form ──
   useEffect(() => {
-    Animated.timing(emailGlow, {
-      toValue: emailFocus ? 1 : 0,
-      duration: 200, useNativeDriver: false,
-    }).start();
-  }, [emailFocus, emailGlow]);
-
-  useEffect(() => {
-    Animated.timing(pwdGlow, {
-      toValue: pwdFocus ? 1 : 0,
-      duration: 200, useNativeDriver: false,
-    }).start();
-  }, [pwdFocus, pwdGlow]);
-
-  // ── Run splash → form sequence ──
-  useEffect(() => {
-    // Phase 1: Splash
     Animated.sequence([
-      // Logo appears with spring
       Animated.parallel([
-        Animated.spring(splashLogoScale, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }),
+        Animated.spring(splashLogoScale, { toValue: 1, friction: 5, tension: 80, useNativeDriver: true }),
         Animated.timing(splashLogoOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
-        Animated.timing(splashLogoRotate,  { toValue: 1, duration: 800, easing: Easing.out(Easing.back(1.5)), useNativeDriver: true }),
       ]),
-      // Shimmer across logo
-      Animated.timing(splashShimmer, { toValue: 1, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      // App name fades in
+      Animated.timing(splashShimmer, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       Animated.parallel([
         Animated.timing(splashTextOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
         Animated.timing(splashTextTransY,  { toValue: 0, duration: 500, easing: Easing.out(Easing.ease), useNativeDriver: true }),
       ]),
-      // Tagline
-      Animated.parallel([
-        Animated.timing(splashSubOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-        Animated.timing(splashSubTransY,  { toValue: 0, duration: 400, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-      ]),
-      // Hold
-      Animated.delay(600),
-      // Fade out splash
-      Animated.timing(splashBgOpacity, { toValue: 0, duration: 500, useNativeDriver: true }),
+      Animated.timing(splashSubOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.delay(500),
+      Animated.timing(splashBgOpacity, { toValue: 0, duration: 450, useNativeDriver: true }),
     ]).start(() => {
       setShowSplash(false);
-      // Phase 2: Form entrance
-      Animated.stagger(100, [
-        // Header slides down
+      Animated.stagger(90, [
         Animated.parallel([
-          Animated.timing(headerOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
-          Animated.spring(headerTransY,  { toValue: 0, friction: 8, tension: 60, useNativeDriver: true }),
+          Animated.timing(heroOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+          Animated.spring(heroScale,   { toValue: 1, friction: 8, tension: 60, useNativeDriver: true }),
         ]),
-        // Form card slides up
         Animated.parallel([
-          Animated.timing(formOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+          Animated.timing(formOpacity, { toValue: 1, duration: 450, useNativeDriver: true }),
           Animated.spring(formTransY,  { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }),
         ]),
-        // Email field slides in
         Animated.parallel([
-          Animated.timing(field1Opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-          Animated.spring(field1TransX,  { toValue: 0, friction: 8, tension: 60, useNativeDriver: true }),
+          Animated.timing(f1Opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+          Animated.spring(f1TransX,  { toValue: 0, friction: 8, tension: 65, useNativeDriver: true }),
         ]),
-        // Password field slides in
         Animated.parallel([
-          Animated.timing(field2Opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-          Animated.spring(field2TransX,  { toValue: 0, friction: 8, tension: 60, useNativeDriver: true }),
+          Animated.timing(f2Opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+          Animated.spring(f2TransX,  { toValue: 0, friction: 8, tension: 65, useNativeDriver: true }),
         ]),
-        // Button pops in
         Animated.parallel([
-          Animated.spring(btnScale,  { toValue: 1, friction: 5, tension: 80, useNativeDriver: true }),
-          Animated.timing(btnOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+          Animated.timing(btnOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+          Animated.spring(btnScale,   { toValue: 1, friction: 5, tension: 80, useNativeDriver: true }),
         ]),
-        // Footer fades
+        Animated.parallel([
+          Animated.timing(gBtnOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+          Animated.spring(gBtnTransY,  { toValue: 0, friction: 8, tension: 60, useNativeDriver: true }),
+        ]),
         Animated.timing(footerOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
       ]).start();
     });
   }, []);
 
-  // ── Login handler ──
   const handleLogin = useCallback(async () => {
     if (!email.trim() || !password.trim()) {
       setErrorMsg('Please enter your email and password.');
@@ -244,199 +217,154 @@ export default function LoginScreen() {
     }
   }, [email, password, login]);
 
-  // ── Derived colors ──
-  const emailBorderColor = emailGlow.interpolate({
-    inputRange: [0, 1],
-    outputRange: [isDark ? colors.dark.border : colors.slate[200], colors.brand[500]],
-  });
-  const pwdBorderColor = pwdGlow.interpolate({
-    inputRange: [0, 1],
-    outputRange: [isDark ? colors.dark.border : colors.slate[200], colors.brand[500]],
-  });
+  const handleGoogleLogin = useCallback(async () => {
+    setErrorMsg('');
+    setIsGoogleLoading(true);
+    try {
+      // TODO: Integrate with Google OAuth
+      await new Promise(r => setTimeout(r, 1500));
+      setErrorMsg('Google sign-in is not yet configured.');
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  }, []);
 
-  const splashRotateStr = splashLogoRotate.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['-15deg', '0deg'],
-  });
-
-  const shimmerTranslateX = splashShimmer.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-100, 200],
-  });
-
-  const cardBg   = isDark ? colors.dark.surface : colors.white;
-  const screenBg = isDark ? colors.dark.bg : '#EDF2F7';
-  const fieldBg  = isDark ? colors.dark.card : '#F7F9FB';
-  const textMain = isDark ? colors.white : colors.slate[900];
-  const textSub  = isDark ? colors.slate[500] : colors.slate[400];
+  const emailValid = email.trim().length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const shimmerX = splashShimmer.interpolate({ inputRange: [0, 1], outputRange: [-120, 220] });
+  const emailBorder = emailGlow.interpolate({ inputRange: [0, 1], outputRange: ['rgba(0,0,0,0)', '#5A6FF5'] });
+  const pwdBorder   = pwdGlow.interpolate({   inputRange: [0, 1], outputRange: ['rgba(0,0,0,0)', '#5A6FF5'] });
 
   return (
-    <View style={[s.root, { backgroundColor: screenBg }]}>
+    <View style={s.root}>
       <StatusBar style="light" />
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          SPLASH ANIMATION OVERLAY
-          ══════════════════════════════════════════════════════════════════════ */}
+      {/* ═══════ SPLASH ═══════ */}
       {showSplash && (
         <Animated.View style={[s.splashOverlay, { opacity: splashBgOpacity }]}>
-          {/* Water ripple effects */}
-          <View style={s.rippleContainer}>
-            <WaterRipple delay={0}    size={200} color="rgba(255,255,255,0.12)" />
-            <WaterRipple delay={1000} size={280} color="rgba(255,255,255,0.08)" />
-            <WaterRipple delay={2000} size={360} color="rgba(255,255,255,0.05)" />
+          <LinearGradient
+            colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          {/* Pulse rings */}
+          <View style={s.pulseCenter}>
+            <PulseRing size={180} color="rgba(255,255,255,0.12)" delay={0} />
+            <PulseRing size={260} color="rgba(255,255,255,0.08)" delay={800} />
+            <PulseRing size={340} color="rgba(255,255,255,0.04)" delay={1600} />
           </View>
 
-          {/* Floating particles */}
-          <FloatingDot delay={200}  x={SCREEN_W * 0.15} y={SCREEN_H * 0.35} />
-          <FloatingDot delay={600}  x={SCREEN_W * 0.75} y={SCREEN_H * 0.4} />
-          <FloatingDot delay={1000} x={SCREEN_W * 0.3}  y={SCREEN_H * 0.55} />
-          <FloatingDot delay={1400} x={SCREEN_W * 0.65} y={SCREEN_H * 0.3} />
-          <FloatingDot delay={800}  x={SCREEN_W * 0.5}  y={SCREEN_H * 0.6} />
+          <Particle delay={100}  x={SCREEN_W * 0.12} y={SCREEN_H * 0.3} />
+          <Particle delay={500}  x={SCREEN_W * 0.8}  y={SCREEN_H * 0.35} size={3} />
+          <Particle delay={900}  x={SCREEN_W * 0.25} y={SCREEN_H * 0.58} size={5} />
+          <Particle delay={1300} x={SCREEN_W * 0.7}  y={SCREEN_H * 0.28} />
+          <Particle delay={700}  x={SCREEN_W * 0.5}  y={SCREEN_H * 0.62} size={3} />
 
-          {/* Logo icon */}
-          <Animated.View style={[
-            s.splashLogoWrap,
-            {
-              opacity: splashLogoOpacity,
-              transform: [
-                { scale: splashLogoScale },
-                { rotate: splashRotateStr },
-              ],
-            },
-          ]}>
-            <View style={s.splashLogoCircle}>
-              <Ionicons name="water" size={44} color={colors.white} />
-              {/* Shimmer overlay */}
-              <Animated.View style={[
-                s.shimmer,
-                { transform: [{ translateX: shimmerTranslateX }] },
-              ]} />
+          <Animated.View style={[s.splashLogoWrap, {
+            opacity: splashLogoOpacity,
+            transform: [{ scale: splashLogoScale }],
+          }]}>
+            <View style={s.splashLogoBadge}>
+              <Ionicons name="water" size={50} color="#fff" />
+              <Animated.View style={[s.shimmerBar, { transform: [{ translateX: shimmerX }] }]} />
             </View>
           </Animated.View>
-
-          {/* App name */}
-          <Animated.Text style={[
-            s.splashTitle,
-            {
-              opacity: splashTextOpacity,
-              transform: [{ translateY: splashTextTransY }],
-            },
-          ]}>
-            FloodTrack
+          <Animated.Text style={[s.splashTitle, {
+            opacity: splashTextOpacity,
+            transform: [{ translateY: splashTextTransY }],
+          }]}>
+            FLOODTRACK
           </Animated.Text>
-
-          {/* Tagline */}
-          <Animated.Text style={[
-            s.splashSub,
-            {
-              opacity: splashSubOpacity,
-              transform: [{ translateY: splashSubTransY }],
-            },
-          ]}>
+          <Animated.Text style={[s.splashSub, { opacity: splashSubOpacity }]}>
             Real-time flood monitoring & alerts
           </Animated.Text>
-
-          {/* Version badge */}
-          <Animated.View style={[s.splashVersion, { opacity: splashSubOpacity }]}>
+          <Animated.View style={[s.splashVersionPill, { opacity: splashSubOpacity }]}>
             <Text style={s.splashVersionText}>v1.0.0</Text>
           </Animated.View>
         </Animated.View>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          LOGIN FORM
-          ══════════════════════════════════════════════════════════════════════ */}
+      {/* ═══════ MAIN ═══════ */}
       {!showSplash && (
         <KeyboardAvoidingView
-          style={s.formContainer}
+          style={s.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          {/* ── Hero header (brand gradient area) ── */}
-          <Animated.View style={[
-            s.heroHeader,
-            {
-              paddingTop: insets.top + 16,
-              opacity: headerOpacity,
-              transform: [{ translateY: headerTransY }],
-            },
-          ]}>
-            {/* Decorative ripples */}
-            <View style={s.heroRipples}>
-              <WaterRipple delay={0}    size={120} color="rgba(255,255,255,0.08)" />
-              <WaterRipple delay={1500} size={180} color="rgba(255,255,255,0.05)" />
-            </View>
+          {/* ── Gradient hero ── */}
+          <Animated.View style={[s.heroWrap, { opacity: heroOpacity, transform: [{ scale: heroScale }] }]}>
+            <LinearGradient
+              colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[s.hero, { paddingTop: insets.top + 12 }]}
+            >
+              {/* Decorative orbs */}
+              <View style={[s.orb, s.orb1]} />
+              <View style={[s.orb, s.orb2]} />
+              <View style={[s.orb, s.orb3]} />
 
-            <View style={s.heroLogoRow}>
-              <View style={s.heroLogoCircle}>
-                <Ionicons name="water" size={24} color={colors.white} />
-              </View>
-              <View>
-                <Text style={s.heroAppName}>FloodTrack</Text>
-                <Text style={s.heroTagline}>Sign in to continue</Text>
-              </View>
-            </View>
+              {/* Floating particles */}
+              <Particle delay={200}  x={SCREEN_W * 0.1}  y={40} size={3} />
+              <Particle delay={800}  x={SCREEN_W * 0.85} y={60} size={4} />
+              <Particle delay={1200} x={SCREEN_W * 0.4}  y={30} size={3} />
 
-            {/* Wave separator */}
-            <View style={[s.waveSeparator, { backgroundColor: cardBg }]} />
+              {/* Logo badge */}
+              <View style={s.logoBadge}>
+                <View style={s.logoBadgeInner}>
+                  <Ionicons name="water" size={44} color="#fff" />
+                </View>
+                <View style={s.logoBadgeRing} />
+              </View>
+
+              <Text style={s.logoTitle}>FLOODTRACK</Text>
+              <Text style={s.logoSub}>Stay informed, stay safe</Text>
+            </LinearGradient>
+
+            {/* Wave transition */}
+            <View style={s.waveWrap}>
+              <LinearGradient
+                colors={['#6B52F5', '#7C3AED']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <View style={s.waveShape} />
+            </View>
           </Animated.View>
 
-          {/* ── Form card ── */}
-          <Animated.View style={[
-            s.formCard,
-            {
-              backgroundColor: cardBg,
-              opacity: formOpacity,
-              transform: [{ translateY: formTransY }],
-            },
-          ]}>
+          {/* ── Form area ── */}
+          <Animated.View style={[s.formArea, { opacity: formOpacity, transform: [{ translateY: formTransY }] }]}>
             <ScrollView
-              contentContainerStyle={[s.formScroll, { paddingBottom: insets.bottom + 24 }]}
+              contentContainerStyle={[s.formScroll, { paddingBottom: insets.bottom + 36 }]}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              {/* Welcome text */}
-              <View style={s.welcomeSection}>
-                <Text style={[s.welcomeTitle, { color: textMain }]}>Welcome back</Text>
-                <Text style={[s.welcomeSub, { color: textSub }]}>
-                  Enter your credentials to access your account
-                </Text>
+              {/* Title */}
+              <View style={s.titleRow}>
+                <Text style={s.titleBold}>Welcome </Text>
+                <Text style={s.titleLight}>back !</Text>
               </View>
+              <Text style={s.titleSub}>Sign in to access your dashboard</Text>
 
-              {/* Error message */}
+              {/* Error */}
               {errorMsg ? (
                 <View style={s.errorBanner}>
-                  <Ionicons name="alert-circle" size={16} color={colors.severity.critical} />
+                  <View style={s.errorDot} />
+                  <Ionicons name="alert-circle" size={15} color="#E53E3E" />
                   <Text style={s.errorText}>{errorMsg}</Text>
                 </View>
               ) : null}
 
-              {/* Email field */}
-              <Animated.View style={{
-                opacity: field1Opacity,
-                transform: [{ translateX: field1TransX }],
-              }}>
-                <Text style={[s.fieldLabel, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
-                  Email address
-                </Text>
-                <Animated.View style={[
-                  s.inputRow,
-                  { backgroundColor: fieldBg, borderColor: emailBorderColor },
-                  emailFocus && s.inputRowFocused,
-                ]}>
-                  <View style={[
-                    s.inputIcon,
-                    { backgroundColor: emailFocus ? colors.brand[500] + '18' : isDark ? colors.dark.elevated : colors.slate[100] },
-                  ]}>
-                    <Ionicons
-                      name="mail"
-                      size={16}
-                      color={emailFocus ? colors.brand[500] : isDark ? colors.slate[500] : colors.slate[400]}
-                    />
+              {/* Email */}
+              <Animated.View style={[s.fieldWrap, { opacity: f1Opacity, transform: [{ translateX: f1TransX }] }]}>
+                <Animated.View style={[s.inputRow, { borderColor: emailBorder }, emailFocus && s.inputFocused]}>
+                  <View style={[s.inputIconWrap, emailFocus && s.inputIconActive]}>
+                    <Ionicons name="mail-outline" size={18} color={emailFocus ? '#5A6FF5' : '#A0AEC0'} />
                   </View>
                   <TextInput
-                    style={[s.input, { color: textMain }]}
-                    placeholder="you@example.com"
-                    placeholderTextColor={isDark ? colors.slate[600] : colors.slate[300]}
+                    style={s.input}
+                    placeholder="Email address"
+                    placeholderTextColor="#CBD5E0"
                     autoCapitalize="none"
                     autoCorrect={false}
                     keyboardType="email-address"
@@ -446,36 +374,24 @@ export default function LoginScreen() {
                     onFocus={() => setEmailFocus(true)}
                     onBlur={() => setEmailFocus(false)}
                   />
+                  {emailValid && (
+                    <View style={s.checkBadge}>
+                      <Ionicons name="checkmark" size={14} color="#fff" />
+                    </View>
+                  )}
                 </Animated.View>
               </Animated.View>
 
-              {/* Password field */}
-              <Animated.View style={{
-                opacity: field2Opacity,
-                transform: [{ translateX: field2TransX }],
-              }}>
-                <Text style={[s.fieldLabel, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
-                  Password
-                </Text>
-                <Animated.View style={[
-                  s.inputRow,
-                  { backgroundColor: fieldBg, borderColor: pwdBorderColor },
-                  pwdFocus && s.inputRowFocused,
-                ]}>
-                  <View style={[
-                    s.inputIcon,
-                    { backgroundColor: pwdFocus ? colors.brand[500] + '18' : isDark ? colors.dark.elevated : colors.slate[100] },
-                  ]}>
-                    <Ionicons
-                      name="lock-closed"
-                      size={16}
-                      color={pwdFocus ? colors.brand[500] : isDark ? colors.slate[500] : colors.slate[400]}
-                    />
+              {/* Password */}
+              <Animated.View style={[s.fieldWrap, { opacity: f2Opacity, transform: [{ translateX: f2TransX }] }]}>
+                <Animated.View style={[s.inputRow, { borderColor: pwdBorder }, pwdFocus && s.inputFocused]}>
+                  <View style={[s.inputIconWrap, pwdFocus && s.inputIconActive]}>
+                    <Ionicons name="lock-closed-outline" size={18} color={pwdFocus ? '#5A6FF5' : '#A0AEC0'} />
                   </View>
                   <TextInput
-                    style={[s.input, { color: textMain }]}
-                    placeholder="Enter your password"
-                    placeholderTextColor={isDark ? colors.slate[600] : colors.slate[300]}
+                    style={s.input}
+                    placeholder="Password"
+                    placeholderTextColor="#CBD5E0"
                     secureTextEntry={!showPwd}
                     textContentType="password"
                     value={password}
@@ -489,74 +405,106 @@ export default function LoginScreen() {
                     hitSlop={8}
                     accessibilityLabel={showPwd ? 'Hide password' : 'Show password'}
                   >
-                    <Ionicons
-                      name={showPwd ? 'eye-off' : 'eye'}
-                      size={18}
-                      color={isDark ? colors.slate[500] : colors.slate[400]}
-                    />
+                    <Ionicons name={showPwd ? 'eye-off-outline' : 'eye-outline'} size={20} color="#A0AEC0" />
                   </Pressable>
                 </Animated.View>
-
-                {/* Forgot password */}
-                <Pressable style={s.forgotBtn} hitSlop={6}>
-                  <Text style={[s.forgotText, { color: colors.brand[500] }]}>Forgot password?</Text>
-                </Pressable>
               </Animated.View>
 
-              {/* Login button */}
-              <Animated.View style={{
-                opacity: btnOpacity,
-                transform: [{ scale: btnScale }],
-              }}>
+              {/* Options */}
+              <View style={s.optionsRow}>
                 <Pressable
-                  style={({ pressed }) => [
-                    s.loginBtn,
-                    pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
-                    isLoading && { opacity: 0.7 },
-                  ]}
-                  onPress={handleLogin}
-                  disabled={isLoading}
-                  accessibilityRole="button"
-                  accessibilityLabel="Log in"
+                  style={s.rememberRow}
+                  onPress={() => setRemember(v => !v)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: remember }}
                 >
-                  {isLoading ? (
-                    <ActivityIndicator size="small" color={colors.white} />
-                  ) : (
-                    <>
-                      <Text style={s.loginBtnText}>Sign in</Text>
-                      <View style={s.loginBtnArrow}>
-                        <Ionicons name="arrow-forward" size={16} color={colors.brand[500]} />
-                      </View>
-                    </>
-                  )}
+                  <View style={[s.checkbox, remember && s.checkboxOn]}>
+                    {remember && <Ionicons name="checkmark" size={11} color="#fff" />}
+                  </View>
+                  <Text style={s.rememberLabel}>Remember me</Text>
+                </Pressable>
+                <Pressable hitSlop={6}>
+                  <Text style={s.forgotLink}>Forgot password?</Text>
+                </Pressable>
+              </View>
+
+              {/* Login CTA */}
+              <Animated.View style={{ opacity: btnOpacity, transform: [{ scale: btnScale }] }}>
+                <Pressable
+                  onPress={handleLogin}
+                  disabled={isLoading || isGoogleLoading}
+                  accessibilityRole="button"
+                  accessibilityLabel="Login"
+                  style={({ pressed }) => [pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
+                >
+                  <LinearGradient
+                    colors={isLoading ? ['#8B9CF7', '#A78BFA'] : ['#4A6CF7', '#7C3AED']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={s.loginBtn}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <Text style={s.loginBtnText}>Sign In</Text>
+                        <View style={s.loginBtnArrow}>
+                          <Ionicons name="arrow-forward" size={16} color="#4A6CF7" />
+                        </View>
+                      </>
+                    )}
+                  </LinearGradient>
                 </Pressable>
               </Animated.View>
 
               {/* Divider */}
-              <View style={s.dividerRow}>
-                <View style={[s.dividerLine, { backgroundColor: isDark ? colors.dark.border : colors.slate[200] }]} />
-                <Text style={[s.dividerText, { color: textSub }]}>or</Text>
-                <View style={[s.dividerLine, { backgroundColor: isDark ? colors.dark.border : colors.slate[200] }]} />
-              </View>
+              <Animated.View style={[s.dividerRow, { opacity: gBtnOpacity, transform: [{ translateY: gBtnTransY }] }]}>
+                <View style={s.dividerLine} />
+                <View style={s.dividerPill}>
+                  <Text style={s.dividerText}>or continue with</Text>
+                </View>
+                <View style={s.dividerLine} />
+              </Animated.View>
 
-              {/* Sign up footer */}
-              <Animated.View style={[s.footer, { opacity: footerOpacity }]}>
-                <Text style={[s.footerText, { color: textSub }]}>
-                  Don't have an account?
-                </Text>
+              {/* Social row */}
+              <Animated.View style={[s.socialRow, { opacity: gBtnOpacity, transform: [{ translateY: gBtnTransY }] }]}>
+                {/* Google */}
                 <Pressable
-                  onPress={() => router.push('/signup')}
-                  style={({ pressed }) => [
-                    s.signupBtn,
-                    { borderColor: isDark ? colors.dark.border : colors.slate[200] },
-                    pressed && { backgroundColor: isDark ? colors.dark.card : colors.slate[50] },
-                  ]}
-                  accessibilityRole="link"
+                  style={({ pressed }) => [s.socialBtn, s.googleBtn, pressed && { transform: [{ scale: 0.97 }] }]}
+                  onPress={handleGoogleLogin}
+                  disabled={isLoading || isGoogleLoading}
+                  accessibilityLabel="Sign in with Google"
                 >
-                  <Ionicons name="person-add-outline" size={14} color={colors.brand[500]} />
-                  <Text style={[s.signupBtnText, { color: colors.brand[500] }]}>Create account</Text>
+                  {isGoogleLoading ? (
+                    <ActivityIndicator size="small" color="#4285F4" />
+                  ) : (
+                    <>
+                      <View style={s.googleIconCircle}>
+                        <Text style={s.googleG}>G</Text>
+                      </View>
+                      <Text style={s.googleBtnText}>Google</Text>
+                    </>
+                  )}
+                </Pressable>
+
+                {/* Facebook */}
+                <Pressable
+                  style={({ pressed }) => [s.socialBtn, s.fbBtn, pressed && { transform: [{ scale: 0.97 }] }]}
+                  accessibilityLabel="Sign in with Facebook"
+                >
+                  <Ionicons name="logo-facebook" size={20} color="#fff" />
+                  <Text style={s.fbBtnText}>Facebook</Text>
                 </Pressable>
               </Animated.View>
+
+              {/* Footer */}
+              <Animated.View style={[s.footer, { opacity: footerOpacity }]}>
+                <Text style={s.footerText}>Don't have an account?</Text>
+                <Pressable onPress={() => router.push('/signup')} hitSlop={8}>
+                  <Text style={s.footerLink}> Sign Up</Text>
+                </Pressable>
+              </Animated.View>
+
             </ScrollView>
           </Animated.View>
         </KeyboardAvoidingView>
@@ -565,185 +513,269 @@ export default function LoginScreen() {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// ─── Styles ─────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  root: { flex: 1 },
+  root: { flex: 1, backgroundColor: '#FAFBFE' },
+  flex: { flex: 1 },
 
-  // ── Splash ──
+  // ── Splash ──────────────────────────
   splashOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.brand[500],
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
     zIndex: 100,
   },
-  rippleContainer: {
+  pulseCenter: {
     position: 'absolute',
     alignItems: 'center', justifyContent: 'center',
-    width: 360, height: 360,
+    width: 340, height: 340,
   },
-  splashLogoWrap: { marginBottom: 20, alignItems: 'center' },
-  splashLogoCircle: {
-    width: 96, height: 96, borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+  splashLogoWrap: { marginBottom: 18, alignItems: 'center' },
+  splashLogoBadge: {
+    width: 110, height: 110, borderRadius: 32,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)',
     overflow: 'hidden',
   },
-  shimmer: {
+  shimmerBar: {
     position: 'absolute', top: 0, bottom: 0,
-    width: 60,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    width: 70,
+    backgroundColor: 'rgba(255,255,255,0.22)',
     transform: [{ skewX: '-20deg' }],
   },
   splashTitle: {
-    fontSize: 34, fontWeight: '900', color: colors.white,
-    letterSpacing: -0.5, textAlign: 'center',
+    fontSize: 30, fontWeight: '900', color: '#fff',
+    letterSpacing: 5, textAlign: 'center',
   },
   splashSub: {
-    fontSize: 14, color: 'rgba(255,255,255,0.65)',
-    textAlign: 'center', marginTop: 6,
+    fontSize: 13, color: 'rgba(255,255,255,0.6)',
+    textAlign: 'center', marginTop: 8,
   },
-  splashVersion: {
+  splashVersionPill: {
     position: 'absolute', bottom: 60,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 16, paddingVertical: 5, borderRadius: 20,
   },
-  splashVersionText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.6)' },
+  splashVersionText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.5)' },
 
-  // ── Form container ──
-  formContainer: { flex: 1 },
-
-  // ── Hero header ──
-  heroHeader: {
-    backgroundColor: colors.brand[500],
-    paddingHorizontal: 24,
-    paddingBottom: 48,
-    position: 'relative',
+  // ── Hero ────────────────────────────
+  heroWrap: {},
+  hero: {
+    height: HERO_H,
+    alignItems: 'center', justifyContent: 'center',
+    paddingBottom: 36,
     overflow: 'hidden',
   },
-  heroRipples: {
-    position: 'absolute', right: -40, top: -40,
-    width: 200, height: 200,
+  orb: {
+    position: 'absolute', borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  orb1: { width: 200, height: 200, top: -60, right: -50 },
+  orb2: { width: 140, height: 140, bottom: 10, left: -40, backgroundColor: 'rgba(255,255,255,0.04)' },
+  orb3: { width: 80,  height: 80,  top: 40,   left: SCREEN_W * 0.55, backgroundColor: 'rgba(255,255,255,0.05)' },
+
+  logoBadge: {
     alignItems: 'center', justifyContent: 'center',
+    marginBottom: 16,
   },
-  heroLogoRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    marginTop: 8,
-  },
-  heroLogoCircle: {
-    width: 48, height: 48, borderRadius: 16,
+  logoBadgeInner: {
+    width: 80, height: 80, borderRadius: 26,
     backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.3)',
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
   },
-  heroAppName: {
-    fontSize: 22, fontWeight: '900', color: colors.white,
-    letterSpacing: -0.3,
+  logoBadgeRing: {
+    position: 'absolute',
+    width: 100, height: 100, borderRadius: 50,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
   },
-  heroTagline: {
-    fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: 1,
+  logoTitle: {
+    fontSize: 24, fontWeight: '900', color: '#fff',
+    letterSpacing: 5,
   },
-  waveSeparator: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    height: 28,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+  logoSub: {
+    fontSize: 12, color: 'rgba(255,255,255,0.55)',
+    marginTop: 6, letterSpacing: 1,
   },
 
-  // ── Form card ──
-  formCard: {
-    flex: 1,
-    marginTop: -28,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+  // ── Wave ────────────────────────────
+  waveWrap: {
+    height: 55, position: 'relative', marginTop: -1,
+  },
+  waveShape: {
+    position: 'absolute', bottom: 0,
+    left: -12, right: -12,
+    height: 60,
+    backgroundColor: '#FAFBFE',
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+  },
+
+  // ── Form ────────────────────────────
+  formArea: {
+    flex: 1, backgroundColor: '#FAFBFE', marginTop: -2,
   },
   formScroll: {
-    paddingHorizontal: 24, paddingTop: 28, gap: 18,
+    paddingHorizontal: 28, paddingTop: 2,
   },
 
-  // Welcome
-  welcomeSection: { gap: 4, marginBottom: 4 },
-  welcomeTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.3 },
-  welcomeSub:   { fontSize: 14, lineHeight: 20 },
+  titleRow: {
+    flexDirection: 'row', alignItems: 'baseline',
+    marginBottom: 4,
+  },
+  titleBold: { fontSize: 30, fontWeight: '800', color: '#1A202C' },
+  titleLight: { fontSize: 30, fontWeight: '300', color: '#1A202C' },
+  titleSub: { fontSize: 14, color: '#A0AEC0', marginBottom: 24 },
 
   // Error
   errorBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: colors.severity.critical + '0E',
-    borderWidth: 1, borderColor: colors.severity.critical + '25',
-    borderRadius: 12, padding: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#FFF5F5',
+    borderWidth: 1, borderColor: '#FED7D7',
+    borderRadius: 14, padding: 14, marginBottom: 18,
   },
-  errorText: { flex: 1, fontSize: 13, color: colors.severity.critical, fontWeight: '500' },
+  errorDot: {
+    width: 4, height: 4, borderRadius: 2, backgroundColor: '#E53E3E',
+  },
+  errorText: { flex: 1, fontSize: 13, color: '#E53E3E', fontWeight: '500' },
 
   // Fields
-  fieldLabel: {
-    fontSize: 12, fontWeight: '600', textTransform: 'uppercase',
-    letterSpacing: 0.5, marginBottom: 8, marginLeft: 2,
-  },
+  fieldWrap: { marginBottom: 14 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
     height: 56, borderRadius: 16,
-    borderWidth: 1.5, paddingHorizontal: 4, gap: 0,
+    backgroundColor: '#F7F8FC',
+    borderWidth: 1.5, borderColor: 'transparent',
+    paddingHorizontal: 4,
   },
-  inputRowFocused: {
-    shadowColor: colors.brand[500],
+  inputFocused: {
+    backgroundColor: '#fff',
+    shadowColor: '#5A6FF5',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  inputIcon: {
+  inputIconWrap: {
     width: 40, height: 40, borderRadius: 12,
+    backgroundColor: '#EDF0F7',
     alignItems: 'center', justifyContent: 'center',
     marginLeft: 4,
   },
+  inputIconActive: {
+    backgroundColor: '#EBF0FF',
+  },
   input: {
-    flex: 1, fontSize: 15, height: '100%',
-    paddingHorizontal: 10,
+    flex: 1, fontSize: 15, color: '#1A202C',
+    paddingHorizontal: 12, height: '100%',
+  },
+  checkBadge: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: '#48BB78',
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 8,
   },
   eyeBtn: { paddingHorizontal: 12 },
 
-  // Forgot
-  forgotBtn: { alignSelf: 'flex-end', marginTop: 8 },
-  forgotText: { fontSize: 13, fontWeight: '600' },
+  // Options
+  optionsRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 22, marginTop: 2,
+  },
+  rememberRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  checkbox: {
+    width: 20, height: 20, borderRadius: 6,
+    borderWidth: 1.5, borderColor: '#CBD5E0',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  checkboxOn: {
+    backgroundColor: '#5A6FF5', borderColor: '#5A6FF5',
+  },
+  rememberLabel: { fontSize: 13, color: '#718096', fontWeight: '500' },
+  forgotLink: { fontSize: 13, color: '#5A6FF5', fontWeight: '700' },
 
-  // Login button
+  // Login CTA
   loginBtn: {
     height: 56, borderRadius: 16,
-    backgroundColor: colors.brand[500],
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 10,
-    shadowColor: colors.brand[500],
-    shadowOffset: { width: 0, height: 6 },
+    shadowColor: '#5A6FF5',
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 8,
+    shadowRadius: 18,
+    elevation: 10,
   },
   loginBtnText: {
-    color: colors.white, fontSize: 16, fontWeight: '700', letterSpacing: 0.2,
+    fontSize: 16, fontWeight: '800', color: '#fff', letterSpacing: 0.5,
   },
   loginBtnArrow: {
-    width: 28, height: 28, borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    width: 28, height: 28, borderRadius: 9,
+    backgroundColor: 'rgba(255,255,255,0.25)',
     alignItems: 'center', justifyContent: 'center',
   },
 
   // Divider
   dividerRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    marginVertical: 4,
+    flexDirection: 'row', alignItems: 'center',
+    marginVertical: 20, gap: 12,
   },
-  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
-  dividerText: { fontSize: 12, fontWeight: '500' },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#EDF0F7' },
+  dividerPill: {
+    paddingHorizontal: 14, paddingVertical: 5,
+    backgroundColor: '#F7F8FC', borderRadius: 20,
+  },
+  dividerText: { fontSize: 12, fontWeight: '600', color: '#A0AEC0' },
+
+  // Social
+  socialRow: {
+    flexDirection: 'row', gap: 12,
+    marginBottom: 22,
+  },
+  socialBtn: {
+    flex: 1, height: 52, borderRadius: 14,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 10,
+  },
+  googleBtn: {
+    backgroundColor: '#fff',
+    borderWidth: 1.5, borderColor: '#EDF0F7',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  googleIconCircle: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: '#F7F8FC',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  googleG: { fontSize: 16, fontWeight: '800', color: '#4285F4' },
+  googleBtnText: { fontSize: 14, fontWeight: '700', color: '#2D3748' },
+  fbBtn: {
+    backgroundColor: '#1877F2',
+    shadowColor: '#1877F2',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  fbBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 
   // Footer
-  footer: { alignItems: 'center', gap: 14 },
-  footerText: { fontSize: 14 },
-  signupBtn: {
+  footer: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, width: '100%',
-    paddingVertical: 14, borderRadius: 14,
-    borderWidth: 1.5,
+    marginBottom: 12,
   },
-  signupBtnText: { fontSize: 15, fontWeight: '700' },
+  footerText: { fontSize: 14, color: '#A0AEC0' },
+  footerLink: { fontSize: 14, fontWeight: '800', color: '#5A6FF5' },
+
+  // Security
+  securityRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingTop: 4,
+  },
+  securityText: { fontSize: 11, color: '#CBD5E0', fontWeight: '500' },
 });

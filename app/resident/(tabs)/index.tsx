@@ -32,7 +32,7 @@ import MapView, {
   PROVIDER_GOOGLE,
   type MapType,
   type Region,
-} from 'react-native-maps';
+} from '@/components/MapView';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

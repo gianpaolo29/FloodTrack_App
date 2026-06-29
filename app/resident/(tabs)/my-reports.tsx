@@ -1,9 +1,15 @@
 /**
- * My Reports screen — loads from API service, not inline mock data.
+ * My Reports screen — premium sleek design matching the login page language.
+ *
+ * Gradient header with wave transition · pill filter tabs with gradient active state
+ * Elevated frosted cards with stagger entrance animations · premium empty/error states
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  Dimensions,
+  Easing,
   Image,
   Pressable,
   RefreshControl,
@@ -15,6 +21,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { colors } from '@/theme/colors';
 import { useAlert } from '@/context/AlertContext';
@@ -25,115 +32,193 @@ import { useAuth } from '@/context/AuthContext';
 import { getMyReports } from '@/services/api';
 import type { Report, ReportStatus } from '@/types';
 
+const { width: SCREEN_W } = Dimensions.get('window');
+
+const HEADER_GRADIENT: [string, string, string] = ['#00D2FF', '#4A6CF7', '#7C3AED'];
+
 type FilterTab = 'all' | 'active' | 'resolved';
 
 const ACTIVE_STATUSES: ReportStatus[] = ['pending', 'verified', 'assigned'];
 
-// ─── Report card ──────────────────────────────────────────────────────────────
+// ─── Animated report card ─────────────────────────────────────────────────────
 
 function ReportCard({
   report,
   onPress,
   isDark,
+  animValue,
 }: {
   report: Report;
   onPress: () => void;
   isDark: boolean;
+  animValue: Animated.Value;
 }) {
   const hasPhoto = !!report.thumbnailUrl;
 
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.card,
-        isDark && { backgroundColor: colors.dark.card },
-        pressed && { opacity: 0.88 },
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel={`${report.title}, ${report.severity} severity, status ${report.status}`}
-    >
-      {/* ── Photo header ── */}
-      {hasPhoto && (
-        <View style={styles.photoHeader}>
-          <Image
-            source={{ uri: report.thumbnailUrl }}
-            style={styles.photoHeaderImg}
-            resizeMode="cover"
-          />
-          {/* Gradient-style overlay for readability */}
-          <View style={styles.photoHeaderOverlay} />
-          {/* Photo count badge */}
-          {(report.mediaCount ?? 0) > 1 && (
-            <View style={styles.photoBadge}>
-              <Ionicons name="camera" size={10} color={colors.white} />
-              <Text style={styles.photoBadgeText}>{report.mediaCount}</Text>
-            </View>
-          )}
-          {/* Severity bar overlaid at top of photo */}
-          <View style={[styles.photoSeverityBar, { backgroundColor: colors.severity[report.severity] }]} />
-        </View>
-      )}
+  const cardStyle = {
+    opacity: animValue,
+    transform: [
+      {
+        translateY: animValue.interpolate({
+          inputRange: [0, 1],
+          outputRange: [32, 0],
+        }),
+      },
+      {
+        scale: animValue.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.96, 1],
+        }),
+      },
+    ],
+  };
 
-      <View style={styles.cardRow}>
-        {/* Severity bar (only shown when no photo) */}
-        {!hasPhoto && (
-          <View style={[styles.cardBar, { backgroundColor: colors.severity[report.severity] }]} />
+  const severityColor = colors.severity[report.severity];
+
+  return (
+    <Animated.View style={cardStyle}>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.card,
+          isDark && {
+            backgroundColor: colors.dark.elevated,
+            borderColor: colors.dark.border,
+            borderWidth: 1,
+          },
+          pressed && { opacity: 0.88, transform: [{ scale: 0.985 }] },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={`${report.title}, ${report.severity} severity, status ${report.status}`}
+      >
+        {/* ── Photo header ── */}
+        {hasPhoto && (
+          <View style={styles.photoHeader}>
+            <Image
+              source={{ uri: report.thumbnailUrl }}
+              style={styles.photoHeaderImg}
+              resizeMode="cover"
+            />
+            {/* Dark gradient overlay for readability */}
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.45)']}
+              style={StyleSheet.absoluteFillObject}
+            />
+            {/* Severity accent bar at top */}
+            <View
+              style={[styles.photoSeverityBar, { backgroundColor: severityColor }]}
+            />
+            {/* Photo count badge */}
+            {(report.mediaCount ?? 0) > 1 && (
+              <View style={styles.photoBadge}>
+                <Ionicons name="camera" size={10} color={colors.white} />
+                <Text style={styles.photoBadgeText}>{report.mediaCount}</Text>
+              </View>
+            )}
+          </View>
         )}
 
-        <View style={styles.cardBody}>
-          <View style={styles.cardTopRow}>
-            <Text style={[styles.cardTitle, isDark && { color: colors.white }]} numberOfLines={1}>
-              {report.title}
-            </Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.slate[400]} />
-          </View>
-          <View style={styles.cardMeta}>
-            <View style={styles.metaItem}>
-              <Ionicons name="layers-outline" size={12} color={colors.slate[400]} />
-              <Text style={[styles.metaText, isDark && { color: colors.slate[400] }]}>{report.type}</Text>
-            </View>
-            <View style={styles.metaItem}>
-              <Ionicons name="location-outline" size={12} color={colors.slate[400]} />
-              <Text style={[styles.metaText, isDark && { color: colors.slate[400] }]} numberOfLines={1}>
-                {report.address}
+        <View style={styles.cardRow}>
+          {/* Gradient severity bar (only when no photo) */}
+          {!hasPhoto && (
+            <LinearGradient
+              colors={[severityColor, severityColor + 'AA']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.cardBar}
+            />
+          )}
+
+          <View style={styles.cardBody}>
+            <View style={styles.cardTopRow}>
+              <Text
+                style={[styles.cardTitle, isDark && { color: colors.white }]}
+                numberOfLines={1}
+              >
+                {report.title}
               </Text>
+              <View style={[styles.chevronWrap, isDark && { backgroundColor: colors.dark.border }]}>
+                <Ionicons name="chevron-forward" size={13} color={isDark ? colors.slate[400] : colors.slate[500]} />
+              </View>
             </View>
-          </View>
-          <View style={styles.cardChips}>
-            <SeverityChip level={report.severity} size="sm" />
-            <StatusBadge status={report.status} size="sm" />
-          </View>
-          <View style={styles.cardFooter}>
-            <Text style={[styles.cardRef, isDark && { color: colors.slate[600] }]}>{report.reference}</Text>
-            <View style={styles.metaItem}>
-              <Ionicons name="time-outline" size={11} color={colors.slate[400]} />
-              <Text style={[styles.cardTime, isDark && { color: colors.slate[600] }]}>{report.reportedAt}</Text>
+
+            <View style={styles.cardMeta}>
+              <View style={styles.metaItem}>
+                <Ionicons name="layers-outline" size={12} color={colors.slate[400]} />
+                <Text style={[styles.metaText, isDark && { color: colors.slate[400] }]}>
+                  {report.type}
+                </Text>
+              </View>
+              <View style={styles.metaItem}>
+                <Ionicons name="location-outline" size={12} color={colors.slate[400]} />
+                <Text
+                  style={[styles.metaText, isDark && { color: colors.slate[400] }]}
+                  numberOfLines={1}
+                >
+                  {report.address}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.cardChips}>
+              <SeverityChip level={report.severity} size="sm" />
+              <StatusBadge status={report.status} size="sm" />
+            </View>
+
+            <View
+              style={[
+                styles.cardFooter,
+                isDark && { borderTopColor: colors.dark.border },
+              ]}
+            >
+              <Text style={[styles.cardRef, isDark && { color: colors.slate[500] }]}>
+                {report.reference}
+              </Text>
+              <View style={styles.metaItem}>
+                <Ionicons name="time-outline" size={11} color={colors.slate[400]} />
+                <Text style={[styles.cardTime, isDark && { color: colors.slate[500] }]}>
+                  {report.reportedAt}
+                </Text>
+              </View>
             </View>
           </View>
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+    </Animated.View>
   );
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function MyReportsScreen() {
-  const router  = useRouter();
-  const insets  = useSafeAreaInsets();
-  const scheme  = useColorScheme();
-  const isDark  = scheme === 'dark';
+  const router   = useRouter();
+  const insets   = useSafeAreaInsets();
+  const scheme   = useColorScheme();
+  const isDark   = scheme === 'dark';
   const { token } = useAuth();
   const { showAlert } = useAlert();
 
-  const [reports, setReports]     = useState<Report[]>([]);
-  const [loading, setLoading]     = useState(true);
+  const [reports, setReports]       = useState<Report[]>([]);
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError]         = useState<string | null>(null);
-  const [tab, setTab]             = useState<FilterTab>('all');
+  const [error, setError]           = useState<string | null>(null);
+  const [tab, setTab]               = useState<FilterTab>('all');
+
+  // Card entrance anims (one per filtered item, rebuilt on data change)
+  const cardAnims = useRef<Animated.Value[]>([]);
 
   const screenBg = isDark ? colors.dark.bg : colors.slate[50];
+
+  // ── Header entrance ──
+  const headerAnim = useRef(new Animated.Value(0)).current;
+  const tabsAnim   = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.stagger(80, [
+      Animated.timing(headerAnim, { toValue: 1, duration: 500, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      Animated.timing(tabsAnim,   { toValue: 1, duration: 400, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+    ]).start();
+  }, []);
 
   const load = useCallback(async (isRefresh = false) => {
     try {
@@ -143,7 +228,12 @@ export default function MyReportsScreen() {
       setReports(data);
     } catch {
       setError('Could not load reports. Pull down to retry.');
-      if (!isRefresh) showAlert({ type: 'error', title: 'Load Failed', message: 'Could not load your reports. Check your connection.' });
+      if (!isRefresh)
+        showAlert({
+          type: 'error',
+          title: 'Load Failed',
+          message: 'Could not load your reports. Check your connection.',
+        });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -163,99 +253,293 @@ export default function MyReportsScreen() {
     return true;
   });
 
-  const TABS: { key: FilterTab; label: string }[] = [
-    { key: 'all',      label: `All (${reports.length})`                                                         },
-    { key: 'active',   label: `Active (${reports.filter(r => ACTIVE_STATUSES.includes(r.status)).length})`      },
-    { key: 'resolved', label: `Closed (${reports.filter(r => ['resolved','rejected'].includes(r.status)).length})` },
+  // Build / rebuild card anim values whenever the filtered list changes
+  useEffect(() => {
+    cardAnims.current = filtered.map(() => new Animated.Value(0));
+    if (filtered.length === 0) return;
+    const anims = cardAnims.current.map((av, i) =>
+      Animated.timing(av, {
+        toValue: 1,
+        duration: 380,
+        delay: i * 60,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+    );
+    Animated.stagger(60, anims).start();
+  }, [filtered.length, tab]);
+
+  const allCount      = reports.length;
+  const activeCount   = reports.filter(r => ACTIVE_STATUSES.includes(r.status)).length;
+  const resolvedCount = reports.filter(r => ['resolved', 'rejected'].includes(r.status)).length;
+
+  const TABS: { key: FilterTab; label: string; count: number }[] = [
+    { key: 'all',      label: 'All',    count: allCount      },
+    { key: 'active',   label: 'Active', count: activeCount   },
+    { key: 'resolved', label: 'Closed', count: resolvedCount },
   ];
 
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
-      {/* Header */}
-      <View style={[styles.header, {
-        paddingTop: insets.top + 12,
-        backgroundColor: isDark ? colors.dark.surface : colors.white,
-        borderBottomColor: isDark ? colors.dark.border : colors.slate[100],
-      }]}>
-        <Text style={[styles.headerTitle, isDark && { color: colors.white }]}>My reports</Text>
-        <Pressable
-          style={styles.newBtn}
-          onPress={() => router.push('/resident/report')}
-          accessibilityRole="button"
-          accessibilityLabel="Submit new report"
+      {/* ═══ GRADIENT HEADER ═══ */}
+      <Animated.View
+        style={{
+          opacity: headerAnim,
+          transform: [
+            {
+              translateY: headerAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-20, 0],
+              }),
+            },
+          ],
+        }}
+      >
+        <LinearGradient
+          colors={HEADER_GRADIENT}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.header, { paddingTop: insets.top + 16 }]}
         >
-          <Ionicons name="add" size={18} color={colors.white} />
-          <Text style={styles.newBtnText}>New</Text>
-        </Pressable>
-      </View>
+          {/* Decorative orbs */}
+          <View style={[styles.orb, styles.orb1]} />
+          <View style={[styles.orb, styles.orb2]} />
 
-      {/* Filter tabs */}
-      <View style={[styles.tabRow, {
-        backgroundColor: isDark ? colors.dark.surface : colors.white,
-        borderBottomColor: isDark ? colors.dark.border : colors.slate[100],
-      }]}>
-        {TABS.map(t => (
-          <Pressable
-            key={t.key}
-            onPress={() => setTab(t.key)}
-            style={[styles.tabItem, tab === t.key && styles.tabItemActive]}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: tab === t.key }}
-          >
-            <Text style={[styles.tabLabel, isDark && { color: colors.slate[400] }, tab === t.key && styles.tabLabelActive]}>
-              {t.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+          <View style={styles.headerContent}>
+            {/* Left — title + badge */}
+            <View>
+              <Text style={styles.headerTitle}>My Reports</Text>
+              {!loading && (
+                <View style={styles.countBadge}>
+                  <Text style={styles.countBadgeText}>
+                    {allCount} {allCount === 1 ? 'report' : 'reports'}
+                  </Text>
+                </View>
+              )}
+            </View>
 
-      {/* Loading */}
+            {/* Right — new report button */}
+            <Pressable
+              onPress={() => router.push('/resident/report')}
+              accessibilityRole="button"
+              accessibilityLabel="Submit new report"
+              style={({ pressed }) => [pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] }]}
+            >
+              <LinearGradient
+                colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.12)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={styles.newBtn}
+              >
+                <Ionicons name="add" size={18} color={colors.white} />
+                <Text style={styles.newBtnText}>New Report</Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </LinearGradient>
+
+        {/* Wave transition — curved white/dark bottom edge */}
+        <View style={[styles.waveWrap, { backgroundColor: isDark ? colors.dark.bg : colors.slate[50] }]}>
+          <LinearGradient
+            colors={['#5E52EF', '#7C3AED']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View
+            style={[
+              styles.waveShape,
+              { backgroundColor: isDark ? colors.dark.bg : colors.slate[50] },
+            ]}
+          />
+        </View>
+      </Animated.View>
+
+      {/* ═══ FILTER TABS ═══ */}
+      <Animated.View
+        style={[
+          styles.tabRow,
+          isDark && { backgroundColor: colors.dark.surface },
+          {
+            opacity: tabsAnim,
+            transform: [
+              {
+                translateY: tabsAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [10, 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        {TABS.map(t => {
+          const isActive = tab === t.key;
+          return (
+            <Pressable
+              key={t.key}
+              onPress={() => setTab(t.key)}
+              style={styles.tabItemWrap}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
+            >
+              {isActive ? (
+                <LinearGradient
+                  colors={['#4A6CF7', '#7C3AED']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.tabChipActive}
+                >
+                  <Text style={styles.tabLabelActive}>{t.label}</Text>
+                  <View style={styles.tabCountBubble}>
+                    <Text style={styles.tabCountActive}>{t.count}</Text>
+                  </View>
+                </LinearGradient>
+              ) : (
+                <View
+                  style={[
+                    styles.tabChip,
+                    isDark && { backgroundColor: colors.dark.elevated, borderColor: colors.dark.border },
+                  ]}
+                >
+                  <Text style={[styles.tabLabel, isDark && { color: colors.slate[400] }]}>
+                    {t.label}
+                  </Text>
+                  <View
+                    style={[
+                      styles.tabCountBubbleInactive,
+                      isDark && { backgroundColor: colors.dark.border },
+                    ]}
+                  >
+                    <Text style={[styles.tabCountInactive, isDark && { color: colors.slate[400] }]}>
+                      {t.count}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </Pressable>
+          );
+        })}
+      </Animated.View>
+
+      {/* ═══ LOADING ═══ */}
       {loading && (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.brand[500]} />
+          <View style={styles.loadingBadge}>
+            <ActivityIndicator size="large" color="#4A6CF7" />
+          </View>
+          <Text style={[styles.loadingText, isDark && { color: colors.slate[400] }]}>
+            Loading your reports…
+          </Text>
         </View>
       )}
 
-      {/* Error */}
+      {/* ═══ ERROR ═══ */}
       {!loading && error && (
         <View style={styles.centered}>
-          <Ionicons name="cloud-offline-outline" size={40} color={colors.slate[200]} />
-          <Text style={[styles.errorText, isDark && { color: colors.slate[400] }]}>{error}</Text>
-          <Pressable onPress={() => load()} style={styles.retryBtn} accessibilityRole="button">
-            <Text style={styles.retryText}>Retry</Text>
+          <LinearGradient
+            colors={['#FF6B6B22', '#FF6B6B11']}
+            style={styles.errorIconBadge}
+          >
+            <Ionicons name="cloud-offline-outline" size={40} color="#E53E3E" />
+          </LinearGradient>
+          <Text style={[styles.errorTitle, isDark && { color: colors.white }]}>
+            Connection Error
+          </Text>
+          <Text style={[styles.errorSub, isDark && { color: colors.slate[400] }]}>
+            {error}
+          </Text>
+          <Pressable
+            onPress={() => load()}
+            accessibilityRole="button"
+            style={({ pressed }) => [pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]}
+          >
+            <LinearGradient
+              colors={['#4A6CF7', '#7C3AED']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.retryBtn}
+            >
+              <Ionicons name="refresh" size={15} color={colors.white} />
+              <Text style={styles.retryText}>Try Again</Text>
+            </LinearGradient>
           </Pressable>
         </View>
       )}
 
-      {/* List */}
+      {/* ═══ LIST ═══ */}
       {!loading && !error && (
         <ScrollView
           contentContainerStyle={[
             styles.list,
-            { paddingBottom: insets.bottom + 16 },
+            { paddingBottom: insets.bottom + 24 },
             filtered.length === 0 && styles.listEmpty,
           ]}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.brand[500]} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="#4A6CF7"
+              colors={['#4A6CF7', '#7C3AED']}
+            />
           }
           showsVerticalScrollIndicator={false}
         >
           {filtered.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="document-text-outline" size={48} color={colors.slate[200]} />
-              <Text style={[styles.emptyTitle, isDark && { color: colors.white }]}>No reports here</Text>
-              <Text style={[styles.emptySub, isDark && { color: colors.slate[400] }]}>
-                {tab === 'active' ? 'No active reports at the moment.' :
-                 tab === 'resolved' ? 'No closed reports yet.' :
-                 "You haven't submitted any reports yet."}
+              <LinearGradient
+                colors={['#4A6CF722', '#7C3AED11']}
+                style={styles.emptyIconBadge}
+              >
+                <LinearGradient
+                  colors={['#4A6CF733', '#7C3AED22']}
+                  style={styles.emptyIconBadgeInner}
+                >
+                  <Ionicons
+                    name="document-text-outline"
+                    size={44}
+                    color="#4A6CF7"
+                  />
+                </LinearGradient>
+              </LinearGradient>
+              <Text style={[styles.emptyTitle, isDark && { color: colors.white }]}>
+                {tab === 'active'
+                  ? 'No Active Reports'
+                  : tab === 'resolved'
+                  ? 'No Closed Reports'
+                  : 'No Reports Yet'}
               </Text>
+              <Text style={[styles.emptySub, isDark && { color: colors.slate[400] }]}>
+                {tab === 'active'
+                  ? 'All your reports are resolved or awaiting submission.'
+                  : tab === 'resolved'
+                  ? "Reports that have been closed will appear here."
+                  : 'Tap "+ New Report" above to submit your first flood report.'}
+              </Text>
+              {tab === 'all' && (
+                <Pressable
+                  onPress={() => router.push('/resident/report')}
+                  style={({ pressed }) => [pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]}
+                >
+                  <LinearGradient
+                    colors={['#4A6CF7', '#7C3AED']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.emptyActionBtn}
+                  >
+                    <Ionicons name="add-circle-outline" size={17} color={colors.white} />
+                    <Text style={styles.emptyActionText}>Submit a Report</Text>
+                  </LinearGradient>
+                </Pressable>
+              )}
             </View>
           ) : (
-            filtered.map(r => (
+            filtered.map((r, i) => (
               <ReportCard
                 key={r.id}
                 report={r}
                 isDark={isDark}
+                animValue={cardAnims.current[i] ?? new Animated.Value(1)}
                 onPress={() => router.push(`/resident/report/${r.id}`)}
               />
             ))
@@ -266,97 +550,338 @@ export default function MyReportsScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   root:    { flex: 1 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    padding: 28,
+  },
 
+  // ── Header ──────────────────────────────────────────────────────────────────
   header: {
+    paddingHorizontal: 22,
+    paddingBottom: 44,
+    overflow: 'hidden',
+  },
+  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
+    marginTop: 4,
   },
-  headerTitle: { fontSize: 22, fontWeight: '800', color: colors.slate[900] },
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: colors.white,
+    letterSpacing: 0.3,
+    marginBottom: 6,
+  },
+  countBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  countBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.9)',
+    letterSpacing: 0.3,
+  },
   newBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.brand[500],
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
-  newBtnText: { color: colors.white, fontSize: 13, fontWeight: '600' },
+  newBtnText: {
+    color: colors.white,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  // Decorative orbs
+  orb: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  orb1: { width: 180, height: 180, top: -70, right: -50 },
+  orb2: { width: 110, height: 110, bottom: 0, left: -30, backgroundColor: 'rgba(255,255,255,0.04)' },
 
-  tabRow: { flexDirection: 'row', borderBottomWidth: 1 },
-  tabItem: {
-    flex: 1,
+  // ── Wave ────────────────────────────────────────────────────────────────────
+  waveWrap: {
+    height: 48,
+    position: 'relative',
+    marginTop: -1,
+  },
+  waveShape: {
+    position: 'absolute',
+    bottom: 0,
+    left: -12,
+    right: -12,
+    height: 52,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+  },
+
+  // ── Filter tabs ─────────────────────────────────────────────────────────────
+  tabRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    gap: 10,
+    backgroundColor: colors.white,
   },
-  tabItemActive:  { borderBottomColor: colors.brand[500] },
-  tabLabel:       { fontSize: 13, color: colors.slate[400], fontWeight: '500' },
-  tabLabelActive: { color: colors.brand[500], fontWeight: '700' },
+  tabItemWrap: { flex: 1 },
+  tabChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 24,
+    backgroundColor: colors.slate[100],
+    borderWidth: 1,
+    borderColor: colors.slate[200],
+  },
+  tabChipActive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 24,
+    shadowColor: '#4A6CF7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  tabLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.slate[500],
+  },
+  tabLabelActive: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  tabCountBubble: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  tabCountActive: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.white,
+  },
+  tabCountBubbleInactive: {
+    backgroundColor: colors.slate[200],
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  tabCountInactive: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.slate[500],
+  },
 
-  list:      { padding: 16, gap: 12 },
+  // ── List ────────────────────────────────────────────────────────────────────
+  list:      { padding: 16, gap: 14 },
   listEmpty: { flex: 1 },
 
+  // ── Card ────────────────────────────────────────────────────────────────────
   card: {
     backgroundColor: colors.white,
-    borderRadius: 12,
+    borderRadius: 18,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 5,
   },
-  // Photo header (shown when thumbnailUrl is set)
-  photoHeader: { position: 'relative', height: 150 },
-  photoHeaderImg: { width: '100%', height: '100%' },
-  photoHeaderOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.12)',
+  // Photo header
+  photoHeader: {
+    position: 'relative',
+    height: 160,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    overflow: 'hidden',
   },
+  photoHeaderImg:    { width: '100%', height: '100%' },
   photoSeverityBar: {
-    position: 'absolute', top: 0, left: 0, right: 0, height: 4,
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    height: 4,
   },
   photoBadge: {
-    position: 'absolute', bottom: 8, right: 10,
+    position: 'absolute', bottom: 10, right: 12,
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 9, paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
   },
   photoBadgeText: { color: colors.white, fontSize: 11, fontWeight: '700' },
-  // Row that holds the bar + body (used when no photo, or always for body)
+
+  // Card inner
   cardRow:  { flexDirection: 'row' },
   cardBar:  { width: 4 },
-  cardBody: { flex: 1, padding: 14, gap: 8 },
-  cardTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardTitle:  { flex: 1, fontSize: 15, fontWeight: '700', color: colors.slate[900] },
-  cardMeta:   { gap: 4 },
-  metaItem:   { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  metaText:   { fontSize: 12, color: colors.slate[600] },
-  cardChips:  { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  cardBody: { flex: 1, padding: 16, gap: 10 },
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  cardTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.slate[900],
+    letterSpacing: 0.1,
+  },
+  chevronWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: colors.slate[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardMeta:  { gap: 5 },
+  metaItem:  { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  metaText:  { fontSize: 12, color: colors.slate[500], flex: 1 },
+  cardChips: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: colors.slate[100],
-    paddingTop: 8,
+    paddingTop: 10,
+    marginTop: 2,
   },
-  cardRef:  { fontSize: 11, color: colors.slate[400], fontWeight: '500' },
+  cardRef:  { fontSize: 11, color: colors.slate[400], fontWeight: '600', letterSpacing: 0.2 },
   cardTime: { fontSize: 11, color: colors.slate[400] },
 
-  errorText:  { fontSize: 14, color: colors.slate[600], textAlign: 'center' },
-  retryBtn:   { backgroundColor: colors.brand[500], paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 },
-  retryText:  { color: colors.white, fontWeight: '600', fontSize: 14 },
-  emptyState: { alignItems: 'center', gap: 12, paddingTop: 60 },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.slate[900] },
-  emptySub:   { fontSize: 14, color: colors.slate[400], textAlign: 'center', lineHeight: 20 },
+  // ── Loading ─────────────────────────────────────────────────────────────────
+  loadingBadge: {
+    width: 72, height: 72, borderRadius: 22,
+    backgroundColor: '#F0F2FF',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#4A6CF7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: colors.slate[500],
+    fontWeight: '500',
+  },
+
+  // ── Error state ─────────────────────────────────────────────────────────────
+  errorIconBadge: {
+    width: 90, height: 90, borderRadius: 28,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.slate[900],
+    letterSpacing: 0.2,
+  },
+  errorSub: {
+    fontSize: 13,
+    color: colors.slate[500],
+    textAlign: 'center',
+    lineHeight: 20,
+    maxWidth: SCREEN_W * 0.72,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 22,
+    shadowColor: '#4A6CF7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  retryText: { color: colors.white, fontWeight: '700', fontSize: 14 },
+
+  // ── Empty state ─────────────────────────────────────────────────────────────
+  emptyState: { alignItems: 'center', gap: 14, paddingTop: 56 },
+  emptyIconBadge: {
+    width: 110, height: 110, borderRadius: 34,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 4,
+  },
+  emptyIconBadgeInner: {
+    width: 84, height: 84, borderRadius: 26,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.slate[900],
+    letterSpacing: 0.2,
+  },
+  emptySub: {
+    fontSize: 13,
+    color: colors.slate[400],
+    textAlign: 'center',
+    lineHeight: 20,
+    maxWidth: SCREEN_W * 0.72,
+  },
+  emptyActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 26,
+    paddingVertical: 13,
+    borderRadius: 24,
+    marginTop: 6,
+    shadowColor: '#4A6CF7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  emptyActionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.white,
+    letterSpacing: 0.2,
+  },
 });

@@ -25,7 +25,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
-import * as SecureStore from 'expo-secure-store';
+import * as Storage from '@/utils/storage';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   type SharedValue,
@@ -1352,7 +1352,7 @@ export default function ReportScreen() {
 
   // Load draft on mount
   useEffect(() => {
-    SecureStore.getItemAsync(DRAFT_KEY).then(json => {
+    Storage.getItem(DRAFT_KEY).then(json => {
       if (!json) return;
       try {
         const d = JSON.parse(json);
@@ -1370,13 +1370,13 @@ export default function ReportScreen() {
   // Auto-save draft
   useEffect(() => {
     if (submitted) return;
-    SecureStore.setItemAsync(DRAFT_KEY, JSON.stringify({
+    Storage.setItem(DRAFT_KEY, JSON.stringify({
       location, hazardType, severity, floodDepth, roadDamage, description,
     })).catch(() => {});
   }, [location, hazardType, severity, floodDepth, roadDamage, description, submitted]);
 
   function discardDraft() {
-    SecureStore.deleteItemAsync(DRAFT_KEY).catch(() => {});
+    Storage.deleteItem(DRAFT_KEY).catch(() => {});
     setDraftRestored(false);
     setLocation(null);
     setHazardType(null);
@@ -1454,7 +1454,7 @@ export default function ReportScreen() {
         token!,
       );
       setSubmittedRef(result.reference ?? '');
-      SecureStore.deleteItemAsync(DRAFT_KEY).catch(() => {});
+      Storage.deleteItem(DRAFT_KEY).catch(() => {});
       setSubmitted(true);
     } catch {
       showAlert({
