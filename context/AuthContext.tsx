@@ -29,6 +29,8 @@ interface AuthContextValue {
   login: (payload: LoginPayload) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
+  /** Update the cached user object (e.g. after profile edit) */
+  updateUser: (user: User) => Promise<void>;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -84,6 +86,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
+  async function updateUser(u: User) {
+    await Storage.setItem(USER_KEY, JSON.stringify(u));
+    setUser(u);
+  }
+
   async function persist(t: string, u: User) {
     await Promise.all([
       Storage.setItem(TOKEN_KEY, t),
@@ -94,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

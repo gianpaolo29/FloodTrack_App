@@ -126,8 +126,8 @@ function formatRelativeTime(iso: string): string {
 
 function adaptUser(raw: RawUser): User {
   const parts     = raw.name.trim().split(' ');
-  const firstName = parts[0] ?? '';
-  const lastName  = parts.slice(1).join(' ') || '';
+  const lastName  = parts.length > 1 ? parts[parts.length - 1] : '';
+  const firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : parts[0] ?? '';
   const roleMap: Record<string, UserRole> = {
     resident: 'Resident',
     responder: 'Responder',

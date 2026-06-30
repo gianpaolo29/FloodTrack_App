@@ -218,7 +218,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
-  const { user, token, logout, login } = useAuth();
+  const { user, token, logout, updateUser } = useAuth();
   const { showAlert } = useAlert();
 
   const [notifCritical,    setNotifCritical]    = useState(true);
@@ -287,11 +287,12 @@ export default function ProfileScreen() {
     }
     setEditSaving(true);
     try {
-      await updateProfile({
+      const updated = await updateProfile({
         name: `${editFirstName.trim()} ${editLastName.trim()}`,
         contact_number: editContact.trim() || undefined,
       }, token!);
-      showAlert({ type: 'success', title: 'Updated', message: 'Your profile has been updated. Changes will reflect on next login.' });
+      await updateUser(updated);
+      showAlert({ type: 'success', title: 'Updated', message: 'Your profile has been updated.' });
       setShowEditProfile(false);
     } catch (e: any) {
       showAlert({ type: 'error', title: 'Failed', message: e?.message ?? 'Could not update profile.' });
