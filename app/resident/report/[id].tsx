@@ -428,6 +428,33 @@ export default function ReportDetailScreen() {
             </View>
           )}
 
+          {/* ── Message responder ── */}
+          {report.status === 'assigned' && (
+            <Pressable
+              onPress={() => router.push(`/resident/report/${id}/chat` as never)}
+              style={({ pressed }) => [
+                styles.messageBtn,
+                isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
+                pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Message responder"
+            >
+              <View style={styles.messageBtnIcon}>
+                <Ionicons name="chatbubbles" size={20} color={colors.brand[500]} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.messageBtnTitle, isDark && { color: colors.white }]}>
+                  Message Responder
+                </Text>
+                <Text style={[styles.messageBtnSub, isDark && { color: colors.slate[500] }]}>
+                  Chat with the assigned responder
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={isDark ? colors.slate[600] : colors.slate[300]} />
+            </Pressable>
+          )}
+
           {/* ── Withdraw (pending only) ── */}
           {report.status === 'pending' && (
             <Pressable
@@ -527,6 +554,21 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center', justifyContent: 'center',
   },
+  messageBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: colors.white, borderRadius: 18, padding: 16,
+    borderWidth: 1.5, borderColor: colors.brand[500] + '30',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
+  },
+  messageBtnIcon: {
+    width: 44, height: 44, borderRadius: 14,
+    backgroundColor: colors.brand[500] + '14',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  messageBtnTitle: { fontSize: 15, fontWeight: '700', color: colors.slate[900] },
+  messageBtnSub: { fontSize: 12, color: colors.slate[400], marginTop: 1 },
+
   withdrawBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, paddingVertical: 14, borderRadius: 12,

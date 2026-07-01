@@ -11,13 +11,15 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import * as Storage from '@/utils/storage';
 
-import { apiLogin, apiLogout, apiRegister } from '@/services/api';
+import { apiLogin, apiLogout, apiRegister, registerPushToken, removePushToken } from '@/services/api';
+import { getExpoPushToken } from '@/services/notifications';
 import type { LoginPayload, RegisterPayload, User } from '@/types';
 
 // ─── Keys ─────────────────────────────────────────────────────────────────────
 
-const TOKEN_KEY = 'floodtrack_token';
-const USER_KEY  = 'floodtrack_user';
+const TOKEN_KEY      = 'floodtrack_token';
+const USER_KEY       = 'floodtrack_user';
+const PUSH_TOKEN_KEY = 'floodtrack_push_token';
 
 // ─── Context type ─────────────────────────────────────────────────────────────
 
@@ -55,6 +57,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (storedToken && storedUser) {
           setToken(storedToken);
           setUser(JSON.parse(storedUser) as User);
+
+          // Re-register push token on app launch (token may have changed)
+          getExpoPushToken().then(async (pushToken) => {
+            if (pushToken) {
+              await registerPushToken(pushToken, storedToken).catch(() => {});
+              await Storage.setItem(PUSH_TOKEN_KEY, pushToken);
+            }
+          });
         }
       } catch {
         // Corrupted store — start fresh
@@ -77,7 +87,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
-    if (token) await apiLogout(token);
+    // Remove push token from server before logging out
+    if (token) {
+      const pushToken = await Storage.getItem(PUSH_TOKEN_KEY);
+      if (pushToken) {
+        await removePushToken(pushToken, token).catch(() => {});
+        await Storage.deleteItem(PUSH_TOKEN_KEY);
+      }
+      await apiLogout(token);
+    }
     await Promise.all([
       Storage.deleteItem(TOKEN_KEY),
       Storage.deleteItem(USER_KEY),
@@ -98,6 +116,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ]);
     setToken(t);
     setUser(u);
+
+    // Register push token with server (non-blocking)
+    getExpoPushToken().then(async (pushToken) => {
+      if (pushToken) {
+        await registerPushToken(pushToken, t).catch(() => {});
+        await Storage.setItem(PUSH_TOKEN_KEY, pushToken);
+      }
+    });
   }
 
   return (

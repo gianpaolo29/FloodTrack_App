@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Linking,
   Modal,
   Platform,
@@ -21,6 +22,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 
 import { colors } from '@/theme/colors';
 import { SeverityChip } from '@/components/SeverityChip';
@@ -28,6 +30,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { getIncidentDetail, updateIncidentStatus } from '@/services/api';
+import { useETA } from '@/hooks/use-eta';
 import type { IncidentDetail, ResponderStatus } from '@/types';
 
 // ─── Status definitions ──────────────────────────────────────────────────────
@@ -68,26 +71,57 @@ const STATUS_ICONS: Record<ResponderStatus, keyof typeof Ionicons.glyphMap> = {
 
 // ─── Update status modal — premium ──────────────────────────────────────────
 
+const MAX_MEDIA = 3;
+
 function UpdateModal({
   visible, current, onClose, onUpdate, isDark,
 }: {
   visible: boolean;
   current: ResponderStatus;
   onClose: () => void;
-  onUpdate: (status: ResponderStatus, notes: string) => Promise<void>;
+  onUpdate: (status: ResponderStatus, notes: string, media: string[]) => Promise<void>;
   isDark: boolean;
 }) {
   const [selected, setSelected] = useState<ResponderStatus>(current);
   const [notes, setNotes]       = useState('');
+  const [media, setMedia]       = useState<string[]>([]);
   const [loading, setLoading]   = useState(false);
 
   const currentIdx = STATUS_ORDER.indexOf(current);
 
+  async function pickMedia(source: 'camera' | 'library') {
+    if (media.length >= MAX_MEDIA) {
+      Alert.alert('Limit reached', `You can attach up to ${MAX_MEDIA} photos per update.`);
+      return;
+    }
+
+    const launcher = source === 'camera'
+      ? ImagePicker.launchCameraAsync
+      : ImagePicker.launchImageLibraryAsync;
+
+    const result = await launcher({
+      mediaTypes: ['images', 'videos'],
+      quality: 0.8,
+      allowsMultipleSelection: source === 'library',
+      selectionLimit: MAX_MEDIA - media.length,
+    });
+
+    if (!result.canceled) {
+      const uris = result.assets.map(a => a.uri);
+      setMedia(prev => [...prev, ...uris].slice(0, MAX_MEDIA));
+    }
+  }
+
+  function removeMedia(idx: number) {
+    setMedia(prev => prev.filter((_, i) => i !== idx));
+  }
+
   async function handleSubmit() {
     setLoading(true);
     try {
-      await onUpdate(selected, notes);
+      await onUpdate(selected, notes, media);
       setNotes('');
+      setMedia([]);
     } finally {
       setLoading(false);
     }
@@ -99,7 +133,8 @@ function UpdateModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={[ms.overlay, { backgroundColor: overlay }]}>
-        <View style={[ms.sheet, { backgroundColor: modalBg }]}>
+        <ScrollView style={[ms.sheet, { backgroundColor: modalBg }]} bounces={false} keyboardShouldPersistTaps="handled">
+          <View style={ms.sheetContent}>
           <View style={ms.handle} />
 
           {/* Title row */}
@@ -200,6 +235,53 @@ function UpdateModal({
             />
           </View>
 
+          {/* Evidence attachments */}
+          <View>
+            <Text style={[ms.notesLabel, isDark && { color: colors.slate[400] }]}>
+              Evidence photos ({media.length}/{MAX_MEDIA})
+            </Text>
+
+            <View style={ms.mediaRow}>
+              {media.map((uri, idx) => (
+                <View key={uri} style={ms.mediaThumbnailWrap}>
+                  <Image source={{ uri }} style={ms.mediaThumbnail} />
+                  <Pressable
+                    onPress={() => removeMedia(idx)}
+                    style={ms.mediaRemoveBtn}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel="Remove photo"
+                  >
+                    <Ionicons name="close" size={12} color={colors.white} />
+                  </Pressable>
+                </View>
+              ))}
+
+              {media.length < MAX_MEDIA && (
+                <View style={ms.mediaAddBtns}>
+                  <Pressable
+                    onPress={() => pickMedia('camera')}
+                    style={[ms.mediaAddBtn, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Take photo"
+                  >
+                    <Ionicons name="camera" size={20} color={colors.accent[500]} />
+                    <Text style={[ms.mediaAddText, isDark && { color: colors.slate[400] }]}>Camera</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => pickMedia('library')}
+                    style={[ms.mediaAddBtn, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Choose from gallery"
+                  >
+                    <Ionicons name="images" size={20} color={colors.accent[500]} />
+                    <Text style={[ms.mediaAddText, isDark && { color: colors.slate[400] }]}>Gallery</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          </View>
+
           {/* Actions */}
           <View style={ms.actions}>
             <Pressable onPress={onClose} style={[ms.cancelBtn, isDark && { borderColor: colors.dark.border }]}>
@@ -215,7 +297,8 @@ function UpdateModal({
               />
             </View>
           </View>
-        </View>
+          </View>
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -225,10 +308,11 @@ const ms = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
   sheet: {
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 24, gap: 18, paddingBottom: 40,
+    padding: 24, paddingBottom: 40, maxHeight: '85%',
     shadowColor: '#000', shadowOffset: { width: 0, height: -8 },
     shadowOpacity: 0.15, shadowRadius: 24, elevation: 20,
   },
+  sheetContent: { gap: 18 },
   handle: {
     width: 36, height: 4, borderRadius: 2,
     backgroundColor: colors.slate[200],
@@ -267,6 +351,33 @@ const ms = StyleSheet.create({
     borderRadius: 12, padding: 14, fontSize: 14,
     color: colors.slate[900], minHeight: 80,
     backgroundColor: colors.white,
+  },
+  mediaRow: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 10,
+  },
+  mediaThumbnailWrap: {
+    width: 68, height: 68, borderRadius: 12, overflow: 'hidden',
+  },
+  mediaThumbnail: {
+    width: '100%', height: '100%', borderRadius: 12,
+  },
+  mediaRemoveBtn: {
+    position: 'absolute', top: 4, right: 4,
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  mediaAddBtns: {
+    flexDirection: 'row', gap: 8,
+  },
+  mediaAddBtn: {
+    width: 68, height: 68, borderRadius: 12,
+    borderWidth: 1.5, borderColor: colors.slate[200], borderStyle: 'dashed',
+    backgroundColor: colors.white,
+    alignItems: 'center', justifyContent: 'center', gap: 3,
+  },
+  mediaAddText: {
+    fontSize: 10, fontWeight: '600', color: colors.slate[500],
   },
   actions:    { flexDirection: 'row', gap: 12, alignItems: 'center' },
   cancelBtn: {
@@ -390,9 +501,14 @@ export default function IncidentDetailScreen() {
     Linking.openURL(`tel:${incident.contactNumber}`);
   }
 
-  async function handleStatusUpdate(newStatus: ResponderStatus, notes: string) {
+  async function handleStatusUpdate(newStatus: ResponderStatus, notes: string, media: string[]) {
     if (!incident) return;
-    await updateIncidentStatus({ incidentId: incident.id, status: newStatus, notes }, token!);
+    await updateIncidentStatus({
+      incidentId: incident.id,
+      status: newStatus,
+      notes,
+      media: media.length ? media : undefined,
+    }, token!);
     setIncident(prev => prev ? { ...prev, responderStatus: newStatus } : prev);
     setModalVisible(false);
     if (newStatus === 'resolved') {
@@ -403,6 +519,13 @@ export default function IncidentDetailScreen() {
       );
     }
   }
+
+  const isEnRoute = incident?.responderStatus === 'en_route';
+  const { eta, distanceKm } = useETA(
+    incident?.latitude ?? 0,
+    incident?.longitude ?? 0,
+    isEnRoute,
+  );
 
   const statusColor = incident ? STATUS_COLORS[incident.responderStatus] : colors.slate[400];
   const statusLabel = incident ? STATUS_LABELS[incident.responderStatus] : '';
@@ -547,6 +670,22 @@ export default function IncidentDetailScreen() {
                 <View style={styles.routeInfo}>
                   <Text style={[styles.routeFrom, isDark && { color: colors.slate[400] }]}>Your location</Text>
                   <Text style={[styles.routeTo, isDark && { color: colors.white }]}>{incident.address}</Text>
+                  {isEnRoute && (eta || distanceKm !== null) && (
+                    <View style={styles.etaRow}>
+                      {eta && (
+                        <View style={[styles.etaPill, { backgroundColor: colors.accent[500] + '18' }]}>
+                          <Ionicons name="time" size={11} color={colors.accent[500]} />
+                          <Text style={[styles.etaText, { color: colors.accent[500] }]}>ETA {eta}</Text>
+                        </View>
+                      )}
+                      {distanceKm !== null && (
+                        <View style={[styles.etaPill, { backgroundColor: colors.brand[500] + '18' }]}>
+                          <Ionicons name="navigate" size={11} color={colors.brand[500]} />
+                          <Text style={[styles.etaText, { color: colors.brand[500] }]}>{distanceKm} km</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
                 </View>
               </View>
             </View>
@@ -613,6 +752,52 @@ export default function IncidentDetailScreen() {
                 </Pressable>
               </View>
             </View>
+
+            {/* ── Quick actions card ── */}
+            <View style={[styles.card, { backgroundColor: cardBg }]}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.cardHeaderIcon, { backgroundColor: colors.accent[500] + '18' }]}>
+                  <Ionicons name="apps" size={16} color={colors.accent[500]} />
+                </View>
+                <Text style={[styles.cardHeaderTitle, isDark && { color: colors.white }]}>
+                  Quick actions
+                </Text>
+              </View>
+
+              <View style={styles.quickActionsGrid}>
+                <Pressable
+                  onPress={() => router.push(`/responder/incident/${id}/chat` as never)}
+                  style={({ pressed }) => [
+                    styles.quickActionBtn,
+                    isDark && { backgroundColor: colors.dark.elevated, borderColor: colors.dark.border },
+                    pressed && { opacity: 0.88, transform: [{ scale: 0.96 }] },
+                  ]}
+                >
+                  <View style={[styles.quickActionIcon, { backgroundColor: '#3B82F618' }]}>
+                    <Ionicons name="chatbubbles" size={20} color="#3B82F6" />
+                  </View>
+                  <Text style={[styles.quickActionLabel, isDark && { color: colors.white }]}>Chat</Text>
+                  <Text style={[styles.quickActionSub, isDark && { color: colors.slate[500] }]}>Message dispatch</Text>
+                  <Ionicons name="chevron-forward" size={14} color={isDark ? colors.slate[600] : colors.slate[300]} style={{ position: 'absolute', top: 14, right: 12 }} />
+                </Pressable>
+
+                <Pressable
+                  onPress={() => router.push(`/responder/incident/${id}/field-report` as never)}
+                  style={({ pressed }) => [
+                    styles.quickActionBtn,
+                    isDark && { backgroundColor: colors.dark.elevated, borderColor: colors.dark.border },
+                    pressed && { opacity: 0.88, transform: [{ scale: 0.96 }] },
+                  ]}
+                >
+                  <View style={[styles.quickActionIcon, { backgroundColor: colors.severity.low + '18' }]}>
+                    <Ionicons name="clipboard" size={20} color={colors.severity.low} />
+                  </View>
+                  <Text style={[styles.quickActionLabel, isDark && { color: colors.white }]}>Field Report</Text>
+                  <Text style={[styles.quickActionSub, isDark && { color: colors.slate[500] }]}>Log actions taken</Text>
+                  <Ionicons name="chevron-forward" size={14} color={isDark ? colors.slate[600] : colors.slate[300]} style={{ position: 'absolute', top: 14, right: 12 }} />
+                </Pressable>
+              </View>
+            </View>
           </ScrollView>
 
           {/* ── Bottom action bar ── */}
@@ -635,7 +820,11 @@ export default function IncidentDetailScreen() {
               <>
                 <Pressable
                   onPress={openNativeMaps}
-                  style={[styles.navActionBtn, isDark && { borderColor: colors.dark.border }]}
+                  style={({ pressed }) => [
+                    styles.navActionBtn,
+                    isDark && { borderColor: colors.dark.border },
+                    pressed && { transform: [{ scale: 0.92 }], opacity: 0.8 },
+                  ]}
                   accessibilityRole="button"
                   accessibilityLabel="Navigate to incident"
                 >
@@ -643,7 +832,11 @@ export default function IncidentDetailScreen() {
                 </Pressable>
                 <Pressable
                   onPress={callReporter}
-                  style={[styles.callActionBtn, isDark && { borderColor: colors.dark.border }]}
+                  style={({ pressed }) => [
+                    styles.callActionBtn,
+                    isDark && { borderColor: colors.dark.border },
+                    pressed && { transform: [{ scale: 0.92 }], opacity: 0.8 },
+                  ]}
                   accessibilityRole="button"
                   accessibilityLabel="Call reporter"
                 >
@@ -764,6 +957,12 @@ const styles = StyleSheet.create({
   routeInfo: { flex: 1, gap: 4 },
   routeFrom: { fontSize: 11, color: colors.slate[400], fontWeight: '500' },
   routeTo:   { fontSize: 14, fontWeight: '600', color: colors.slate[900], lineHeight: 20 },
+  etaRow:    { flexDirection: 'row', gap: 6, marginTop: 4 },
+  etaPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
+  },
+  etaText: { fontSize: 11, fontWeight: '700' },
 
   // Evidence
   evidenceCountPill: {
@@ -799,10 +998,10 @@ const styles = StyleSheet.create({
   actionBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 16, paddingTop: 14,
+    paddingHorizontal: 16, paddingTop: 16,
     borderTopWidth: 1,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08, shadowRadius: 12, elevation: 8,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.1, shadowRadius: 16, elevation: 12,
   },
   navActionBtn: {
     width: 52, height: 52, borderRadius: 14,
@@ -824,6 +1023,23 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   resolvedText: { fontSize: 16, color: colors.severity.low, fontWeight: '700' },
+
+  // Quick actions
+  quickActionsGrid: { flexDirection: 'row', gap: 10 },
+  quickActionBtn: {
+    flex: 1, backgroundColor: colors.slate[50],
+    borderRadius: 16, padding: 16, alignItems: 'center', gap: 6,
+    borderWidth: 1, borderColor: colors.slate[100],
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+    position: 'relative' as const, overflow: 'hidden' as const,
+  },
+  quickActionIcon: {
+    width: 44, height: 44, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 2,
+  },
+  quickActionLabel: { fontSize: 13, fontWeight: '800', color: colors.slate[900], letterSpacing: -0.2 },
+  quickActionSub: { fontSize: 10, color: colors.slate[400], fontWeight: '500' },
 
   // Error
   errorIconWrap: {

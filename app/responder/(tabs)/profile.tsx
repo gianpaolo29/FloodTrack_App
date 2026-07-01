@@ -22,7 +22,7 @@ import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
-import { updateProfile, changePassword } from '@/services/api';
+import { updateProfile, changePassword, updateDutyStatus } from '@/services/api';
 
 // ─── Row icon colors per key ──────────────────────────────────────────────────
 
@@ -157,6 +157,9 @@ export default function ProfileScreen() {
   const { user, token, logout, updateUser } = useAuth();
   const { showAlert } = useAlert();
 
+  const [isOnDuty, setIsOnDuty] = useState(false);
+  const [dutyLoading, setDutyLoading] = useState(false);
+
   const [notifCritical,  setNotifCritical]  = useState(true);
   const [notifAdvisory,  setNotifAdvisory]  = useState(true);
   const [notifMyReports, setNotifMyReports] = useState(true);
@@ -176,6 +179,18 @@ export default function ProfileScreen() {
   const [pwdSaving, setPwdSaving]                 = useState(false);
   const [showCurrentPwd, setShowCurrentPwd]       = useState(false);
   const [showNewPwd, setShowNewPwd]               = useState(false);
+
+  async function toggleDuty(value: boolean) {
+    setDutyLoading(true);
+    try {
+      await updateDutyStatus(value, token!);
+      setIsOnDuty(value);
+    } catch (e: any) {
+      showAlert({ type: 'error', title: 'Failed', message: e?.message ?? 'Could not update duty status.' });
+    } finally {
+      setDutyLoading(false);
+    }
+  }
 
   function openEditProfile() {
     setEditFirstName(user?.firstName ?? '');
@@ -325,6 +340,58 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.content}>
+
+          {/* ── Duty Status ── */}
+          <SectionLabel title="Duty Status" isDark={isDark} />
+          <View style={[
+            styles.card,
+            isDark && { backgroundColor: colors.slate[900] },
+            isOnDuty && { borderWidth: 1.5, borderColor: colors.severity.low + '40' },
+          ]}>
+            <View style={[styles.row, isDark && { backgroundColor: colors.slate[900] }]}>
+              <View style={[
+                styles.rowIcon,
+                { backgroundColor: (isOnDuty ? colors.severity.low : colors.slate[400]) + '18' },
+              ]}>
+                <Ionicons
+                  name={isOnDuty ? 'shield-checkmark' : 'shield-outline'}
+                  size={17}
+                  color={isOnDuty ? colors.severity.low : colors.slate[400]}
+                />
+              </View>
+              <View style={styles.rowText}>
+                <Text style={[styles.rowLabel, isDark && { color: colors.white }]}>
+                  {isOnDuty ? 'On Duty' : 'Off Duty'}
+                </Text>
+                <Text style={[styles.rowDesc, isDark && { color: colors.slate[500] }]}>
+                  {isOnDuty ? 'You are available for incident assignments' : 'You will not receive new assignments'}
+                </Text>
+              </View>
+              {dutyLoading ? (
+                <ActivityIndicator size="small" color={accentBrand} />
+              ) : (
+                <Switch
+                  value={isOnDuty}
+                  onValueChange={toggleDuty}
+                  trackColor={switchTrack}
+                  thumbColor={colors.white}
+                  ios_backgroundColor={colors.slate[200]}
+                  accessibilityLabel="Toggle duty status"
+                />
+              )}
+            </View>
+            {isOnDuty && (
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                paddingHorizontal: 16, paddingBottom: 14, marginTop: -6,
+              }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.severity.low }} />
+                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.severity.low }}>
+                  Active and receiving assignments
+                </Text>
+              </View>
+            )}
+          </View>
 
           {/* ── Account ── */}
           <SectionLabel title="Account" isDark={isDark} />

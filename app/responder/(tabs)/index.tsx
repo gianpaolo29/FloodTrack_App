@@ -24,6 +24,30 @@ import { useAuth } from '@/context/AuthContext';
 import { getAssignedIncidents } from '@/services/api';
 import type { Incident, ResponderStatus } from '@/types';
 
+// ─── Priority sorting helpers ────────────────────────────────────────────────
+
+const SEVERITY_WEIGHT: Record<string, number> = {
+  critical: 4,
+  high:     3,
+  moderate: 2,
+  low:      1,
+};
+
+const RESPONDER_STATUS_WEIGHT: Record<string, number> = {
+  pending:  0,
+  en_route: 1,
+  on_scene: 2,
+  resolved: 3,
+};
+
+function sortByPriority(incidents: Incident[]): Incident[] {
+  return [...incidents].sort((a, b) => {
+    const sevDiff = (SEVERITY_WEIGHT[b.severity] ?? 0) - (SEVERITY_WEIGHT[a.severity] ?? 0);
+    if (sevDiff !== 0) return sevDiff;
+    return (RESPONDER_STATUS_WEIGHT[a.responderStatus] ?? 0) - (RESPONDER_STATUS_WEIGHT[b.responderStatus] ?? 0);
+  });
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const RESPONDER_STATUS_LABELS: Record<ResponderStatus, string> = {
@@ -251,9 +275,15 @@ export default function IncidentsTab() {
   const active   = incidents.filter(i => i.responderStatus !== 'resolved');
   const resolved = incidents.filter(i => i.responderStatus === 'resolved');
 
-  const filtered = activeFilter === 'all'
-    ? incidents
-    : incidents.filter(i => i.responderStatus === activeFilter);
+  const filtered = sortByPriority(
+    activeFilter === 'all'
+      ? incidents
+      : incidents.filter(i => i.responderStatus === activeFilter),
+  );
+
+  const highestPriorityUnresolved = sortByPriority(
+    incidents.filter(i => i.responderStatus !== 'resolved'),
+  )[0] ?? null;
 
   const pendingCount  = incidents.filter(i => i.responderStatus === 'pending').length;
   const enRouteCount  = incidents.filter(i => i.responderStatus === 'en_route').length;
@@ -304,8 +334,62 @@ export default function IncidentsTab() {
         <StatTile value={pendingCount}  label="Pending"  icon="time-outline"     color={colors.slate[400]}  isDark={isDark} />
         <StatTile value={enRouteCount}  label="En route" icon="car-outline"      color={colors.brand[500]}  isDark={isDark} />
         <StatTile value={onSceneCount}  label="On scene" icon="location-outline" color={colors.accent[500]} isDark={isDark} />
-        <StatTile value={criticalCount} label="Critical" icon="alert-circle"     color={colors.severity.critical} isDark={isDark} />
+        <StatTile value={resolved.length} label="Resolved" icon="checkmark-circle" color={colors.severity.low} isDark={isDark} />
       </View>
+
+      {/* ── Analytics section ── */}
+      <View style={[s.analyticsRow, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
+        <View style={s.analyticsItem}>
+          <View style={[s.analyticsIconWrap, { backgroundColor: colors.severity.low + '18' }]}>
+            <Ionicons name="checkmark-done" size={14} color={colors.severity.low} />
+          </View>
+          <View>
+            <Text style={[s.analyticsValue, isDark && { color: colors.white }]}>{resolved.length}</Text>
+            <Text style={[s.analyticsLabel, isDark && { color: colors.slate[500] }]}>Resolved this week</Text>
+          </View>
+        </View>
+        <View style={s.analyticsDivider} />
+        <View style={s.analyticsItem}>
+          <View style={[s.analyticsIconWrap, { backgroundColor: colors.accent[500] + '18' }]}>
+            <Ionicons name="timer-outline" size={14} color={colors.accent[500]} />
+          </View>
+          <View>
+            <Text style={[s.analyticsValue, isDark && { color: colors.white }]}>{resolved.length > 0 ? `${resolved.length}` : '--'}</Text>
+            <Text style={[s.analyticsLabel, isDark && { color: colors.slate[500] }]}>Avg response time</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ── Quick access links ── */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.quickAccessScroll} style={{ marginTop: 8 }}>
+        <Pressable
+          onPress={() => router.push('/responder/quick-report' as never)}
+          style={({ pressed }) => [s.quickAccessBtn, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }, pressed && { transform: [{ scale: 0.96 }], opacity: 0.85 }]}
+        >
+          <View style={[s.quickAccessIcon, { backgroundColor: colors.accent[500] + '18' }]}>
+            <Ionicons name="add-circle" size={17} color={colors.accent[500]} />
+          </View>
+          <Text style={[s.quickAccessText, isDark && { color: colors.slate[300] }]}>Quick Report</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => router.push('/responder/protocols' as never)}
+          style={({ pressed }) => [s.quickAccessBtn, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }, pressed && { transform: [{ scale: 0.96 }], opacity: 0.85 }]}
+        >
+          <View style={[s.quickAccessIcon, { backgroundColor: '#8B5CF618' }]}>
+            <Ionicons name="book" size={17} color="#8B5CF6" />
+          </View>
+          <Text style={[s.quickAccessText, isDark && { color: colors.slate[300] }]}>Protocols</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => router.push('/responder/contacts' as never)}
+          style={({ pressed }) => [s.quickAccessBtn, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }, pressed && { transform: [{ scale: 0.96 }], opacity: 0.85 }]}
+        >
+          <View style={[s.quickAccessIcon, { backgroundColor: colors.severity.critical + '18' }]}>
+            <Ionicons name="call" size={17} color={colors.severity.critical} />
+          </View>
+          <Text style={[s.quickAccessText, isDark && { color: colors.slate[300] }]}>Contacts</Text>
+        </Pressable>
+      </ScrollView>
 
       {/* ── Filter chips ── */}
       <ScrollView
@@ -403,6 +487,31 @@ export default function IncidentsTab() {
             </View>
           )}
 
+          {/* Next Incident button */}
+          {highestPriorityUnresolved && activeFilter !== 'resolved' && (
+            <Pressable
+              onPress={() => router.push(`/responder/incident/${highestPriorityUnresolved.id}`)}
+              style={({ pressed }) => [
+                s.nextIncidentBtn,
+                isDark && { backgroundColor: colors.accent[600] },
+                pressed && { opacity: 0.88, transform: [{ scale: 0.985 }] },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Navigate to highest priority incident"
+            >
+              <View style={s.nextIncidentLeft}>
+                <Ionicons name="flash" size={18} color={colors.white} />
+                <View>
+                  <Text style={s.nextIncidentLabel}>Next Incident</Text>
+                  <Text style={s.nextIncidentTitle} numberOfLines={1}>
+                    {highestPriorityUnresolved.title}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="arrow-forward-circle" size={24} color="rgba(255,255,255,0.8)" />
+            </Pressable>
+          )}
+
           {filtered.length > 0 ? (
             <View style={s.section}>
               {filtered.map(i => (
@@ -490,6 +599,44 @@ const s = StyleSheet.create({
   statValue: { fontSize: 18, fontWeight: '800', color: colors.slate[900] },
   statLabel: { fontSize: 9, fontWeight: '600', color: colors.slate[400], textTransform: 'uppercase', letterSpacing: 0.3 },
 
+  // ── Analytics ──
+  analyticsRow: {
+    flexDirection: 'row', alignItems: 'center',
+    marginHorizontal: 16, marginTop: 12,
+    backgroundColor: colors.white,
+    borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: colors.slate[100],
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
+  },
+  analyticsItem: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
+  },
+  analyticsIconWrap: {
+    width: 30, height: 30, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  analyticsValue: { fontSize: 16, fontWeight: '800', color: colors.slate[900] },
+  analyticsLabel: { fontSize: 10, fontWeight: '600', color: colors.slate[400], marginTop: 1 },
+  analyticsDivider: {
+    width: 1, height: 28,
+    backgroundColor: colors.slate[200],
+    marginHorizontal: 8,
+  },
+
+  // ── Quick access ──
+  quickAccessScroll: { paddingHorizontal: 16, gap: 10 },
+  quickAccessBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: colors.white, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 11,
+    borderWidth: 1, borderColor: colors.slate[100],
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
+  },
+  quickAccessIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  quickAccessText: { fontSize: 12, fontWeight: '700', color: colors.slate[600], letterSpacing: -0.1 },
+
   // ── Filter chips ──
   filterRow: { marginTop: 12 },
   filterScroll: { paddingHorizontal: 16, gap: 8 },
@@ -518,6 +665,23 @@ const s = StyleSheet.create({
   },
   critBannerTitle: { fontSize: 14, fontWeight: '700', color: colors.severity.critical },
   critBannerSub: { fontSize: 12, color: colors.severity.critical, opacity: 0.75, marginTop: 1 },
+
+  // ── Next Incident button ──
+  nextIncidentBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.accent[500],
+    borderRadius: 14, padding: 14,
+  },
+  nextIncidentLeft: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1,
+  },
+  nextIncidentLabel: {
+    fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.7)',
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  nextIncidentTitle: {
+    fontSize: 14, fontWeight: '700', color: colors.white, marginTop: 1,
+  },
 
   // ── Section ──
   section: { gap: 10 },

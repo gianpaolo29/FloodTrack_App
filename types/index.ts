@@ -136,4 +136,40 @@ export interface StatusUpdatePayload {
   incidentId: string;
   status: ResponderStatus;
   notes?: string;
+  media?: string[];   // local file URIs from camera / gallery
+}
+
+// ─── Incident messages (chat) ────────────────────────────────────────────────
+
+export interface IncidentMessage {
+  id: string;
+  reportId: string;
+  userId: string;
+  userName: string;
+  userRole: string;
+  body: string;
+  isQuickReply: boolean;
+  createdAt: string;
+}
+
+// ─── Field report ────────────────────────────────────────────────────────────
+
+export interface FieldReportData {
+  id?: string;
+  reportId: string;
+  actionsTaken: string;
+  resourcesUsed: string;
+  peopleAssisted: number;
+  damageAssessment: string;
+  checklist: Record<string, boolean>;
+}
+
+// ─── Responder stats ─────────────────────────────────────────────────────────
+
+export interface ResponderStats {
+  resolvedTotal: number;
+  resolvedThisWeek: number;
+  resolvedThisMonth: number;
+  activeCount: number;
+  avgResponseMinutes: number;
 }

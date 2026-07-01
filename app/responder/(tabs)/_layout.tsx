@@ -3,8 +3,11 @@ import { Platform, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { HapticTab } from '@/components/haptic-tab';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAuth } from '@/context/AuthContext';
+import { useNetwork } from '@/hooks/use-network';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -41,10 +44,14 @@ function TabIcon({
 export default function ResponderTabLayout() {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
+  const { token } = useAuth();
+  const { isOnline, syncing } = useNetwork(token);
 
   const tabBarBg = isDark ? '#0D1117' : colors.white;
 
   return (
+    <>
+    <OfflineBanner isOnline={isOnline} syncing={syncing} />
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -131,5 +138,6 @@ export default function ResponderTabLayout() {
         }}
       />
     </Tabs>
+    </>
   );
 }

@@ -50,7 +50,16 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#1F6FBF",
+          "defaultChannel": "floodtrack",
+          "sounds": []
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

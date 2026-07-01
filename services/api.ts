@@ -8,16 +8,20 @@
  *   Local dev:   EXPO_PUBLIC_API_URL=http://192.168.x.x:8000/api
  *   Production:  EXPO_PUBLIC_API_URL=https://your-forge-domain.com/api
  */
+import { Platform } from 'react-native';
 import type {
   AlertItem,
   ChangePasswordPayload,
+  FieldReportData,
   Incident,
   IncidentDetail,
+  IncidentMessage,
   LoginPayload,
   RegisterPayload,
   Report,
   ReportDetail,
   ReportSubmission,
+  ResponderStats,
   ResponderStatus,
   ResponderUpdate,
   StatusUpdatePayload,
@@ -318,6 +322,25 @@ async function formPost<T>(path: string, formData: FormData, token?: string): Pr
   return res.json();
 }
 
+/** Multipart PATCH — used for status updates with photo/video attachments */
+async function formPatch<T>(path: string, formData: FormData, token: string): Promise<T> {
+  // Laravel doesn't support PATCH with multipart — use POST + _method override
+  formData.append('_method', 'PATCH');
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, err.message ?? `PATCH ${path} → ${res.status}`);
+  }
+  return res.json();
+}
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export async function apiLogin(
@@ -449,10 +472,235 @@ export async function updateIncidentStatus(
   payload: StatusUpdatePayload,
   token: string,
 ): Promise<void> {
-  await patch(`/reports/${payload.incidentId}/status`, {
-    status: payload.status,
-    notes:  payload.notes,
+  const path = `/responder/reports/${payload.incidentId}/status`;
+
+  if (payload.media?.length) {
+    const form = new FormData();
+    form.append('status', payload.status);
+    if (payload.notes) form.append('notes', payload.notes);
+
+    payload.media.forEach((uri, i) => {
+      const ext      = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+      const mimeType = ['mp4', 'mov'].includes(ext) ? `video/${ext}` : `image/${ext}`;
+      form.append('media[]', {
+        uri,
+        name: `update_${i}.${ext}`,
+        type: mimeType,
+      } as unknown as Blob);
+    });
+
+    await formPatch(path, form, token);
+  } else {
+    await patch(path, {
+      status: payload.status,
+      notes:  payload.notes,
+    }, token);
+  }
+}
+
+// ─── Push notifications ──────────────────────────────────────────────────────
+
+export async function registerPushToken(pushToken: string, token: string): Promise<void> {
+  await post('/device-tokens', { token: pushToken, platform: Platform.OS }, token);
+}
+
+export async function removePushToken(pushToken: string, token: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/device-tokens`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ token: pushToken }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, err.message ?? `DELETE /device-tokens → ${res.status}`);
+  }
+}
+
+// ─── Duty status ─────────────────────────────────────────────────────────────
+
+export async function updateDutyStatus(isOnDuty: boolean, token: string): Promise<void> {
+  await patch('/user/duty-status', { is_on_duty: isOnDuty }, token);
+}
+
+// ─── Incident messages ──────────────────────────────────────────────────────
+
+export async function getIncidentMessages(reportId: string, token: string): Promise<IncidentMessage[]> {
+  const data = await get<Array<{
+    id: number;
+    body: string;
+    is_quick_reply: boolean;
+    user: { id: number; name: string; role: string };
+    created_at: string;
+  }>>(`/reports/${reportId}/messages`, token);
+  return data.map(m => ({
+    id: String(m.id),
+    reportId,
+    userId: String(m.user.id),
+    userName: m.user.name,
+    userRole: m.user.role,
+    body: m.body,
+    isQuickReply: m.is_quick_reply,
+    createdAt: formatRelativeTime(m.created_at),
+  }));
+}
+
+export async function sendIncidentMessage(
+  reportId: string,
+  body: string,
+  isQuickReply: boolean,
+  token: string,
+): Promise<void> {
+  await post(`/reports/${reportId}/messages`, { body, is_quick_reply: isQuickReply }, token);
+}
+
+/** Resident-accessible message endpoints (uses /reports/ instead of /responder/reports/) */
+export async function getReportMessages(reportId: string, token: string): Promise<IncidentMessage[]> {
+  const data = await get<Array<{
+    id: number;
+    body: string;
+    is_quick_reply: boolean;
+    user: { id: number; name: string; role: string };
+    created_at: string;
+  }>>(`/reports/${reportId}/messages`, token);
+  return data.map(m => ({
+    id: String(m.id),
+    reportId,
+    userId: String(m.user.id),
+    userName: m.user.name,
+    userRole: m.user.role,
+    body: m.body,
+    isQuickReply: m.is_quick_reply,
+    createdAt: formatRelativeTime(m.created_at),
+  }));
+}
+
+export async function sendReportMessage(
+  reportId: string,
+  body: string,
+  token: string,
+): Promise<void> {
+  await post(`/reports/${reportId}/messages`, { body, is_quick_reply: false }, token);
+}
+
+// ─── Field report ────────────────────────────────────────────────────────────
+
+export async function getFieldReport(reportId: string, token: string): Promise<FieldReportData | null> {
+  try {
+    const raw = await get<{
+      id: number;
+      report_id: number;
+      actions_taken: string;
+      resources_used: string | null;
+      people_assisted: number;
+      damage_assessment: string | null;
+      checklist: Record<string, boolean> | null;
+    }>(`/responder/reports/${reportId}/field-report`, token);
+    return {
+      id: String(raw.id),
+      reportId: String(raw.report_id),
+      actionsTaken: raw.actions_taken,
+      resourcesUsed: raw.resources_used ?? '',
+      peopleAssisted: raw.people_assisted,
+      damageAssessment: raw.damage_assessment ?? '',
+      checklist: raw.checklist ?? {},
+    };
+  } catch (e: any) {
+    if (e?.status === 404) return null;
+    throw e;
+  }
+}
+
+export async function saveFieldReport(
+  reportId: string,
+  data: Omit<FieldReportData, 'id' | 'reportId'>,
+  token: string,
+): Promise<void> {
+  await post(`/responder/reports/${reportId}/field-report`, {
+    actions_taken: data.actionsTaken,
+    resources_used: data.resourcesUsed || null,
+    people_assisted: data.peopleAssisted,
+    damage_assessment: data.damageAssessment || null,
+    checklist: data.checklist,
   }, token);
+}
+
+// ─── Responder stats ─────────────────────────────────────────────────────────
+
+export async function getResponderStats(token: string): Promise<ResponderStats> {
+  const raw = await get<{
+    resolved_total: number;
+    resolved_this_week: number;
+    resolved_this_month: number;
+    active_count: number;
+    avg_response_minutes: number;
+  }>('/responder/stats', token);
+  return {
+    resolvedTotal: raw.resolved_total,
+    resolvedThisWeek: raw.resolved_this_week,
+    resolvedThisMonth: raw.resolved_this_month,
+    activeCount: raw.active_count,
+    avgResponseMinutes: raw.avg_response_minutes,
+  };
+}
+
+// ─── Weather ─────────────────────────────────────────────────────────────────
+
+export interface WeatherData {
+  current: {
+    temperature: number;
+    humidity: number;
+    windSpeed: number;
+    description: string;
+    icon: string;
+    rainH: number;
+    city: string;
+  };
+  alerts: Array<{ type: string; title: string; message: string }>;
+  forecast: Array<{
+    date: string;
+    day: string;
+    tempMin: number;
+    tempMax: number;
+    rainTotal: number;
+    pop: number;
+    description: string;
+    icon: string;
+  }>;
+}
+
+export async function getWeather(lat: number, lon: number, token: string): Promise<WeatherData> {
+  const raw = await get<{
+    current: Record<string, any>;
+    alerts: Array<{ type: string; title: string; message: string }>;
+    forecast: Array<Record<string, any>>;
+  }>(`/weather?lat=${lat}&lon=${lon}`, token);
+
+  return {
+    current: {
+      temperature: raw.current.temperature,
+      humidity: raw.current.humidity,
+      windSpeed: raw.current.wind_speed,
+      description: raw.current.description,
+      icon: raw.current.icon,
+      rainH: raw.current.rain_1h,
+      city: raw.current.city,
+    },
+    alerts: raw.alerts,
+    forecast: (raw.forecast ?? []).map((f: any) => ({
+      date: f.date,
+      day: f.day,
+      tempMin: f.temp_min,
+      tempMax: f.temp_max,
+      rainTotal: f.rain_total,
+      pop: f.pop,
+      description: f.description,
+      icon: f.icon,
+    })),
+  };
 }
 
 export async function withdrawReport(id: string, token: string): Promise<void> {
