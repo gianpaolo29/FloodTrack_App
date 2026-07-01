@@ -429,7 +429,7 @@ export default function ReportDetailScreen() {
           )}
 
           {/* ── Message responder ── */}
-          {report.status === 'assigned' && (
+          {(report.status === 'assigned' || report.status === 'resolved') && (
             <Pressable
               onPress={() => router.push(`/resident/report/${id}/chat` as never)}
               style={({ pressed }) => [

@@ -528,44 +528,16 @@ export async function updateDutyStatus(isOnDuty: boolean, token: string): Promis
 
 // ─── Incident messages ──────────────────────────────────────────────────────
 
-export async function getIncidentMessages(reportId: string, token: string): Promise<IncidentMessage[]> {
-  const data = await get<Array<{
-    id: number;
-    body: string;
-    is_quick_reply: boolean;
-    user: { id: number; name: string; role: string };
-    created_at: string;
-  }>>(`/reports/${reportId}/messages`, token);
-  return data.map(m => ({
-    id: String(m.id),
-    reportId,
-    userId: String(m.user.id),
-    userName: m.user.name,
-    userRole: m.user.role,
-    body: m.body,
-    isQuickReply: m.is_quick_reply,
-    createdAt: formatRelativeTime(m.created_at),
-  }));
-}
-
-export async function sendIncidentMessage(
-  reportId: string,
-  body: string,
-  isQuickReply: boolean,
-  token: string,
-): Promise<void> {
-  await post(`/reports/${reportId}/messages`, { body, is_quick_reply: isQuickReply }, token);
-}
-
-/** Resident-accessible message endpoints (uses /reports/ instead of /responder/reports/) */
 export async function getReportMessages(reportId: string, token: string): Promise<IncidentMessage[]> {
-  const data = await get<Array<{
+  const raw = await get<{ data: Array<{
     id: number;
     body: string;
     is_quick_reply: boolean;
+    read_at: string | null;
     user: { id: number; name: string; role: string };
     created_at: string;
-  }>>(`/reports/${reportId}/messages`, token);
+  }> }>(`/reports/${reportId}/messages`, token);
+  const data = Array.isArray(raw) ? raw : raw.data;
   return data.map(m => ({
     id: String(m.id),
     reportId,
@@ -574,6 +546,7 @@ export async function getReportMessages(reportId: string, token: string): Promis
     userRole: m.user.role,
     body: m.body,
     isQuickReply: m.is_quick_reply,
+    readAt: m.read_at,
     createdAt: formatRelativeTime(m.created_at),
   }));
 }
@@ -582,8 +555,42 @@ export async function sendReportMessage(
   reportId: string,
   body: string,
   token: string,
+  isQuickReply = false,
 ): Promise<void> {
-  await post(`/reports/${reportId}/messages`, { body, is_quick_reply: false }, token);
+  await post(`/reports/${reportId}/messages`, { body, is_quick_reply: isQuickReply }, token);
+}
+
+/** @deprecated Use getReportMessages instead */
+export const getIncidentMessages = getReportMessages;
+
+/** @deprecated Use sendReportMessage instead */
+export async function sendIncidentMessage(
+  reportId: string,
+  body: string,
+  isQuickReply: boolean,
+  token: string,
+): Promise<void> {
+  await sendReportMessage(reportId, body, token, isQuickReply);
+}
+
+export async function markMessagesRead(reportId: string, token: string): Promise<void> {
+  await post(`/reports/${reportId}/messages/read`, {}, token);
+}
+
+export async function getUnreadCount(reportId: string, token: string): Promise<number> {
+  const data = await get<{ unread_count: number }>(`/reports/${reportId}/messages/unread-count`, token);
+  return data.unread_count;
+}
+
+// ─── Typing indicators ──────────────────────────────────────────────────────
+
+export async function sendTypingEvent(reportId: string, token: string): Promise<void> {
+  await post(`/reports/${reportId}/typing`, {}, token).catch(() => {});
+}
+
+export async function getTypingUsers(reportId: string, token: string): Promise<Array<{ id: number; name: string; role: string }>> {
+  const data = await get<{ typing: Array<{ id: number; name: string; role: string }> }>(`/reports/${reportId}/typing`, token);
+  return data.typing;
 }
 
 // ─── Field report ────────────────────────────────────────────────────────────

@@ -22,10 +22,49 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getReportMessages, sendReportMessage } from '@/services/api';
+import { useNetworkStatus } from '@/hooks/use-network-status';
+import { getReportMessages, sendReportMessage, markMessagesRead, sendTypingEvent, getTypingUsers } from '@/services/api';
 import type { IncidentMessage } from '@/types';
 
 const POLL_INTERVAL = 10_000;
+
+// ─── Typing dots ───────────────────────────────────────────────────────────
+
+function TypingDots() {
+  const dot1 = useRef(new Animated.Value(0)).current;
+  const dot2 = useRef(new Animated.Value(0)).current;
+  const dot3 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animate = (dot: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(dot, { toValue: 1, duration: 300, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0, duration: 300, useNativeDriver: true }),
+        ]),
+      );
+    const a1 = animate(dot1, 0);
+    const a2 = animate(dot2, 150);
+    const a3 = animate(dot3, 300);
+    a1.start(); a2.start(); a3.start();
+    return () => { a1.stop(); a2.stop(); a3.stop(); };
+  }, [dot1, dot2, dot3]);
+
+  return (
+    <View style={s.typingRow}>
+      {[dot1, dot2, dot3].map((d, i) => (
+        <Animated.View
+          key={i}
+          style={[
+            s.typingDot,
+            { opacity: d, transform: [{ scale: Animated.add(0.6, Animated.multiply(d, 0.4)) as unknown as number }] },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
 
 // ─── Animated bubble wrapper ────────────────────────────────────────────────
 
@@ -53,7 +92,7 @@ function RoleBadge({ role }: { role: string }) {
   const isResponder = role === 'responder';
   const isAdmin = role === 'admin';
   const color = isAdmin ? '#8B5CF6' : isResponder ? colors.accent[500] : colors.brand[500];
-  const label = isAdmin ? 'Dispatch' : isResponder ? 'Responder' : 'You';
+  const label = isAdmin ? 'Dispatch' : isResponder ? 'Responder' : 'Resident';
 
   return (
     <View style={[s.roleBadge, { backgroundColor: color + '18' }]}>
@@ -77,19 +116,49 @@ export default function ResidentChatScreen() {
   const isDark = scheme === 'dark';
   const { token, user } = useAuth();
   const flatListRef = useRef<FlatList>(null);
+  const isConnected = useNetworkStatus();
 
   const [messages, setMessages] = useState<IncidentMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
+  const [pendingMessages, setPendingMessages] = useState<Array<{
+    id: string;
+    body: string;
+    status: 'sending' | 'failed';
+  }>>([]);
+  const [typingUsers, setTypingUsers] = useState<Array<{ name: string }>>([]);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
+
+  // Poll typing status
+  useEffect(() => {
+    if (!isConnected) return;
+    const interval = setInterval(async () => {
+      try {
+        const users = await getTypingUsers(id, token!);
+        setTypingUsers(users);
+      } catch { /* ignore */ }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [id, token, isConnected]);
+
+  function handleTextChange(value: string) {
+    setText(value);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    if (value.trim()) {
+      sendTypingEvent(id, token!);
+      typingTimerRef.current = setTimeout(() => { typingTimerRef.current = null; }, 3000);
+    }
+  }
 
   const loadMessages = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
       const data = await getReportMessages(id, token!);
       setMessages(data);
+      // Mark messages as read
+      markMessagesRead(id, token!).catch(() => {});
     } catch {
       // Silently fail on poll
     } finally {
@@ -100,25 +169,54 @@ export default function ResidentChatScreen() {
   useEffect(() => { loadMessages(); }, [loadMessages]);
 
   useEffect(() => {
+    if (!isConnected) return;
     const interval = setInterval(() => loadMessages(true), POLL_INTERVAL);
     return () => clearInterval(interval);
-  }, [loadMessages]);
+  }, [loadMessages, isConnected]);
 
   async function handleSend() {
     const msg = text.trim();
     if (!msg) return;
-    setSending(true);
+    const tempId = `pending_${Date.now()}`;
+    setText('');
+    setPendingMessages(prev => [...prev, { id: tempId, body: msg, status: 'sending' }]);
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     try {
       await sendReportMessage(id, msg, token!);
-      setText('');
+      setPendingMessages(prev => prev.filter(m => m.id !== tempId));
       await loadMessages(true);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     } catch {
-      // Error handled silently
-    } finally {
-      setSending(false);
+      setPendingMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
     }
   }
+
+  async function handleRetry(tempId: string) {
+    const msg = pendingMessages.find(m => m.id === tempId);
+    if (!msg) return;
+    setPendingMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'sending' } : m));
+    try {
+      await sendReportMessage(id, msg.body, token!);
+      setPendingMessages(prev => prev.filter(m => m.id !== tempId));
+      await loadMessages(true);
+    } catch {
+      setPendingMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
+    }
+  }
+
+  const allMessages = [
+    ...messages,
+    ...pendingMessages.map(m => ({
+      id: m.id,
+      reportId: id,
+      userId: user?.id ?? '',
+      userName: `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim(),
+      userRole: 'resident',
+      body: m.body,
+      isQuickReply: false,
+      readAt: null,
+      createdAt: m.status === 'failed' ? 'Failed to send' : 'Sending...',
+    })),
+  ];
 
   const isMe = (msg: IncidentMessage) => msg.userId === user?.id;
 
@@ -142,6 +240,14 @@ export default function ResidentChatScreen() {
         </View>
       </View>
 
+      {/* Offline banner */}
+      {!isConnected && (
+        <View style={s.offlineBanner}>
+          <Ionicons name="cloud-offline" size={14} color={colors.white} />
+          <Text style={s.offlineBannerText}>You are offline</Text>
+        </View>
+      )}
+
       {/* Messages */}
       {loading ? (
         <View style={s.centered}>
@@ -150,7 +256,7 @@ export default function ResidentChatScreen() {
       ) : (
         <FlatList
           ref={flatListRef}
-          data={messages}
+          data={allMessages}
           keyExtractor={m => m.id}
           contentContainerStyle={[s.messageList, { paddingBottom: 8 }]}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
@@ -167,6 +273,9 @@ export default function ResidentChatScreen() {
           }
           renderItem={({ item }) => {
             const mine = isMe(item);
+            const pendingItem = pendingMessages.find(p => p.id === item.id);
+            const isFailed = pendingItem?.status === 'failed';
+            const isSending = pendingItem?.status === 'sending';
             return (
               <AnimatedBubble>
                 <View style={[s.bubble, mine ? s.bubbleMine : s.bubbleTheirs]}>
@@ -181,7 +290,10 @@ export default function ResidentChatScreen() {
                   <View style={[
                     s.bubbleBody,
                     mine
-                      ? { backgroundColor: colors.brand[500], borderBottomRightRadius: 4 }
+                      ? {
+                          backgroundColor: isFailed ? colors.severity.critical : colors.brand[500],
+                          borderBottomRightRadius: 4,
+                        }
                       : {
                           backgroundColor: isDark ? colors.dark.card : colors.white,
                           borderBottomLeftRadius: 4,
@@ -196,9 +308,23 @@ export default function ResidentChatScreen() {
                       {item.body}
                     </Text>
                   </View>
-                  <Text style={[s.bubbleTime, isDark && { color: colors.slate[600] }]}>
-                    {item.createdAt}
-                  </Text>
+                  {isFailed && (
+                    <Pressable onPress={() => handleRetry(item.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2, marginHorizontal: 4 }}>
+                      <Ionicons name="refresh" size={12} color={colors.severity.critical} />
+                      <Text style={{ fontSize: 11, color: colors.severity.critical, fontWeight: '600' }}>Tap to retry</Text>
+                    </Pressable>
+                  )}
+                  {isSending && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2, marginHorizontal: 4 }}>
+                      <ActivityIndicator size={10} color={colors.slate[400]} />
+                      <Text style={{ fontSize: 11, color: colors.slate[400] }}>Sending...</Text>
+                    </View>
+                  )}
+                  {!isFailed && !isSending && (
+                    <Text style={[s.bubbleTime, isDark && { color: colors.slate[600] }]}>
+                      {item.createdAt}
+                    </Text>
+                  )}
                 </View>
               </AnimatedBubble>
             );
@@ -208,40 +334,46 @@ export default function ResidentChatScreen() {
 
       {/* Input bar */}
       <View style={[
-        s.inputBar,
+        s.inputBarWrap,
         {
           paddingBottom: insets.bottom + 8,
           backgroundColor: isDark ? colors.dark.surface : colors.white,
           borderTopColor: isDark ? colors.dark.border : colors.slate[100],
         },
       ]}>
-        <TextInput
-          style={[
-            s.input,
-            isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border, color: colors.white },
-          ]}
-          placeholder="Type a message..."
-          placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
-          value={text}
-          onChangeText={setText}
-          multiline
-          maxLength={1000}
-        />
-        <Pressable
-          onPress={handleSend}
-          disabled={!text.trim() || sending}
-          style={({ pressed }) => [
-            s.sendBtn,
-            (!text.trim() || sending) && { opacity: 0.4 },
-            pressed && { transform: [{ scale: 0.9 }] },
-          ]}
-        >
-          {sending ? (
-            <ActivityIndicator size="small" color={colors.white} />
-          ) : (
+        {typingUsers.length > 0 && (
+          <View style={s.typingIndicator}>
+            <TypingDots />
+            <Text style={[s.typingText, isDark && { color: colors.slate[500] }]}>
+              {typingUsers.map(u => u.name).join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+            </Text>
+          </View>
+        )}
+        <View style={s.inputBar}>
+          <TextInput
+            style={[
+              s.input,
+              isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border, color: colors.white },
+            ]}
+            placeholder="Type a message..."
+            placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
+            value={text}
+            onChangeText={handleTextChange}
+            multiline
+            maxLength={1000}
+          />
+          <Pressable
+            onPress={handleSend}
+            disabled={!text.trim()}
+            style={({ pressed }) => [
+              s.sendBtn,
+              !text.trim() && { opacity: 0.4 },
+              pressed && { transform: [{ scale: 0.9 }] },
+            ]}
+          >
             <Ionicons name="send" size={18} color={colors.white} />
-          )}
-        </Pressable>
+          </Pressable>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -305,12 +437,15 @@ const s = StyleSheet.create({
   bubbleTime: { fontSize: 10, color: colors.slate[400], marginTop: 4, marginHorizontal: 4 },
 
   // Input bar
-  inputBar: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: 10,
-    paddingHorizontal: 16, paddingTop: 12,
+  inputBarWrap: {
+    paddingHorizontal: 16, paddingTop: 8,
     borderTopWidth: 1,
     shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.06, shadowRadius: 12, elevation: 8,
+  },
+  inputBar: {
+    flexDirection: 'row', alignItems: 'flex-end', gap: 10,
+    paddingTop: 4,
   },
   input: {
     flex: 1, minHeight: 44, maxHeight: 100,
@@ -325,4 +460,23 @@ const s = StyleSheet.create({
     shadowColor: colors.brand[500], shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
   },
+
+  // Typing indicator
+  typingIndicator: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 6, paddingHorizontal: 4,
+  },
+  typingText: { fontSize: 11, color: colors.slate[400], fontWeight: '500' },
+  typingRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+  },
+  typingDot: {
+    width: 5, height: 5, borderRadius: 3, backgroundColor: colors.brand[500],
+  },
+
+  // Offline banner
+  offlineBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: colors.severity.critical, paddingVertical: 6,
+  },
+  offlineBannerText: { fontSize: 12, fontWeight: '700', color: colors.white },
 });

@@ -44,6 +44,19 @@ function AuthGuard() {
 
       if (data?.type === 'incident_assigned' && data.reportId) {
         router.push(`/responder/incident/${data.reportId}` as never);
+      } else if (data?.type === 'incident_message' && data.reportId) {
+        // Navigate to the chat screen based on user role
+        if (user.role === 'Responder') {
+          router.push(`/responder/incident/${data.reportId}/chat` as never);
+        } else {
+          router.push(`/resident/report/${data.reportId}/chat` as never);
+        }
+      } else if (data?.type === 'status_update' && data.reportId) {
+        if (user.role === 'Responder') {
+          router.push(`/responder/incident/${data.reportId}` as never);
+        } else {
+          router.push(`/resident/report/${data.reportId}` as never);
+        }
       } else if (data?.type === 'alert') {
         const route = user.role === 'Responder' ? '/responder/alerts' : '/resident/alerts';
         router.push(route as never);

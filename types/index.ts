@@ -149,6 +149,7 @@ export interface IncidentMessage {
   userRole: string;
   body: string;
   isQuickReply: boolean;
+  readAt: string | null;
   createdAt: string;
 }
 

@@ -5,7 +5,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   FlatList,
   KeyboardAvoidingView,
@@ -23,7 +22,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getIncidentMessages, sendIncidentMessage } from '@/services/api';
+import { useNetworkStatus } from '@/hooks/use-network-status';
+import { getIncidentMessages, sendIncidentMessage, markMessagesRead, sendTypingEvent, getTypingUsers } from '@/services/api';
 import type { IncidentMessage } from '@/types';
 
 const QUICK_REPLIES = [
@@ -103,20 +103,52 @@ export default function IncidentChatScreen() {
   const isDark = scheme === 'dark';
   const { token, user } = useAuth();
   const flatListRef = useRef<FlatList>(null);
+  const isConnected = useNetworkStatus();
 
   const [messages, setMessages] = useState<IncidentMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const [pendingMessages, setPendingMessages] = useState<Array<{
+    id: string;
+    body: string;
+    isQuickReply: boolean;
+    status: 'sending' | 'failed';
+  }>>([]);
+
+  const [typingUsers, setTypingUsers] = useState<Array<{ name: string }>>([]);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
+
+  // Poll typing status
+  useEffect(() => {
+    if (!isConnected) return;
+    const interval = setInterval(async () => {
+      try {
+        const users = await getTypingUsers(id, token!);
+        setTypingUsers(users);
+      } catch { /* ignore */ }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [id, token, isConnected]);
+
+  function handleTextChange(value: string) {
+    setText(value);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    if (value.trim()) {
+      sendTypingEvent(id, token!);
+      typingTimerRef.current = setTimeout(() => { typingTimerRef.current = null; }, 3000);
+    }
+  }
 
   const loadMessages = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
       const data = await getIncidentMessages(id, token!);
       setMessages(data);
+      // Mark messages as read
+      markMessagesRead(id, token!).catch(() => {});
     } catch {
       // Silently fail on poll
     } finally {
@@ -126,28 +158,57 @@ export default function IncidentChatScreen() {
 
   useEffect(() => { loadMessages(); }, [loadMessages]);
 
-  // Poll for new messages
+  // Poll for new messages (only when online)
   useEffect(() => {
+    if (!isConnected) return;
     const interval = setInterval(() => loadMessages(true), POLL_INTERVAL);
     return () => clearInterval(interval);
-  }, [loadMessages]);
+  }, [loadMessages, isConnected]);
 
   async function handleSend(body?: string, quickReply = false) {
     const msg = body ?? text.trim();
     if (!msg) return;
-    setSending(true);
+    const tempId = `pending_${Date.now()}`;
+    setText('');
+    setShowQuickReplies(false);
+    setPendingMessages(prev => [...prev, { id: tempId, body: msg, isQuickReply: quickReply, status: 'sending' }]);
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     try {
       await sendIncidentMessage(id, msg, quickReply, token!);
-      setText('');
-      setShowQuickReplies(false);
+      setPendingMessages(prev => prev.filter(m => m.id !== tempId));
       await loadMessages(true);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    } catch (e: any) {
-      Alert.alert('Send failed', e?.message ?? 'Could not send message. Please try again.');
-    } finally {
-      setSending(false);
+    } catch {
+      setPendingMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
     }
   }
+
+  async function handleRetry(tempId: string) {
+    const msg = pendingMessages.find(m => m.id === tempId);
+    if (!msg) return;
+    setPendingMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'sending' } : m));
+    try {
+      await sendIncidentMessage(id, msg.body, msg.isQuickReply, token!);
+      setPendingMessages(prev => prev.filter(m => m.id !== tempId));
+      await loadMessages(true);
+    } catch {
+      setPendingMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
+    }
+  }
+
+  const allMessages = [
+    ...messages,
+    ...pendingMessages.map(m => ({
+      id: m.id,
+      reportId: id,
+      userId: user?.id ?? '',
+      userName: `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim(),
+      userRole: 'responder',
+      body: m.body,
+      isQuickReply: m.isQuickReply,
+      readAt: null,
+      createdAt: m.status === 'failed' ? 'Failed to send' : 'Sending...',
+    })),
+  ];
 
   const isMe = (msg: IncidentMessage) => msg.userId === user?.id;
 
@@ -210,6 +271,14 @@ export default function IncidentChatScreen() {
         </View>
       )}
 
+      {/* ── Offline banner ── */}
+      {!isConnected && (
+        <View style={s.offlineBanner}>
+          <Ionicons name="cloud-offline" size={14} color={colors.white} />
+          <Text style={s.offlineBannerText}>You are offline</Text>
+        </View>
+      )}
+
       {/* ── Messages ── */}
       {loading ? (
         <View style={s.centered}>
@@ -218,7 +287,7 @@ export default function IncidentChatScreen() {
       ) : (
         <FlatList
           ref={flatListRef}
-          data={messages}
+          data={allMessages}
           keyExtractor={m => m.id}
           contentContainerStyle={[s.messageList, { paddingBottom: 8 }]}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
@@ -237,6 +306,9 @@ export default function IncidentChatScreen() {
           }
           renderItem={({ item }) => {
             const mine = isMe(item);
+            const pendingItem = pendingMessages.find(p => p.id === item.id);
+            const isFailed = pendingItem?.status === 'failed';
+            const isSending = pendingItem?.status === 'sending';
             return (
               <AnimatedBubble>
                 <View style={[s.bubble, mine ? s.bubbleMine : s.bubbleTheirs]}>
@@ -251,7 +323,10 @@ export default function IncidentChatScreen() {
                       mine
                         ? [
                             s.bubbleBodyMine,
-                            { backgroundColor: colors.accent[500], borderBottomColor: colors.accent[700] },
+                            {
+                              backgroundColor: isFailed ? colors.severity.critical : colors.accent[500],
+                              borderBottomColor: isFailed ? colors.severity.critical : colors.accent[700],
+                            },
                           ]
                         : [
                             s.bubbleBodyTheirs,
@@ -279,9 +354,23 @@ export default function IncidentChatScreen() {
                       {item.body}
                     </Text>
                   </View>
-                  <Text style={[s.bubbleTime, isDark && { color: colors.slate[600] }]}>
-                    {item.createdAt}
-                  </Text>
+                  {isFailed && (
+                    <Pressable onPress={() => handleRetry(item.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2, marginHorizontal: 4 }}>
+                      <Ionicons name="refresh" size={12} color={colors.severity.critical} />
+                      <Text style={{ fontSize: 11, color: colors.severity.critical, fontWeight: '600' }}>Tap to retry</Text>
+                    </Pressable>
+                  )}
+                  {isSending && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2, marginHorizontal: 4 }}>
+                      <ActivityIndicator size={10} color={colors.slate[400]} />
+                      <Text style={{ fontSize: 11, color: colors.slate[400] }}>Sending...</Text>
+                    </View>
+                  )}
+                  {!isFailed && !isSending && (
+                    <Text style={[s.bubbleTime, isDark && { color: colors.slate[600] }]}>
+                      {item.createdAt}
+                    </Text>
+                  )}
                 </View>
               </AnimatedBubble>
             );
@@ -312,27 +401,30 @@ export default function IncidentChatScreen() {
             placeholder="Type a message..."
             placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
             value={text}
-            onChangeText={setText}
+            onChangeText={handleTextChange}
             multiline
             maxLength={1000}
           />
           <Pressable
             onPress={() => handleSend()}
-            disabled={!text.trim() || sending}
+            disabled={!text.trim()}
             style={({ pressed }) => [
               s.sendBtn,
-              (!text.trim() || sending) && { opacity: 0.4 },
+              !text.trim() && { opacity: 0.4 },
               pressed && { transform: [{ scale: 0.9 }] },
             ]}
           >
-            {sending ? (
-              <ActivityIndicator size="small" color={colors.white} />
-            ) : (
-              <Ionicons name="send" size={18} color={colors.white} />
-            )}
+            <Ionicons name="send" size={18} color={colors.white} />
           </Pressable>
         </View>
-        {sending && <TypingDots />}
+        {typingUsers.length > 0 && (
+          <View style={s.typingIndicator}>
+            <TypingDots />
+            <Text style={[s.typingText, isDark && { color: colors.slate[500] }]}>
+              {typingUsers.map(u => u.name).join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+            </Text>
+          </View>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -537,19 +629,48 @@ const s = StyleSheet.create({
     elevation: 4,
   },
 
+  /* ── Typing indicator ── */
+  typingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingTop: 6,
+    paddingHorizontal: 4,
+  },
+  typingText: {
+    fontSize: 11,
+    color: colors.slate[400],
+    fontWeight: '500',
+  },
+
   /* ── Typing dots ── */
   typingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
-    paddingTop: 8,
-    paddingBottom: 2,
+    paddingTop: 0,
+    paddingBottom: 0,
   },
   typingDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: colors.accent[500],
+  },
+
+  /* ── Offline banner ── */
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.severity.critical,
+    paddingVertical: 6,
+  },
+  offlineBannerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.white,
   },
 });
