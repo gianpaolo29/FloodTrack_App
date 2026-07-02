@@ -1,4 +1,5 @@
 import { Tabs } from 'expo-router';
+import type { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
 import { Platform, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -40,21 +41,27 @@ function TabIcon({
 // ─── Center FAB ───────────────────────────────────────────────────────────────
 
 function ReportFABButton({
-  onPress,
+  accessibilityLabel,
+  accessibilityState,
   isDark,
-}: {
-  onPress?: (() => void) | null;
+  onLongPress,
+  onPress,
+  testID,
+}: BottomTabBarButtonProps & {
   isDark: boolean;
 }) {
   const ringColor = isDark ? '#0D1117' : colors.white;
 
   return (
     <Pressable
-      onPress={onPress ?? undefined}
+      onPress={(event) => onPress?.(event)}
+      onLongPress={(event) => onLongPress?.(event)}
       style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-start' }}
       hitSlop={{ top: 36, left: 18, right: 18, bottom: 0 }}
       accessibilityRole="button"
-      accessibilityLabel="Submit new report"
+      accessibilityLabel={accessibilityLabel ?? 'Submit new report'}
+      accessibilityState={accessibilityState}
+      testID={testID}
     >
       {({ pressed }) => (
         <View
@@ -153,7 +160,7 @@ export default function ResidentTabLayout() {
           title: '',
           tabBarLabel: () => null,
           tabBarButton: (props) => (
-            <ReportFABButton onPress={props.onPress} isDark={isDark} />
+            <ReportFABButton {...props} isDark={isDark} />
           ),
         }}
       />
