@@ -28,6 +28,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { AppAlert, AlertConfig } from '@/components/AppAlert';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const HERO_H = SCREEN_H * 0.42;
@@ -145,6 +146,7 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading]       = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg]         = useState('');
+  const [alertConfig, setAlertConfig]   = useState<AlertConfig | null>(null);
   const [emailFocus, setEmailFocus]     = useState(false);
   const [pwdFocus, setPwdFocus]         = useState(false);
 
@@ -203,7 +205,14 @@ export default function LoginScreen() {
 
   const handleLogin = useCallback(async () => {
     if (!email.trim() || !password.trim()) {
-      setErrorMsg('Please enter your email and password.');
+      const msg = 'Please enter your email and password.';
+      setErrorMsg(msg);
+      setAlertConfig({
+        type: 'warning',
+        title: 'Missing Fields',
+        message: msg,
+        confirmText: 'OK',
+      });
       return;
     }
     setErrorMsg('');
@@ -211,7 +220,14 @@ export default function LoginScreen() {
     try {
       await login({ email: email.trim(), password });
     } catch (e: any) {
-      setErrorMsg(e?.message ?? 'Invalid credentials. Please try again.');
+      const msg = e?.message ?? 'Invalid credentials. Please try again.';
+      setErrorMsg(msg);
+      setAlertConfig({
+        type: 'error',
+        title: 'Login Failed',
+        message: msg,
+        confirmText: 'Try Again',
+      });
     } finally {
       setIsLoading(false);
     }
@@ -508,6 +524,12 @@ export default function LoginScreen() {
             </ScrollView>
           </Animated.View>
         </KeyboardAvoidingView>
+      )}
+      {alertConfig && (
+        <AppAlert
+          config={alertConfig}
+          onDismiss={() => setAlertConfig(null)}
+        />
       )}
     </View>
   );
