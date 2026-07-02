@@ -1,9 +1,3 @@
-/**
- * My Reports screen — premium sleek design matching the login page language.
- *
- * Gradient header with wave transition · pill filter tabs with gradient active state
- * Elevated frosted cards with stagger entrance animations · premium empty/error states
- */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -185,6 +179,58 @@ function ReportCard({
         </View>
       </Pressable>
     </Animated.View>
+  );
+}
+
+// ─── Empty state with bounce animation ───────────────────────────────────────
+
+function EmptyState({
+  tab,
+  isDark,
+  children,
+}: {
+  tab: FilterTab;
+  isDark: boolean;
+  children: React.ReactNode;
+}) {
+  const bounce = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(bounce, { toValue: -10, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(bounce, { toValue: 0, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    ).start();
+  }, [bounce]);
+
+  const title =
+    tab === 'active'
+      ? 'No Active Reports'
+      : tab === 'resolved'
+      ? 'No Closed Reports'
+      : 'No Reports Yet';
+
+  return (
+    <View style={styles.emptyState}>
+      <Animated.View style={{ transform: [{ translateY: bounce }] }}>
+        <LinearGradient
+          colors={['#4A6CF722', '#7C3AED11']}
+          style={styles.emptyIconBadge}
+        >
+          <LinearGradient
+            colors={['#4A6CF733', '#7C3AED22']}
+            style={styles.emptyIconBadgeInner}
+          >
+            <Ionicons name="document-text-outline" size={44} color="#4A6CF7" />
+          </LinearGradient>
+        </LinearGradient>
+      </Animated.View>
+      <Text style={[styles.emptyTitle, isDark && { color: colors.white }]}>
+        {title}
+      </Text>
+      {children}
+    </View>
   );
 }
 
@@ -486,29 +532,7 @@ export default function MyReportsScreen() {
           showsVerticalScrollIndicator={false}
         >
           {filtered.length === 0 ? (
-            <View style={styles.emptyState}>
-              <LinearGradient
-                colors={['#4A6CF722', '#7C3AED11']}
-                style={styles.emptyIconBadge}
-              >
-                <LinearGradient
-                  colors={['#4A6CF733', '#7C3AED22']}
-                  style={styles.emptyIconBadgeInner}
-                >
-                  <Ionicons
-                    name="document-text-outline"
-                    size={44}
-                    color="#4A6CF7"
-                  />
-                </LinearGradient>
-              </LinearGradient>
-              <Text style={[styles.emptyTitle, isDark && { color: colors.white }]}>
-                {tab === 'active'
-                  ? 'No Active Reports'
-                  : tab === 'resolved'
-                  ? 'No Closed Reports'
-                  : 'No Reports Yet'}
-              </Text>
+            <EmptyState tab={tab} isDark={isDark}>
               <Text style={[styles.emptySub, isDark && { color: colors.slate[400] }]}>
                 {tab === 'active'
                   ? 'All your reports are resolved or awaiting submission.'
@@ -532,7 +556,7 @@ export default function MyReportsScreen() {
                   </LinearGradient>
                 </Pressable>
               )}
-            </View>
+            </EmptyState>
           ) : (
             filtered.map((r, i) => (
               <ReportCard
