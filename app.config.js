@@ -24,6 +24,7 @@ export default {
   },
 
   android: {
+    package: 'com.gianpaolo29.floodtrack',
     config: {
       googleMaps: {
         apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID,
@@ -58,6 +59,12 @@ export default {
     ],
     'expo-secure-store',
   ],
+
+  extra: {
+    eas: {
+      projectId: 'dfa8f980-bd25-4f27-bcf6-8c4245fc1ae1',
+    },
+  },
 
   experiments: {
     typedRoutes: true,

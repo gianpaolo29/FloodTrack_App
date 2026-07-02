@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   FlatList,
   KeyboardAvoidingView,
@@ -149,8 +150,8 @@ export default function IncidentChatScreen() {
       setMessages(data);
       // Mark messages as read
       markMessagesRead(id, token!).catch(() => {});
-    } catch {
-      // Silently fail on poll
+    } catch (e: any) {
+      if (!silent) Alert.alert('Load failed', `${e?.status ?? ''} ${e?.message ?? 'Could not load messages.'}`);
     } finally {
       setLoading(false);
     }
@@ -176,8 +177,9 @@ export default function IncidentChatScreen() {
     try {
       await sendIncidentMessage(id, msg, quickReply, token!);
       setPendingMessages(prev => prev.filter(m => m.id !== tempId));
-      await loadMessages(true);
-    } catch {
+      loadMessages(true);
+    } catch (e: any) {
+      Alert.alert('Send failed', `${e?.status ?? ''} ${e?.message ?? 'Could not send message.'}\n\nToken: ${token ? 'present' : 'MISSING'}`);
       setPendingMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
     }
   }
@@ -189,8 +191,10 @@ export default function IncidentChatScreen() {
     try {
       await sendIncidentMessage(id, msg.body, msg.isQuickReply, token!);
       setPendingMessages(prev => prev.filter(m => m.id !== tempId));
-      await loadMessages(true);
-    } catch {
+      loadMessages(true);
+    } catch (e: any) {
+      Alert.alert('Send failed', `${e?.status ?? ''} ${e?.message ?? 'Could not send message.'}`);
+
       setPendingMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
     }
   }
