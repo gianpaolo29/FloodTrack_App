@@ -29,6 +29,102 @@ import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
 import { updateProfile, changePassword } from '@/services/api';
 
+// ─── Password strength ─────────────────────────────────────────────────────
+
+interface PwdCheck {
+  label: string;
+  met: boolean;
+}
+
+function getPasswordChecks(pwd: string): PwdCheck[] {
+  return [
+    { label: 'At least 8 characters', met: pwd.length >= 8 },
+    { label: 'Uppercase letter (A-Z)', met: /[A-Z]/.test(pwd) },
+    { label: 'Lowercase letter (a-z)', met: /[a-z]/.test(pwd) },
+    { label: 'Number (0-9)', met: /[0-9]/.test(pwd) },
+    { label: 'Special character (!@#$...)', met: /[^A-Za-z0-9]/.test(pwd) },
+  ];
+}
+
+function getStrengthLevel(checks: PwdCheck[]): { score: number; label: string; color: string } {
+  const met = checks.filter((c) => c.met).length;
+  if (met <= 1) return { score: met, label: 'Very Weak', color: colors.severity.critical };
+  if (met === 2) return { score: met, label: 'Weak', color: colors.severity.high };
+  if (met === 3) return { score: met, label: 'Fair', color: colors.severity.moderate };
+  if (met === 4) return { score: met, label: 'Strong', color: '#66BB6A' };
+  return { score: met, label: 'Very Strong', color: colors.severity.low };
+}
+
+function PasswordStrengthBar({
+  password,
+  isDark,
+}: {
+  password: string;
+  isDark: boolean;
+}) {
+  const checks = getPasswordChecks(password);
+  const { score, label, color } = getStrengthLevel(checks);
+  const textPrimary = isDark ? colors.white : colors.slate[900];
+  const textTertiary = isDark ? colors.slate[500] : colors.slate[400];
+
+  if (!password) return null;
+
+  return (
+    <View style={{ gap: 8 }}>
+      <View style={{ gap: 4 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', color: textTertiary }}>
+            Password Strength
+          </Text>
+          <Text style={{ fontSize: 11, fontWeight: '700', color }}>
+            {label}
+          </Text>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 4, height: 4, borderRadius: 2 }}>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <View
+              key={i}
+              style={{
+                flex: 1,
+                height: 4,
+                borderRadius: 2,
+                backgroundColor: i <= score
+                  ? color
+                  : isDark
+                  ? colors.dark.border
+                  : colors.slate[200],
+              }}
+            />
+          ))}
+        </View>
+      </View>
+      <View style={{ gap: 4 }}>
+        {checks.map((c) => (
+          <View
+            key={c.label}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+          >
+            <Ionicons
+              name={c.met ? 'checkmark-circle' : 'ellipse-outline'}
+              size={14}
+              color={c.met ? colors.severity.low : textTertiary}
+            />
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: '500',
+                color: c.met ? textPrimary : textTertiary,
+              }}
+            >
+              {c.label}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 // ─── Row icon colors per key ──────────────────────────────────────────────────
 
 const ICON_COLORS: Record<string, string> = {
@@ -308,16 +404,22 @@ export default function ProfileScreen() {
     setShowChangePwd(true);
   }
 
+  const pwdChecks = getPasswordChecks(newPwd);
+  const pwdStrength = getStrengthLevel(pwdChecks);
+  const allChecksMet = pwdChecks.every((c) => c.met);
+  const passwordsMatch = newPwd.length > 0 && newPwd === confirmPwd;
+
   async function handleChangePwd() {
     if (!currentPwd) {
       showAlert({ type: 'error', title: 'Error', message: 'Enter your current password.' });
       return;
     }
-    if (newPwd.length < 8) {
-      showAlert({ type: 'error', title: 'Error', message: 'New password must be at least 8 characters.' });
+    if (!allChecksMet) {
+      const missing = pwdChecks.filter((c) => !c.met).map((c) => c.label).join(', ');
+      showAlert({ type: 'error', title: 'Weak Password', message: `Password must meet all requirements: ${missing}` });
       return;
     }
-    if (newPwd !== confirmPwd) {
+    if (!passwordsMatch) {
       showAlert({ type: 'error', title: 'Error', message: 'Passwords do not match.' });
       return;
     }
@@ -789,7 +891,9 @@ export default function ProfileScreen() {
             </LinearGradient>
 
             <View style={styles.modalBody}>
+              <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
               <View style={styles.modalFields}>
+                {/* Current password */}
                 <GlassInput icon="lock-closed-outline" isDark={isDark}>
                   <TextInput
                     style={[styles.modalInput, isDark && { color: colors.white }]}
@@ -807,12 +911,18 @@ export default function ProfileScreen() {
                     />
                   </Pressable>
                 </GlassInput>
-                <GlassInput icon="lock-closed-outline" isDark={isDark}>
+
+                {/* New password */}
+                <GlassInput icon="lock-closed-outline" isDark={isDark} style={
+                  newPwd.length > 0
+                    ? { borderColor: (allChecksMet ? colors.severity.low : pwdStrength.color) + '60' }
+                    : undefined
+                }>
                   <TextInput
                     style={[styles.modalInput, isDark && { color: colors.white }]}
                     value={newPwd}
                     onChangeText={setNewPwd}
-                    placeholder="New password (min. 8 chars)"
+                    placeholder="New password"
                     placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
                     secureTextEntry={!showNewPwd}
                   />
@@ -824,7 +934,16 @@ export default function ProfileScreen() {
                     />
                   </Pressable>
                 </GlassInput>
-                <GlassInput icon="lock-closed-outline" isDark={isDark}>
+
+                {/* Strength bar */}
+                <PasswordStrengthBar password={newPwd} isDark={isDark} />
+
+                {/* Confirm password */}
+                <GlassInput icon="lock-closed-outline" isDark={isDark} style={
+                  confirmPwd.length > 0
+                    ? { borderColor: (passwordsMatch ? colors.severity.low : colors.severity.critical) + '60' }
+                    : undefined
+                }>
                   <TextInput
                     style={[styles.modalInput, isDark && { color: colors.white }]}
                     value={confirmPwd}
@@ -834,7 +953,25 @@ export default function ProfileScreen() {
                     secureTextEntry={!showNewPwd}
                   />
                 </GlassInput>
+
+                {/* Match indicator */}
+                {confirmPwd.length > 0 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons
+                      name={passwordsMatch ? 'checkmark-circle' : 'close-circle'}
+                      size={14}
+                      color={passwordsMatch ? colors.severity.low : colors.severity.critical}
+                    />
+                    <Text style={{
+                      fontSize: 11, fontWeight: '600',
+                      color: passwordsMatch ? colors.severity.low : colors.severity.critical,
+                    }}>
+                      {passwordsMatch ? 'Passwords match' : 'Passwords do not match'}
+                    </Text>
+                  </View>
+                )}
               </View>
+              </ScrollView>
 
               <View style={styles.modalActions}>
                 <Pressable
@@ -843,7 +980,11 @@ export default function ProfileScreen() {
                 >
                   <Text style={[styles.modalCancelText, isDark && { color: colors.slate[400] }]}>Cancel</Text>
                 </Pressable>
-                <Pressable style={styles.modalSaveBtn} onPress={handleChangePwd} disabled={pwdSaving}>
+                <Pressable
+                  style={[styles.modalSaveBtn, (!allChecksMet || !passwordsMatch || !currentPwd) && { opacity: 0.5 }]}
+                  onPress={handleChangePwd}
+                  disabled={pwdSaving || !allChecksMet || !passwordsMatch || !currentPwd}
+                >
                   <LinearGradient
                     colors={['#A855F7', '#6366F1']}
                     start={{ x: 0, y: 0 }}

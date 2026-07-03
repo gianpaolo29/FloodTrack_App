@@ -284,7 +284,26 @@ async function post<T>(path: string, body: unknown, token?: string): Promise<T> 
     const err = await res.json().catch(() => ({}));
     throw new ApiError(res.status, err.message ?? `POST ${path} → ${res.status}`);
   }
-  return res.json();
+  const text = await res.text();
+  return text ? JSON.parse(text) : ({} as T);
+}
+
+async function put<T>(path: string, body: unknown, token: string): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, err.message ?? `PUT ${path} → ${res.status}`);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : ({} as T);
 }
 
 async function patch<T>(path: string, body: unknown, token: string): Promise<T> {
@@ -453,7 +472,16 @@ export async function changePassword(
   payload: ChangePasswordPayload,
   token: string,
 ): Promise<void> {
-  await post('/user/password', payload, token);
+  // Try PUT first (Laravel's standard), fall back to POST
+  try {
+    await put('/user/password', payload, token);
+  } catch (e: any) {
+    if (e?.status === 405) {
+      await post('/user/password', payload, token);
+    } else {
+      throw e;
+    }
+  }
 }
 
 // ─── Responder ────────────────────────────────────────────────────────────────

@@ -223,7 +223,7 @@ const mtm = StyleSheet.create({
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: 22, paddingBottom: 42,
     shadowColor: '#000', shadowOffset: { width: 0, height: -6 },
     shadowOpacity: 0.15, shadowRadius: 20, elevation: 20,
@@ -235,7 +235,7 @@ const mtm = StyleSheet.create({
   },
   heading:   { fontSize: 18, fontWeight: '800', marginBottom: 16, letterSpacing: -0.2 },
   grid:      { flexDirection: 'row', gap: 10 },
-  tile:      { flex: 1, borderRadius: 14, padding: 12, alignItems: 'center', gap: 8 },
+  tile:      { flex: 1, borderRadius: 16, padding: 12, alignItems: 'center', gap: 8 },
   tileIcon:  { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   tileLabel: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
   tileDesc:  { fontSize: 10, textAlign: 'center' },
@@ -351,10 +351,10 @@ function IncidentSheet({
 const bs = StyleSheet.create({
   root: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
     overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.18, shadowRadius: 24, elevation: 20,
+    shadowOpacity: 0.15, shadowRadius: 20, elevation: 18,
   },
   accentBar: { height: 4 },
   handle: {
@@ -382,7 +382,7 @@ const bs = StyleSheet.create({
   navBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 7, backgroundColor: colors.accent[500],
-    paddingHorizontal: 22, paddingVertical: 14, borderRadius: 14,
+    paddingHorizontal: 22, paddingVertical: 14, borderRadius: 16,
     shadowColor: colors.accent[500], shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
   },
@@ -482,8 +482,8 @@ export default function ResponderMapScreen() {
     }
   }
 
-  const cardBg = isDark ? 'rgba(13,17,23,0.97)' : '#FFFFFF';
-  const ctrlBg = isDark ? 'rgba(13,17,23,0.95)' : '#FFFFFF';
+  const cardBg = isDark ? 'rgba(17,24,39,0.95)' : 'rgba(255,255,255,0.95)';
+  const ctrlBg = isDark ? 'rgba(17,24,39,0.95)' : 'rgba(255,255,255,0.95)';
   const tabClear = insets.bottom + 80;
 
   return (
@@ -533,7 +533,7 @@ export default function ResponderMapScreen() {
             <Ionicons name="map" size={16} color={colors.accent[500]} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[s.headerTitle, isDark && { color: colors.white }]}>Tactical map</Text>
+            <Text style={[s.headerTitle, isDark && { color: colors.white }]}>Tactical Map</Text>
             {!loading && (
               <Text style={[s.headerSub, isDark && { color: colors.slate[500] }]}>
                 {active.length} active incident{active.length !== 1 ? 's' : ''}
@@ -712,8 +712,9 @@ const s = StyleSheet.create({
   // ── Top card ──
   topCard: {
     position: 'absolute', top: 0, left: 0, right: 0,
+    borderBottomLeftRadius: 22, borderBottomRightRadius: 22,
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12, shadowRadius: 16, elevation: 12,
+    shadowOpacity: 0.10, shadowRadius: 14, elevation: 10,
     overflow: 'hidden',
   },
   titleRow: {
@@ -756,17 +757,18 @@ const s = StyleSheet.create({
   // ── Controls ──
   ctrlBtn: {
     position: 'absolute',
-    width: 48, height: 48, borderRadius: 14, borderWidth: 1,
+    width: 46, height: 46, borderRadius: 16, borderWidth: 1,
+    borderColor: '#E8ECF0',
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
+    shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
   },
 
   // ── Empty ──
   emptyOverlay: { position: 'absolute', left: 16, right: 16, alignItems: 'center' },
   emptyCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 20, paddingVertical: 16, borderRadius: 16,
+    paddingHorizontal: 20, paddingVertical: 16, borderRadius: 20,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1, shadowRadius: 10, elevation: 4,
   },
@@ -782,7 +784,7 @@ const s = StyleSheet.create({
     position: 'absolute',
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: colors.severity.critical,
-    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20,
     shadowColor: colors.severity.critical, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4, shadowRadius: 10, elevation: 8,
   },
