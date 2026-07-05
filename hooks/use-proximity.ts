@@ -1,22 +1,16 @@
-/**
- * Proximity detection hook — FloodTrack
- *
- * Monitors user location and detects when they arrive near an assigned incident.
- * Shows an alert prompting them to update status to "on_scene".
- */
 import { useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
 import * as Location from 'expo-location';
 import type { Incident, ResponderStatus } from '@/types';
 
-const PROXIMITY_RADIUS_METERS = 200; // Alert when within 200m
-const CHECK_INTERVAL = 10_000; // Check every 10 seconds
+const PROXIMITY_RADIUS_METERS = 200;
+const CHECK_INTERVAL = 10_000;
 
 function getDistanceMeters(
   lat1: number, lon1: number,
   lat2: number, lon2: number,
 ): number {
-  const R = 6371000; // Earth radius in meters
+  const R = 6371000;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =
@@ -34,7 +28,6 @@ export function useProximityAlert(
   const alertedIds = useRef(new Set<string>());
 
   useEffect(() => {
-    // Only watch en_route incidents (that haven't already been alerted)
     const enRouteIncidents = incidents.filter(
       i => i.responderStatus === 'en_route' && !alertedIds.current.has(i.id),
     );
@@ -74,7 +67,6 @@ export function useProximityAlert(
           }
         }
       } catch {
-        // Silently fail
       }
     }
 

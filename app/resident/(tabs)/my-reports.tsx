@@ -34,8 +34,6 @@ type FilterTab = 'all' | 'active' | 'resolved';
 
 const ACTIVE_STATUSES: ReportStatus[] = ['pending', 'verified', 'assigned'];
 
-// ─── Animated report card ─────────────────────────────────────────────────────
-
 function ReportCard({
   report,
   onPress,
@@ -85,7 +83,6 @@ function ReportCard({
         accessibilityRole="button"
         accessibilityLabel={`${report.title}, ${report.severity} severity, status ${report.status}`}
       >
-        {/* ── Photo header ── */}
         {hasPhoto && (
           <View style={styles.photoHeader}>
             <Image
@@ -93,16 +90,13 @@ function ReportCard({
               style={styles.photoHeaderImg}
               resizeMode="cover"
             />
-            {/* Dark gradient overlay for readability */}
             <LinearGradient
               colors={['transparent', 'rgba(0,0,0,0.45)']}
               style={StyleSheet.absoluteFillObject}
             />
-            {/* Severity accent bar at top */}
             <View
               style={[styles.photoSeverityBar, { backgroundColor: severityColor }]}
             />
-            {/* Photo count badge */}
             {(report.mediaCount ?? 0) > 1 && (
               <View style={styles.photoBadge}>
                 <Ionicons name="camera" size={10} color={colors.white} />
@@ -113,7 +107,6 @@ function ReportCard({
         )}
 
         <View style={styles.cardRow}>
-          {/* Gradient severity bar (only when no photo) */}
           {!hasPhoto && (
             <LinearGradient
               colors={[severityColor, severityColor + 'AA']}
@@ -182,8 +175,6 @@ function ReportCard({
   );
 }
 
-// ─── Empty state with bounce animation ───────────────────────────────────────
-
 function EmptyState({
   tab,
   isDark,
@@ -234,8 +225,6 @@ function EmptyState({
   );
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
-
 export default function MyReportsScreen() {
   const router   = useRouter();
   const insets   = useSafeAreaInsets();
@@ -250,12 +239,10 @@ export default function MyReportsScreen() {
   const [error, setError]           = useState<string | null>(null);
   const [tab, setTab]               = useState<FilterTab>('all');
 
-  // Card entrance anims (one per filtered item, rebuilt on data change)
   const cardAnims = useRef<Animated.Value[]>([]);
 
   const screenBg = isDark ? colors.dark.bg : colors.slate[50];
 
-  // ── Header entrance ──
   const headerAnim = useRef(new Animated.Value(0)).current;
   const tabsAnim   = useRef(new Animated.Value(0)).current;
 
@@ -299,7 +286,6 @@ export default function MyReportsScreen() {
     return true;
   });
 
-  // Build / rebuild card anim values whenever the filtered list changes
   useEffect(() => {
     cardAnims.current = filtered.map(() => new Animated.Value(0));
     if (filtered.length === 0) return;
@@ -327,7 +313,6 @@ export default function MyReportsScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
-      {/* ═══ GRADIENT HEADER ═══ */}
       <Animated.View
         style={{
           opacity: headerAnim,
@@ -347,12 +332,10 @@ export default function MyReportsScreen() {
           end={{ x: 1, y: 1 }}
           style={[styles.header, { paddingTop: insets.top + 16 }]}
         >
-          {/* Decorative orbs */}
           <View style={[styles.orb, styles.orb1]} />
           <View style={[styles.orb, styles.orb2]} />
 
           <View style={styles.headerContent}>
-            {/* Left — title + badge */}
             <View>
               <Text style={styles.headerTitle}>My Reports</Text>
               {!loading && (
@@ -364,7 +347,6 @@ export default function MyReportsScreen() {
               )}
             </View>
 
-            {/* Right — new report button */}
             <Pressable
               onPress={() => router.push('/resident/report')}
               accessibilityRole="button"
@@ -384,7 +366,6 @@ export default function MyReportsScreen() {
           </View>
         </LinearGradient>
 
-        {/* Wave transition — curved white/dark bottom edge */}
         <View style={[styles.waveWrap, { backgroundColor: isDark ? colors.dark.bg : colors.slate[50] }]}>
           <LinearGradient
             colors={['#5E52EF', '#7C3AED']}
@@ -401,7 +382,6 @@ export default function MyReportsScreen() {
         </View>
       </Animated.View>
 
-      {/* ═══ FILTER TABS ═══ */}
       <Animated.View
         style={[
           styles.tabRow,
@@ -468,7 +448,6 @@ export default function MyReportsScreen() {
         })}
       </Animated.View>
 
-      {/* ═══ LOADING ═══ */}
       {loading && (
         <View style={styles.centered}>
           <View style={styles.loadingBadge}>
@@ -480,7 +459,6 @@ export default function MyReportsScreen() {
         </View>
       )}
 
-      {/* ═══ ERROR ═══ */}
       {!loading && error && (
         <View style={styles.centered}>
           <LinearGradient
@@ -513,7 +491,6 @@ export default function MyReportsScreen() {
         </View>
       )}
 
-      {/* ═══ LIST ═══ */}
       {!loading && !error && (
         <ScrollView
           contentContainerStyle={[
@@ -574,8 +551,6 @@ export default function MyReportsScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   root:    { flex: 1 },
   centered: {
@@ -586,7 +561,6 @@ const styles = StyleSheet.create({
     padding: 28,
   },
 
-  // ── Header ──────────────────────────────────────────────────────────────────
   header: {
     paddingHorizontal: 22,
     paddingBottom: 44,
@@ -636,7 +610,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
-  // Decorative orbs
   orb: {
     position: 'absolute',
     borderRadius: 999,
@@ -645,7 +618,6 @@ const styles = StyleSheet.create({
   orb1: { width: 180, height: 180, top: -70, right: -50 },
   orb2: { width: 110, height: 110, bottom: 0, left: -30, backgroundColor: 'rgba(255,255,255,0.04)' },
 
-  // ── Wave ────────────────────────────────────────────────────────────────────
   waveWrap: {
     height: 48,
     position: 'relative',
@@ -661,7 +633,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 32,
   },
 
-  // ── Filter tabs ─────────────────────────────────────────────────────────────
   tabRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
@@ -733,11 +704,9 @@ const styles = StyleSheet.create({
     color: colors.slate[500],
   },
 
-  // ── List ────────────────────────────────────────────────────────────────────
   list:      { padding: 16, gap: 14 },
   listEmpty: { flex: 1 },
 
-  // ── Card ────────────────────────────────────────────────────────────────────
   card: {
     backgroundColor: colors.white,
     borderRadius: 18,
@@ -748,7 +717,6 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 5,
   },
-  // Photo header
   photoHeader: {
     position: 'relative',
     height: 160,
@@ -773,7 +741,6 @@ const styles = StyleSheet.create({
   },
   photoBadgeText: { color: colors.white, fontSize: 11, fontWeight: '700' },
 
-  // Card inner
   cardRow:  { flexDirection: 'row' },
   cardBar:  { width: 4 },
   cardBody: { flex: 1, padding: 16, gap: 10 },
@@ -814,7 +781,6 @@ const styles = StyleSheet.create({
   cardRef:  { fontSize: 11, color: colors.slate[400], fontWeight: '600', letterSpacing: 0.2 },
   cardTime: { fontSize: 11, color: colors.slate[400] },
 
-  // ── Loading ─────────────────────────────────────────────────────────────────
   loadingBadge: {
     width: 72, height: 72, borderRadius: 22,
     backgroundColor: '#F0F2FF',
@@ -831,7 +797,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // ── Error state ─────────────────────────────────────────────────────────────
   errorIconBadge: {
     width: 90, height: 90, borderRadius: 28,
     alignItems: 'center', justifyContent: 'center',
@@ -864,7 +829,6 @@ const styles = StyleSheet.create({
   },
   retryText: { color: colors.white, fontWeight: '700', fontSize: 14 },
 
-  // ── Empty state ─────────────────────────────────────────────────────────────
   emptyState: { alignItems: 'center', gap: 14, paddingTop: 56 },
   emptyIconBadge: {
     width: 110, height: 110, borderRadius: 34,

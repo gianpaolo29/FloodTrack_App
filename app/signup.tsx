@@ -1,10 +1,3 @@
-/**
- * Sign Up screen — premium sleek design matching login
- *
- * Gradient hero with wave · glassmorphic badge · frosted glow inputs
- * Multi-step feel with staggered cascade · gradient CTA · Google sign-up
- * Animated floating particles · role selector with gradient active state
- */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -30,8 +23,6 @@ import { useAuth } from '@/context/AuthContext';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const HERO_H = SCREEN_H * 0.30;
-
-// ─── Validation ─────────────────────────────────────────────────────────────
 
 const PH_MOBILE_RE = /^(\+639|09)\d{9}$/;
 const EMAIL_RE     = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -62,8 +53,6 @@ function validateForm(f: FormFields): FormErrors {
 }
 
 type Role = 'Resident' | 'Responder';
-
-// ─── Floating particle ──────────────────────────────────────────────────────
 
 function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: number; size?: number }) {
   const translateY = useRef(new Animated.Value(0)).current;
@@ -97,8 +86,6 @@ function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: numb
     }} />
   );
 }
-
-// ─── Animated input field ───────────────────────────────────────────────────
 
 function AnimatedField({
   label, icon, error, placeholder, right, animDelay = 0, ...inputProps
@@ -213,14 +200,11 @@ const fi = StyleSheet.create({
   errText: { fontSize: 11, color: '#E53E3E', fontWeight: '600' },
 });
 
-// ─── Screen ─────────────────────────────────────────────────────────────────
-
 export default function SignUpScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { register } = useAuth();
 
-  // ── Entrance animations ──
   const heroOpacity   = useRef(new Animated.Value(0)).current;
   const heroScale     = useRef(new Animated.Value(1.05)).current;
   const formOpacity   = useRef(new Animated.Value(0)).current;
@@ -247,7 +231,6 @@ export default function SignUpScreen() {
         Animated.timing(titleOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
         Animated.spring(titleTransY,  { toValue: 0, friction: 8, tension: 60, useNativeDriver: true }),
       ]),
-      // fields animate themselves via AnimatedField.animDelay
       Animated.parallel([
         Animated.timing(btnOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
         Animated.spring(btnScale,   { toValue: 1, friction: 5, tension: 80, useNativeDriver: true }),
@@ -260,7 +243,6 @@ export default function SignUpScreen() {
     ]).start();
   }, []);
 
-  // ── Form state ──
   const [fields, setFields] = useState<FormFields>({
     firstName: '', lastName: '', email: '',
     contact: '', password: '', confirmPassword: '',
@@ -304,7 +286,6 @@ export default function SignUpScreen() {
   const handleGoogleSignUp = useCallback(async () => {
     setIsGoogleLoading(true);
     try {
-      // TODO: Integrate Google OAuth
       await new Promise(r => setTimeout(r, 1500));
       setErrors({ email: 'Google sign-up is not yet configured.' });
     } finally {
@@ -312,13 +293,11 @@ export default function SignUpScreen() {
     }
   }, []);
 
-  // password strength
   const pwdLen = fields.password.length;
   const strength = pwdLen === 0 ? 0 : pwdLen < 6 ? 1 : pwdLen < 10 ? 2 : 3;
   const strengthColors = ['#E2E8F0', '#E53E3E', '#F6AD55', '#48BB78'];
   const strengthLabels = ['', 'Weak', 'Medium', 'Strong'];
 
-  // Field base delay (after role selector animation ~400ms)
   const FIELD_BASE = 500;
 
   return (
@@ -329,7 +308,6 @@ export default function SignUpScreen() {
         style={s.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        {/* ── Gradient hero ── */}
         <Animated.View style={{ opacity: heroOpacity, transform: [{ scale: heroScale }] }}>
           <LinearGradient
             colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
@@ -337,16 +315,13 @@ export default function SignUpScreen() {
             end={{ x: 1, y: 1 }}
             style={[s.hero, { paddingTop: insets.top + 8 }]}
           >
-            {/* Decorative orbs */}
             <View style={[s.orb, s.orb1]} />
             <View style={[s.orb, s.orb2]} />
 
-            {/* Particles */}
             <Particle delay={200}  x={SCREEN_W * 0.08} y={20} size={3} />
             <Particle delay={800}  x={SCREEN_W * 0.88} y={35} size={4} />
             <Particle delay={1400} x={SCREEN_W * 0.5}  y={15} size={3} />
 
-            {/* Back button */}
             <Pressable
               onPress={() => router.back()}
               style={s.backBtn}
@@ -357,7 +332,6 @@ export default function SignUpScreen() {
               <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
             </Pressable>
 
-            {/* Hero content */}
             <View style={s.heroContent}>
               <View style={s.heroBadge}>
                 <Ionicons name="person-add" size={28} color="#fff" />
@@ -367,7 +341,6 @@ export default function SignUpScreen() {
             </View>
           </LinearGradient>
 
-          {/* Wave */}
           <View style={s.waveWrap}>
             <LinearGradient
               colors={['#6B52F5', '#7C3AED']}
@@ -379,14 +352,12 @@ export default function SignUpScreen() {
           </View>
         </Animated.View>
 
-        {/* ── Form area ── */}
         <Animated.View style={[s.formArea, { opacity: formOpacity, transform: [{ translateY: formTransY }] }]}>
           <ScrollView
             contentContainerStyle={[s.formScroll, { paddingBottom: insets.bottom + 36 }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* Title */}
             <Animated.View style={{ opacity: titleOpacity, transform: [{ translateY: titleTransY }] }}>
               <View style={s.titleRow}>
                 <Text style={s.titleBold}>Create </Text>
@@ -395,8 +366,6 @@ export default function SignUpScreen() {
               <Text style={s.titleSub}>Fill in the details to get started</Text>
             </Animated.View>
 
-
-            {/* ── Name row ── */}
             <View style={s.nameRow}>
               <View style={s.nameHalf}>
                 <AnimatedField
@@ -426,7 +395,6 @@ export default function SignUpScreen() {
               </View>
             </View>
 
-            {/* ── Email ── */}
             <AnimatedField
               label="Email address"
               icon="mail-outline"
@@ -441,7 +409,6 @@ export default function SignUpScreen() {
               animDelay={FIELD_BASE + 120}
             />
 
-            {/* ── Mobile ── */}
             <AnimatedField
               label="Mobile number"
               icon="call-outline"
@@ -455,7 +422,6 @@ export default function SignUpScreen() {
               animDelay={FIELD_BASE + 180}
             />
 
-            {/* ── Divider ── */}
             <View style={s.divider}>
               <View style={s.dividerLine} />
               <View style={s.dividerPill}>
@@ -465,7 +431,6 @@ export default function SignUpScreen() {
               <View style={s.dividerLine} />
             </View>
 
-            {/* ── Password ── */}
             <AnimatedField
               label="Password"
               icon="lock-closed-outline"
@@ -488,7 +453,6 @@ export default function SignUpScreen() {
               }
             />
 
-            {/* Password strength bar */}
             {fields.password.length > 0 && (
               <View style={s.strengthRow}>
                 <View style={s.strengthTrack}>
@@ -508,7 +472,6 @@ export default function SignUpScreen() {
               </View>
             )}
 
-            {/* ── Confirm password ── */}
             <AnimatedField
               label="Confirm password"
               icon="lock-closed-outline"
@@ -531,7 +494,6 @@ export default function SignUpScreen() {
               }
             />
 
-            {/* ── Create account CTA ── */}
             <Animated.View style={{ opacity: btnOpacity, transform: [{ scale: btnScale }] }}>
               <Pressable
                 onPress={handleSubmit}
@@ -560,7 +522,6 @@ export default function SignUpScreen() {
               </Pressable>
             </Animated.View>
 
-            {/* ── Divider ── */}
             <Animated.View style={[s.orDivider, { opacity: socialOpacity, transform: [{ translateY: socialTransY }] }]}>
               <View style={s.dividerLine} />
               <View style={s.dividerPill}>
@@ -569,7 +530,6 @@ export default function SignUpScreen() {
               <View style={s.dividerLine} />
             </Animated.View>
 
-            {/* ── Social ── */}
             <Animated.View style={[s.socialRow, { opacity: socialOpacity, transform: [{ translateY: socialTransY }] }]}>
               <Pressable
                 style={({ pressed }) => [s.socialBtn, s.googleBtn, pressed && { transform: [{ scale: 0.97 }] }]}
@@ -598,7 +558,6 @@ export default function SignUpScreen() {
               </Pressable>
             </Animated.View>
 
-            {/* ── Footer ── */}
             <Animated.View style={[s.footer, { opacity: footerOpacity }]}>
               <Text style={s.footerText}>Already have an account?</Text>
               <Pressable onPress={() => router.back()} hitSlop={8}>
@@ -613,13 +572,10 @@ export default function SignUpScreen() {
   );
 }
 
-// ─── Styles ─────────────────────────────────────────────────────────────────
-
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#FAFBFE' },
   flex: { flex: 1 },
 
-  // ── Hero ────────────────────────────
   hero: {
     height: HERO_H,
     paddingHorizontal: 20,
@@ -657,7 +613,6 @@ const s = StyleSheet.create({
     fontSize: 13, color: 'rgba(255,255,255,0.6)', letterSpacing: 0.3,
   },
 
-  // ── Wave ────────────────────────────
   waveWrap: {
     height: 50, position: 'relative', marginTop: -1,
   },
@@ -668,7 +623,6 @@ const s = StyleSheet.create({
     borderTopLeftRadius: 36, borderTopRightRadius: 36,
   },
 
-  // ── Form ────────────────────────────
   formArea: {
     flex: 1, backgroundColor: '#FAFBFE', marginTop: -2,
   },
@@ -684,11 +638,9 @@ const s = StyleSheet.create({
   titleLight: { fontSize: 28, fontWeight: '300', color: '#1A202C' },
   titleSub: { fontSize: 14, color: '#A0AEC0', marginBottom: 20 },
 
-  // ── Name ────────────────────────────
   nameRow: { flexDirection: 'row', gap: 10 },
   nameHalf: { flex: 1 },
 
-  // ── Divider ─────────────────────────
   divider: {
     flexDirection: 'row', alignItems: 'center',
     gap: 12, marginVertical: 6, marginBottom: 18,
@@ -701,7 +653,6 @@ const s = StyleSheet.create({
   },
   dividerText: { fontSize: 11, fontWeight: '600', color: '#A0AEC0' },
 
-  // ── Password strength ───────────────
   strengthRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     marginTop: -8, marginBottom: 14, paddingHorizontal: 4,
@@ -716,10 +667,8 @@ const s = StyleSheet.create({
     fontSize: 11, fontWeight: '700',
   },
 
-  // ── Eye toggle ──────────────────────
   eyeBtn: { paddingHorizontal: 10 },
 
-  // ── CTA ─────────────────────────────
   ctaBtn: {
     height: 56, borderRadius: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -739,13 +688,11 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
-  // ── OR ──────────────────────────────
   orDivider: {
     flexDirection: 'row', alignItems: 'center',
     gap: 12, marginVertical: 18,
   },
 
-  // ── Social ──────────────────────────
   socialRow: {
     flexDirection: 'row', gap: 12, marginBottom: 20,
   },
@@ -780,7 +727,6 @@ const s = StyleSheet.create({
   },
   fbBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 
-  // ── Footer ──────────────────────────
   footer: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     marginBottom: 10,

@@ -1,9 +1,3 @@
-/**
- * AppAlert — premium SweetAlert-style animated modal
- *
- * Types: success · error · warning · info · confirm
- * Features: spring animation, dark-mode aware, icon glow, action buttons
- */
 import { useEffect, useRef } from 'react';
 import {
   Animated,
@@ -18,8 +12,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 export type AlertType = 'success' | 'error' | 'warning' | 'info' | 'confirm';
 
 export interface AlertConfig {
@@ -31,8 +23,6 @@ export interface AlertConfig {
   onConfirm?: () => void | Promise<void>;
   onCancel?: () => void;
 }
-
-// ─── Alert type metadata ──────────────────────────────────────────────────────
 
 const ALERT_META: Record<AlertType, {
   icon: keyof typeof Ionicons.glyphMap;
@@ -72,8 +62,6 @@ const ALERT_META: Record<AlertType, {
   },
 };
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
 interface Props {
   config: AlertConfig;
   onDismiss: () => void;
@@ -84,7 +72,6 @@ export function AppAlert({ config, onDismiss }: Props) {
   const isDark  = scheme === 'dark';
   const meta    = ALERT_META[config.type];
 
-  // ── Animation ──
   const scaleAnim   = useRef(new Animated.Value(0.78)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const backdropOp  = useRef(new Animated.Value(0)).current;
@@ -135,7 +122,6 @@ export function AppAlert({ config, onDismiss }: Props) {
     });
   }
 
-  // ── Colors ──
   const cardBg      = isDark ? colors.dark.elevated : colors.white;
   const titleColor  = isDark ? colors.dark.text      : '#0A0D14';
   const msgColor    = isDark ? colors.dark.subtext    : colors.slate[500];
@@ -152,12 +138,10 @@ export function AppAlert({ config, onDismiss }: Props) {
       onRequestClose={() => animateDismiss(config.onCancel)}
       statusBarTranslucent
     >
-      {/* Backdrop */}
       <Animated.View style={[s.backdrop, { opacity: backdropOp }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={() => animateDismiss(config.onCancel)} />
       </Animated.View>
 
-      {/* Card wrapper (centered, not a Pressable so touches don't bleed to backdrop) */}
       <View style={s.centerer} pointerEvents="box-none">
         <Animated.View
           style={[
@@ -170,26 +154,20 @@ export function AppAlert({ config, onDismiss }: Props) {
             },
           ]}
         >
-          {/* Top accent stripe */}
           <View style={[s.stripe, { backgroundColor: meta.color }]} />
 
-          {/* Icon circle */}
           <View style={[s.iconRing, { backgroundColor: iconBg, shadowColor: meta.color }]}>
             <Ionicons name={meta.icon} size={44} color={meta.color} />
           </View>
 
-          {/* Title */}
           <Text style={[s.title, { color: titleColor }]}>{config.title}</Text>
 
-          {/* Message */}
           {config.message ? (
             <Text style={[s.message, { color: msgColor }]}>{config.message}</Text>
           ) : null}
 
-          {/* Divider */}
           <View style={[s.divider, { backgroundColor: isDark ? colors.dark.border : colors.slate[100] }]} />
 
-          {/* Buttons */}
           <View style={[s.btnRow, config.cancelText && s.btnRowDouble]}>
             {config.cancelText && (
               <Pressable
@@ -227,8 +205,6 @@ export function AppAlert({ config, onDismiss }: Props) {
     </Modal>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
   backdrop: {

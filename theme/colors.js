@@ -1,5 +1,4 @@
 export const colors = {
-  // Brand — deep water blue (primary actions, headers, links)
   brand: {
     50:  '#EAF2FB',
     100: '#C9DEF4',
@@ -9,13 +8,11 @@ export const colors = {
     700: '#124577',
     900: '#0B2F52',
   },
-  // Accent — GIS teal (map controls, secondary buttons, responder UI)
   accent: {
     100: '#D6F2EC',
     500: '#0FA896',
     700: '#0A6E64',
   },
-  // Neutrals — slate (text, surfaces, borders)
   slate: {
     50:  '#F7F9FB',
     100: '#EDF1F5',
@@ -28,24 +25,21 @@ export const colors = {
     800: '#2B3542',
     900: '#1A222B',
   },
-  // Premium dark palette — OLED-friendly deep blacks
   dark: {
-    bg:       '#07090F',   // screen background
-    surface:  '#0D1117',   // base surface
-    card:     '#111827',   // card background
-    elevated: '#161E2E',   // elevated cards, modals, sheets
-    border:   '#1E2A3A',   // subtle borders/dividers
-    text:     '#E2E8F0',   // primary text
-    subtext:  '#7A8FA8',   // secondary text
+    bg:       '#07090F',
+    surface:  '#0D1117',
+    card:     '#111827',
+    elevated: '#161E2E',
+    border:   '#1E2A3A',
+    text:     '#E2E8F0',
+    subtext:  '#7A8FA8',
   },
-  // Severity — RESERVED for severity only; never use on generic UI
   severity: {
     low:      '#2E9E5B',
     moderate: '#F4B400',
     high:     '#EA6A0C',
     critical: '#D32F2F',
   },
-  // Status badges — tinted bg + dark same-family text
   status: {
     pending:  { bg: '#FCF1DC', text: '#8A5A00' },
     verified: { bg: '#E7F0FB', text: '#124577' },
@@ -53,7 +47,13 @@ export const colors = {
     resolved: { bg: '#E7F6EC', text: '#1B7A3D' },
     rejected: { bg: '#F2EFEF', text: '#5A6675' },
   },
-  // GIS heatmap density ramp (sparse → hotspot)
   heatmap: ['#3B82C4', '#2E9E5B', '#F4B400', '#EA6A0C', '#D32F2F'],
+  floodDepth: {
+    gradient: ['#E3F2FD', '#90CAF9', '#42A5F5', '#1565C0', '#0D47A1'],
+    low:      { fill: 'rgba(144,202,249,0.25)', stroke: 'rgba(144,202,249,0.6)' },
+    moderate: { fill: 'rgba(66,165,245,0.30)',  stroke: 'rgba(66,165,245,0.65)' },
+    high:     { fill: 'rgba(21,101,192,0.35)',  stroke: 'rgba(21,101,192,0.7)' },
+    critical: { fill: 'rgba(13,71,161,0.40)',   stroke: 'rgba(13,71,161,0.75)' },
+  },
   white: '#FFFFFF',
 };

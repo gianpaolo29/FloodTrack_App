@@ -1,11 +1,3 @@
-/**
- * PrimaryButton
- * Reusable action button. Variants:
- *   'primary'   → brand blue  (main CTA)
- *   'secondary' → accent teal (map / responder secondary actions)
- *   'danger'    → NOT severity red — only for destructive actions like delete/reject
- *                 (severity red stays exclusively on SeverityChip / pins)
- */
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text } from 'react-native';
 import { colors } from '@/theme/colors';
 

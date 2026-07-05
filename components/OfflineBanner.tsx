@@ -1,7 +1,3 @@
-/**
- * Offline banner — shows when device has no network connectivity
- * Also displays sync status when coming back online
- */
 import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,7 +39,6 @@ export function OfflineBanner({
   );
 }
 
-/* ── Spinning sync icon ── */
 function SpinningSyncIcon() {
   const rotation = useRef(new Animated.Value(0)).current;
 
@@ -71,7 +66,6 @@ function SpinningSyncIcon() {
   );
 }
 
-/* ── Pulsing offline icon ── */
 function PulsingOfflineIcon() {
   const pulse = useRef(new Animated.Value(0)).current;
 
@@ -133,7 +127,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  /* pulse ring behind offline icon */
   pulseContainer: {
     width: 20,
     height: 20,
@@ -147,7 +140,6 @@ const s = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: colors.severity.critical,
   },
-  /* pending count badge */
   badge: {
     minWidth: 20,
     height: 20,

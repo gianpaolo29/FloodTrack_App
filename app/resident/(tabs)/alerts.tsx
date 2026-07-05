@@ -1,8 +1,3 @@
-/**
- * Alerts screen — premium redesign
- * LinearGradient header · wave transition · glassmorphic cards
- * Staggered slide-in animations · severity accent bars · pulsing unread dots
- */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -29,11 +24,7 @@ import { useRouter } from 'expo-router';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
-// ─── Gradient colours (matches login hero) ────────────────────────────────────
-
 const GRAD: [string, string, string] = ['#00D2FF', '#4A6CF7', '#7C3AED'];
-
-// ─── Animated unread pulse dot ────────────────────────────────────────────────
 
 function PulseDot({ color }: { color: string }) {
   const scale   = useRef(new Animated.Value(1)).current;
@@ -72,13 +63,9 @@ function PulseDot({ color }: { color: string }) {
   );
 }
 
-// ─── Decorative orb (header atmosphere) ──────────────────────────────────────
-
 function HeaderOrb({ style }: { style: object }) {
   return <View style={[{ position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.06)' }, style]} />;
 }
-
-// ─── Alert card (animated entrance) ──────────────────────────────────────────
 
 function AlertCard({
   alert,
@@ -128,13 +115,10 @@ function AlertCard({
         accessibilityRole="button"
         accessibilityLabel={`${alert.title}. ${alert.body}`}
       >
-        {/* Severity accent bar */}
         <View style={[styles.accentBar, { backgroundColor: accentColor }]} />
 
         <View style={styles.cardInner}>
-          {/* Top row: icon badge · title · unread dot + time */}
           <View style={styles.cardTopRow}>
-            {/* Icon badge */}
             <LinearGradient
               colors={[accentColor + '30', accentColor + '14']}
               style={styles.iconBadge}
@@ -142,7 +126,6 @@ function AlertCard({
               <Ionicons name={iconName} size={20} color={accentColor} />
             </LinearGradient>
 
-            {/* Title */}
             <View style={styles.cardTitleWrap}>
               <Text
                 style={[
@@ -157,7 +140,6 @@ function AlertCard({
               </Text>
             </View>
 
-            {/* Right: pulse dot + time pill */}
             <View style={styles.cardRight}>
               {!alert.read && <PulseDot color={accentColor} />}
               <View style={[
@@ -171,7 +153,6 @@ function AlertCard({
             </View>
           </View>
 
-          {/* Body */}
           <Text
             style={[styles.cardBody, isDark && { color: colors.slate[400] }]}
             numberOfLines={2}
@@ -179,7 +160,6 @@ function AlertCard({
             {alert.body}
           </Text>
 
-          {/* Footer: area · kind badge */}
           <View style={[
             styles.cardFooter,
             isDark && { borderTopColor: colors.dark.border },
@@ -207,8 +187,6 @@ function AlertCard({
     </Animated.View>
   );
 }
-
-// ─── Section header ───────────────────────────────────────────────────────────
 
 function SectionLabel({
   icon,
@@ -244,8 +222,6 @@ function SectionLabel({
   );
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
-
 export default function AlertsScreen() {
   const insets    = useSafeAreaInsets();
   const scheme    = useColorScheme();
@@ -259,15 +235,12 @@ export default function AlertsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]           = useState<string | null>(null);
 
-  // ── Entrance animations ──
   const heroOpacity  = useRef(new Animated.Value(0)).current;
   const heroTransY   = useRef(new Animated.Value(-16)).current;
   const listOpacity  = useRef(new Animated.Value(0)).current;
-  // Per-card stagger — we keep up to 30 slots
   const cardAnims    = useRef(Array.from({ length: 30 }, () => new Animated.Value(0))).current;
 
   const runEntranceAnims = useCallback((count: number) => {
-    // Reset cards
     cardAnims.forEach(a => a.setValue(0));
 
     const cardSequences = cardAnims.slice(0, Math.min(count, 30)).map((anim, i) =>
@@ -278,17 +251,14 @@ export default function AlertsScreen() {
     );
 
     Animated.parallel([
-      // Hero slides in from top
       Animated.parallel([
         Animated.timing(heroOpacity, { toValue: 1, duration: 420, useNativeDriver: true }),
         Animated.spring(heroTransY,  { toValue: 0, friction: 7, tension: 60, useNativeDriver: true }),
       ]),
-      // List fades in slightly after
       Animated.sequence([
         Animated.delay(160),
         Animated.timing(listOpacity, { toValue: 1, duration: 320, useNativeDriver: true }),
       ]),
-      // Cards stagger
       Animated.stagger(0, cardSequences),
     ]).start();
   }, [heroOpacity, heroTransY, listOpacity, cardAnims]);
@@ -299,7 +269,6 @@ export default function AlertsScreen() {
       setError(null);
       const data = await getAlertsWithReadState(token!);
       setAlerts(data);
-      // Run entrance on first load; on refresh just let list update
       if (!isRefresh) {
         setTimeout(() => runEntranceAnims(data.length), 50);
       }
@@ -341,7 +310,6 @@ export default function AlertsScreen() {
   const nonCriticals = alerts.filter(a => a.kind !== 'critical');
   const unreadCount  = alerts.filter(a => !a.read).length;
 
-  // Card slot index — assigned across both sections in render order
   let cardSlot = 0;
 
   const screenBg = isDark ? colors.dark.bg : colors.slate[50];
@@ -349,9 +317,6 @@ export default function AlertsScreen() {
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
 
-      {/* ══════════════════════════════════════════════
-          GRADIENT HEADER
-      ══════════════════════════════════════════════ */}
       <Animated.View style={[
         styles.headerWrap,
         { opacity: heroOpacity, transform: [{ translateY: heroTransY }] },
@@ -362,15 +327,12 @@ export default function AlertsScreen() {
           end={{ x: 1, y: 1 }}
           style={[styles.headerGradient, { paddingTop: insets.top + 10 }]}
         >
-          {/* Decorative orbs for atmosphere */}
           <HeaderOrb style={{ width: 180, height: 180, top: -60, right: -50 }} />
           <HeaderOrb style={{ width: 100, height: 100, top: 30, left: -30, backgroundColor: 'rgba(255,255,255,0.04)' }} />
           <HeaderOrb style={{ width: 60,  height: 60,  bottom: 10, left: SCREEN_W * 0.5, backgroundColor: 'rgba(255,255,255,0.05)' }} />
 
-          {/* Top row: icon + title + mark-all pill */}
           <View style={styles.headerTop}>
             <View style={styles.headerLeft}>
-              {/* Bell icon with badge */}
               <View style={styles.headerIconWrap}>
                 <Ionicons name="notifications" size={22} color="rgba(255,255,255,0.92)" />
                 {unreadCount > 0 && (
@@ -403,7 +365,6 @@ export default function AlertsScreen() {
             )}
           </View>
 
-          {/* Unread count subtitle */}
           <Text style={styles.headerSub}>
             {loading
               ? 'Loading notifications…'
@@ -413,7 +374,6 @@ export default function AlertsScreen() {
           </Text>
         </LinearGradient>
 
-        {/* Wave curved transition to content */}
         <View style={styles.waveWrap}>
           <LinearGradient
             colors={['#6B52F5', '#7C3AED']}
@@ -425,9 +385,6 @@ export default function AlertsScreen() {
         </View>
       </Animated.View>
 
-      {/* ══════════════════════════════════════════════
-          LOADING
-      ══════════════════════════════════════════════ */}
       {loading && (
         <View style={styles.centered}>
           <LinearGradient
@@ -442,9 +399,6 @@ export default function AlertsScreen() {
         </View>
       )}
 
-      {/* ══════════════════════════════════════════════
-          ERROR STATE
-      ══════════════════════════════════════════════ */}
       {!loading && error && (
         <View style={styles.centered}>
           <LinearGradient
@@ -477,9 +431,6 @@ export default function AlertsScreen() {
         </View>
       )}
 
-      {/* ══════════════════════════════════════════════
-          ALERT LIST
-      ══════════════════════════════════════════════ */}
       {!loading && !error && (
         <Animated.View style={[styles.listWrapper, { opacity: listOpacity }]}>
           <ScrollView
@@ -499,7 +450,6 @@ export default function AlertsScreen() {
             showsVerticalScrollIndicator={false}
           >
 
-            {/* ── Critical section ── */}
             {criticals.length > 0 && (
               <View style={styles.section}>
                 <SectionLabel
@@ -524,7 +474,6 @@ export default function AlertsScreen() {
               </View>
             )}
 
-            {/* ── Advisories & updates section ── */}
             {nonCriticals.length > 0 && (
               <View style={styles.section}>
                 <SectionLabel
@@ -549,7 +498,6 @@ export default function AlertsScreen() {
               </View>
             )}
 
-            {/* ── Empty state ── */}
             {alerts.length === 0 && (
               <View style={styles.emptyState}>
                 <LinearGradient
@@ -589,8 +537,6 @@ export default function AlertsScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   root:    { flex: 1 },
   centered: {
@@ -601,7 +547,6 @@ const styles = StyleSheet.create({
     padding: 32,
   },
 
-  // ── Header ───────────────────────────────────────────────────────────────────
   headerWrap: { zIndex: 10 },
   headerGradient: {
     paddingHorizontal: 22,
@@ -669,7 +614,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Wave separator
   waveWrap: {
     height: 52,
     position: 'relative',
@@ -685,12 +629,10 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 32,
   },
 
-  // ── List ─────────────────────────────────────────────────────────────────────
   listWrapper: { flex: 1 },
   scroll:      { padding: 16, gap: 22, paddingTop: 8 },
   scrollEmpty: { flex: 1, justifyContent: 'center' },
 
-  // ── Section ──────────────────────────────────────────────────────────────────
   section: { gap: 10 },
   sectionRow: {
     flexDirection: 'row',
@@ -721,7 +663,6 @@ const styles = StyleSheet.create({
   },
   sectionCountText: { fontSize: 11, fontWeight: '800' },
 
-  // ── Card ─────────────────────────────────────────────────────────────────────
   card: {
     flexDirection: 'row',
     borderRadius: 18,
@@ -792,7 +733,6 @@ const styles = StyleSheet.create({
   },
   kindText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
 
-  // ── Empty / Error shared ──────────────────────────────────────────────────────
   emptyState:    { alignItems: 'center', gap: 18 },
   emptyIconWrap: {
     width: 92,

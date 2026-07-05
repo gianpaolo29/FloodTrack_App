@@ -1,7 +1,3 @@
-/**
- * Profile screen — premium redesign v2
- * Gradient hero · glassmorphic modals · animated stat cards · stagger entrance
- */
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -28,8 +24,6 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
 import { updateProfile, changePassword } from '@/services/api';
-
-// ─── Password strength ─────────────────────────────────────────────────────
 
 interface PwdCheck {
   label: string;
@@ -125,8 +119,6 @@ function PasswordStrengthBar({
   );
 }
 
-// ─── Row icon colors per key ──────────────────────────────────────────────────
-
 const ICON_COLORS: Record<string, string> = {
   'person-outline':             '#4F8EF7',
   'lock-closed-outline':        '#A855F7',
@@ -140,8 +132,6 @@ const ICON_COLORS: Record<string, string> = {
   'information-outline':        colors.slate[400],
   'log-out-outline':            colors.severity.critical,
 };
-
-// ─── Setting row ──────────────────────────────────────────────────────────────
 
 function SettingRow({
   icon,
@@ -184,12 +174,10 @@ function SettingRow({
         accessibilityRole={onPress ? 'button' : 'none'}
         accessibilityLabel={label}
       >
-        {/* Tinted icon tile */}
         <View style={[styles.rowIcon, { backgroundColor: accentColor + '20' }]}>
           <Ionicons name={icon} size={17} color={accentColor} />
         </View>
 
-        {/* Text */}
         <View style={styles.rowText}>
           <Text style={[styles.rowLabel, { color: labelColor }]}>{label}</Text>
           {description && (
@@ -199,7 +187,6 @@ function SettingRow({
           )}
         </View>
 
-        {/* Right slot */}
         {right !== undefined
           ? right
           : onPress && !destructive
@@ -214,8 +201,6 @@ function SettingRow({
   );
 }
 
-// ─── Section label ────────────────────────────────────────────────────────────
-
 function SectionLabel({ title, isDark }: { title: string; isDark: boolean }) {
   return (
     <Text style={[styles.sectionLabel, isDark && { color: colors.slate[500] }]}>
@@ -223,8 +208,6 @@ function SectionLabel({ title, isDark }: { title: string; isDark: boolean }) {
     </Text>
   );
 }
-
-// ─── Stat tile ────────────────────────────────────────────────────────────────
 
 function StatTile({
   value,
@@ -257,7 +240,6 @@ function StatTile({
         },
       ]}
     >
-      {/* Subtle gradient background */}
       <LinearGradient
         colors={isDark
           ? [color + '12', color + '06']
@@ -276,8 +258,6 @@ function StatTile({
     </Animated.View>
   );
 }
-
-// ─── Glassmorphic input field ─────────────────────────────────────────────────
 
 function GlassInput({
   icon,
@@ -308,8 +288,6 @@ function GlassInput({
   );
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
-
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
@@ -326,14 +304,12 @@ export default function ProfileScreen() {
   const [tempName,         setTempName]         = useState('');
   const [tempPhone,        setTempPhone]        = useState('');
 
-  // Edit profile modal state
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editFirstName, setEditFirstName]     = useState('');
   const [editLastName, setEditLastName]       = useState('');
   const [editContact, setEditContact]         = useState('');
   const [editSaving, setEditSaving]           = useState(false);
 
-  // Change password modal state
   const [showChangePwd, setShowChangePwd]         = useState(false);
   const [currentPwd, setCurrentPwd]               = useState('');
   const [newPwd, setNewPwd]                       = useState('');
@@ -342,7 +318,6 @@ export default function ProfileScreen() {
   const [showCurrentPwd, setShowCurrentPwd]       = useState(false);
   const [showNewPwd, setShowNewPwd]               = useState(false);
 
-  // ── Entrance animations ──
   const heroAnim   = useRef(new Animated.Value(0)).current;
   const stat0Anim  = useRef(new Animated.Value(0)).current;
   const stat1Anim  = useRef(new Animated.Value(0)).current;
@@ -439,7 +414,6 @@ export default function ProfileScreen() {
     }
   }
 
-  // Load persisted preferences
   useEffect(() => {
     Promise.all([
       Storage.getItem('ft_emergency_name'),
@@ -456,7 +430,6 @@ export default function ProfileScreen() {
     }).catch(() => {});
   }, []);
 
-  // Persist notification preferences on change
   useEffect(() => { Storage.setItem('ft_notif_critical', String(notifCritical)); }, [notifCritical]);
   useEffect(() => { Storage.setItem('ft_notif_advisory', String(notifAdvisory)); }, [notifAdvisory]);
   useEffect(() => { Storage.setItem('ft_notif_reports',  String(notifMyReports)); }, [notifMyReports]);
@@ -492,7 +465,6 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
 
-        {/* ── Hero header with gradient ── */}
         <Animated.View
           style={{
             opacity: heroAnim,
@@ -507,17 +479,14 @@ export default function ProfileScreen() {
             end={{ x: 1, y: 1 }}
             style={[styles.hero, { paddingTop: insets.top + 20 }]}
           >
-            {/* Decorative orbs */}
             <View style={styles.orb1} />
             <View style={styles.orb2} />
             <View style={styles.orb3} />
 
-            {/* Edit shortcut */}
             <Pressable style={styles.editBtn} onPress={openEditProfile} accessibilityRole="button" accessibilityLabel="Edit profile">
               <Ionicons name="pencil" size={15} color="rgba(255,255,255,0.92)" />
             </Pressable>
 
-            {/* Avatar ring */}
             <View style={styles.avatarRing}>
               <View style={[styles.avatarRingInner, { borderColor: roleColor }]}>
                 <LinearGradient
@@ -532,7 +501,6 @@ export default function ProfileScreen() {
             <Text style={styles.heroName}>{fullName}</Text>
             <Text style={styles.heroEmail}>{user?.email ?? '—'}</Text>
 
-            {/* Role badge */}
             <View style={[styles.roleBadge, { backgroundColor: 'rgba(255,255,255,0.18)', borderColor: 'rgba(255,255,255,0.35)' }]}>
               <Ionicons
                 name={user?.role === 'Responder' ? 'shield-checkmark' : 'person-circle'}
@@ -544,7 +512,6 @@ export default function ProfileScreen() {
               </Text>
             </View>
 
-            {/* Wave transition */}
             <View style={styles.waveContainer} pointerEvents="none">
               <View style={[styles.waveBack, { backgroundColor: screenBg, opacity: 0.35 }]} />
               <View style={[styles.waveFront, { backgroundColor: screenBg }]} />
@@ -552,7 +519,6 @@ export default function ProfileScreen() {
           </LinearGradient>
         </Animated.View>
 
-        {/* ── Stat cards ── */}
         <View style={styles.statsRow}>
           <StatTile
             value={user?.role ?? '—'}
@@ -580,7 +546,6 @@ export default function ProfileScreen() {
           />
         </View>
 
-        {/* ── Content ── */}
         <Animated.View
           style={[
             styles.content,
@@ -593,7 +558,6 @@ export default function ProfileScreen() {
           ]}
         >
 
-          {/* ── Account ── */}
           <SectionLabel title="Account" isDark={isDark} />
           <View style={[styles.card, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
             <SettingRow
@@ -612,7 +576,6 @@ export default function ProfileScreen() {
             <SettingRow icon="call-outline" label="Mobile number" description={user?.contact ?? '—'} isDark={isDark} isLast />
           </View>
 
-          {/* ── Notifications ── */}
           <SectionLabel title="Notifications" isDark={isDark} />
           <View style={[styles.card, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
             <SettingRow
@@ -666,7 +629,6 @@ export default function ProfileScreen() {
             />
           </View>
 
-          {/* ── Emergency contact ── */}
           <SectionLabel title="Emergency Contact" isDark={isDark} />
           <View style={[styles.card, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
             {editingEmergency ? (
@@ -742,7 +704,6 @@ export default function ProfileScreen() {
             )}
           </View>
 
-          {/* ── About ── */}
           <SectionLabel title="About" isDark={isDark} />
           <View style={[styles.card, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
             <SettingRow
@@ -760,7 +721,6 @@ export default function ProfileScreen() {
             <SettingRow icon="information-outline" label="App version" description="1.0.0" isDark={isDark} isLast />
           </View>
 
-          {/* ── Log out ── */}
           <Pressable
             onPress={() => showAlert({
               type: 'confirm',
@@ -788,11 +748,9 @@ export default function ProfileScreen() {
         </Animated.View>
       </ScrollView>
 
-      {/* ═══════ Edit Profile Modal ═══════ */}
       <Modal visible={showEditProfile} transparent animationType="slide" onRequestClose={() => setShowEditProfile(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }]}>
-            {/* Gradient header bar */}
             <LinearGradient
               colors={['#4A6CF7', '#7C3AED']}
               start={{ x: 0, y: 0 }}
@@ -870,11 +828,9 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-      {/* ═══════ Change Password Modal ═══════ */}
       <Modal visible={showChangePwd} transparent animationType="slide" onRequestClose={() => setShowChangePwd(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }]}>
-            {/* Gradient header bar */}
             <LinearGradient
               colors={['#A855F7', '#6366F1']}
               start={{ x: 0, y: 0 }}
@@ -893,7 +849,6 @@ export default function ProfileScreen() {
             <View style={styles.modalBody}>
               <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
               <View style={styles.modalFields}>
-                {/* Current password */}
                 <GlassInput icon="lock-closed-outline" isDark={isDark}>
                   <TextInput
                     style={[styles.modalInput, isDark && { color: colors.white }]}
@@ -912,7 +867,6 @@ export default function ProfileScreen() {
                   </Pressable>
                 </GlassInput>
 
-                {/* New password */}
                 <GlassInput icon="lock-closed-outline" isDark={isDark} style={
                   newPwd.length > 0
                     ? { borderColor: (allChecksMet ? colors.severity.low : pwdStrength.color) + '60' }
@@ -935,10 +889,8 @@ export default function ProfileScreen() {
                   </Pressable>
                 </GlassInput>
 
-                {/* Strength bar */}
                 <PasswordStrengthBar password={newPwd} isDark={isDark} />
 
-                {/* Confirm password */}
                 <GlassInput icon="lock-closed-outline" isDark={isDark} style={
                   confirmPwd.length > 0
                     ? { borderColor: (passwordsMatch ? colors.severity.low : colors.severity.critical) + '60' }
@@ -954,7 +906,6 @@ export default function ProfileScreen() {
                   />
                 </GlassInput>
 
-                {/* Match indicator */}
                 {confirmPwd.length > 0 && (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Ionicons
@@ -1006,12 +957,9 @@ export default function ProfileScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   root: { flex: 1 },
 
-  // ── Hero ──
   hero: {
     alignItems: 'center',
     paddingBottom: 52,
@@ -1020,7 +968,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
-  // Decorative orbs
   orb1: {
     position: 'absolute',
     width: 180,
@@ -1100,7 +1047,6 @@ const styles = StyleSheet.create({
   },
   roleBadgeText: { fontSize: 12, fontWeight: '700' },
 
-  // Wave transition layers
   waveContainer: {
     position: 'absolute',
     bottom: 0,
@@ -1127,7 +1073,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
   },
 
-  // ── Stats ──
   statsRow: {
     flexDirection: 'row',
     gap: 10,
@@ -1166,7 +1111,6 @@ const styles = StyleSheet.create({
   },
   statLabel: { fontSize: 10, color: colors.slate[400], textAlign: 'center' },
 
-  // ── Content ──
   content: { padding: 16, gap: 8 },
 
   sectionLabel: {
@@ -1180,7 +1124,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 
-  // ── Card ──
   card: {
     backgroundColor: colors.white,
     borderRadius: 18,
@@ -1194,7 +1137,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0,0,0,0.04)',
   },
 
-  // ── Row ──
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1220,7 +1162,6 @@ const styles = StyleSheet.create({
     marginLeft: 66,
   },
 
-  // ── Emergency contact edit ──
   emergencyInputRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 16, paddingVertical: 13,
@@ -1251,7 +1192,6 @@ const styles = StyleSheet.create({
   },
   emergencySaveText: { fontSize: 14, fontWeight: '700', color: colors.white },
 
-  // ── Logout ──
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1279,7 +1219,6 @@ const styles = StyleSheet.create({
     color: colors.severity.critical,
   },
 
-  // ── Modals ──
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -1297,7 +1236,6 @@ const styles = StyleSheet.create({
     elevation: 24,
   },
 
-  // Gradient header bar inside modal
   modalGradHeader: {
     paddingTop: 14,
     paddingBottom: 20,
@@ -1341,7 +1279,6 @@ const styles = StyleSheet.create({
   modalFields: { gap: 12, marginBottom: 22 },
   modalFieldRow: { flexDirection: 'row', gap: 10 },
 
-  // Glassmorphic field
   glassField: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1352,7 +1289,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
 
-  // Keep for backward compat if referenced elsewhere
   modalField: {
     flex: 1,
     flexDirection: 'row', alignItems: 'center', gap: 10,

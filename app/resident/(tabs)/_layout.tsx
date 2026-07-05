@@ -9,8 +9,6 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
-// ─── Tab icon with active indicator dot ──────────────────────────────────────
-
 function TabIcon({
   name,
   color,
@@ -31,14 +29,11 @@ function TabIcon({
           height: 3,
           borderRadius: 2,
           backgroundColor: focused ? color : 'transparent',
-          // smooth width change via layout
         }}
       />
     </View>
   );
 }
-
-// ─── Center FAB ───────────────────────────────────────────────────────────────
 
 function ReportFABButton({
   accessibilityLabel,
@@ -76,7 +71,6 @@ function ReportFABButton({
             justifyContent: 'center',
             borderWidth: 4,
             borderColor: ringColor,
-            // Layered shadow for depth
             shadowColor: colors.brand[700],
             shadowOffset: { width: 0, height: 6 },
             shadowOpacity: pressed ? 0.18 : 0.38,
@@ -90,8 +84,6 @@ function ReportFABButton({
     </Pressable>
   );
 }
-
-// ─── Layout ───────────────────────────────────────────────────────────────────
 
 export default function ResidentTabLayout() {
   const scheme = useColorScheme();
@@ -108,9 +100,7 @@ export default function ResidentTabLayout() {
         tabBarInactiveTintColor: colors.slate[400],
         tabBarStyle: {
           backgroundColor: tabBarBg,
-          // No top border — shadow replaces it
           borderTopWidth: 0,
-          // Premium elevated shadow
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -4 },
           shadowOpacity: isDark ? 0.35 : 0.08,
@@ -153,7 +143,6 @@ export default function ResidentTabLayout() {
         }}
       />
 
-      {/* Center FAB — floating circle, no label */}
       <Tabs.Screen
         name="report"
         options={{

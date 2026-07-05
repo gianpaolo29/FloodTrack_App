@@ -1,8 +1,3 @@
-/**
- * SeverityChip
- * Always rendered as color + icon + text label (never color alone).
- * Used on report cards, map pin sheets, and the report form.
- */
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/theme/colors';
@@ -24,7 +19,6 @@ const SEVERITY_CONFIG: Record<Severity, Config> = {
 
 interface Props {
   level: Severity;
-  /** 'sm' for list cards, 'md' default, 'lg' for detail headers */
   size?: 'sm' | 'md' | 'lg';
 }
 

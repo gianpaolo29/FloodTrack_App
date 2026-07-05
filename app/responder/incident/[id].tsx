@@ -1,9 +1,3 @@
-/**
- * Incident detail — premium responder view
- *
- * Full-bleed accent header · glassmorphism cards · status stepper
- * Actions: Navigate (native maps), Update status, Call reporter
- */
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -32,8 +26,6 @@ import { useAuth } from '@/context/AuthContext';
 import { getIncidentDetail, updateIncidentStatus } from '@/services/api';
 import { useETA } from '@/hooks/use-eta';
 import type { IncidentDetail, ResponderStatus } from '@/types';
-
-// ─── Status definitions ──────────────────────────────────────────────────────
 
 const STATUS_STEPS: {
   key: ResponderStatus;
@@ -68,8 +60,6 @@ const STATUS_ICONS: Record<ResponderStatus, keyof typeof Ionicons.glyphMap> = {
   on_scene: 'location-outline',
   resolved: 'checkmark-circle-outline',
 };
-
-// ─── Update status modal — premium ──────────────────────────────────────────
 
 const MAX_MEDIA = 3;
 
@@ -137,7 +127,6 @@ function UpdateModal({
           <View style={ms.sheetContent}>
           <View style={ms.handle} />
 
-          {/* Title row */}
           <View style={ms.titleRow}>
             <View style={[ms.titleIcon, { backgroundColor: colors.accent[500] + '18' }]}>
               <Ionicons name="swap-vertical" size={18} color={colors.accent[500]} />
@@ -150,7 +139,6 @@ function UpdateModal({
             </View>
           </View>
 
-          {/* Steps */}
           <View style={{ gap: 8 }}>
             {STATUS_STEPS.map((step, idx) => {
               const stepIdx  = STATUS_ORDER.indexOf(step.key);
@@ -173,7 +161,6 @@ function UpdateModal({
                   accessibilityRole="radio"
                   accessibilityState={{ checked: active, disabled }}
                 >
-                  {/* Step number / check */}
                   <View style={[
                     ms.stepNum,
                     { backgroundColor: active ? stepColor : isDark ? colors.dark.elevated : colors.slate[100] },
@@ -213,7 +200,6 @@ function UpdateModal({
             })}
           </View>
 
-          {/* Field notes */}
           <View>
             <Text style={[ms.notesLabel, isDark && { color: colors.slate[400] }]}>Field notes</Text>
             <TextInput
@@ -235,7 +221,6 @@ function UpdateModal({
             />
           </View>
 
-          {/* Evidence attachments */}
           <View>
             <Text style={[ms.notesLabel, isDark && { color: colors.slate[400] }]}>
               Evidence photos ({media.length}/{MAX_MEDIA})
@@ -282,7 +267,6 @@ function UpdateModal({
             </View>
           </View>
 
-          {/* Actions */}
           <View style={ms.actions}>
             <Pressable onPress={onClose} style={[ms.cancelBtn, isDark && { borderColor: colors.dark.border }]}>
               <Text style={[ms.cancelText, isDark && { color: colors.slate[400] }]}>Cancel</Text>
@@ -387,8 +371,6 @@ const ms = StyleSheet.create({
   cancelText: { fontSize: 15, color: colors.slate[600], fontWeight: '600' },
 });
 
-// ─── Status stepper (visual progress) ────────────────────────────────────────
-
 function StatusStepper({ current, isDark }: { current: ResponderStatus; isDark: boolean }) {
   const currentIdx = STATUS_ORDER.indexOf(current);
 
@@ -451,8 +433,6 @@ const st = StyleSheet.create({
   stepText:     { paddingBottom: 16, flex: 1 },
   stepLabel:    { fontSize: 13, fontWeight: '500' },
 });
-
-// ─── Screen ──────────────────────────────────────────────────────────────────
 
 export default function IncidentDetailScreen() {
   const { id }     = useLocalSearchParams<{ id: string }>();
@@ -535,9 +515,7 @@ export default function IncidentDetailScreen() {
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
 
-      {/* ── Header ── */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        {/* Background accent */}
         <View style={[styles.headerBg, { backgroundColor: isDark ? colors.dark.surface : colors.accent[700] }]} />
 
         <View style={styles.headerContent}>
@@ -567,14 +545,12 @@ export default function IncidentDetailScreen() {
         </View>
       </View>
 
-      {/* Loading */}
       {loading && (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.accent[500]} />
         </View>
       )}
 
-      {/* Error */}
       {!loading && error && (
         <View style={styles.centered}>
           <View style={[styles.errorIconWrap, isDark && { backgroundColor: colors.dark.card }]}>
@@ -589,14 +565,12 @@ export default function IncidentDetailScreen() {
         </View>
       )}
 
-      {/* Content */}
       {!loading && !error && incident && (
         <>
           <ScrollView
             contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 120 }]}
             showsVerticalScrollIndicator={false}
           >
-            {/* ── Severity + description card ── */}
             <View style={[styles.card, { backgroundColor: cardBg }]}>
               <View style={styles.severityRow}>
                 <SeverityChip level={incident.severity} size="lg" />
@@ -624,7 +598,6 @@ export default function IncidentDetailScreen() {
               </Text>
             </View>
 
-            {/* ── Response progress card ── */}
             <View style={[styles.card, { backgroundColor: cardBg }]}>
               <View style={styles.cardHeader}>
                 <View style={[styles.cardHeaderIcon, { backgroundColor: colors.accent[500] + '18' }]}>
@@ -637,7 +610,6 @@ export default function IncidentDetailScreen() {
               <StatusStepper current={incident.responderStatus} isDark={isDark} />
             </View>
 
-            {/* ── Route / navigation card ── */}
             <View style={[styles.card, { backgroundColor: cardBg }]}>
               <View style={styles.cardHeader}>
                 <View style={[styles.cardHeaderIcon, { backgroundColor: colors.accent[500] + '18' }]}>
@@ -690,7 +662,6 @@ export default function IncidentDetailScreen() {
               </View>
             </View>
 
-            {/* ── Evidence card ── */}
             <View style={[styles.card, { backgroundColor: cardBg }]}>
               <View style={styles.cardHeader}>
                 <View style={[styles.cardHeaderIcon, { backgroundColor: colors.brand[500] + '18' }]}>
@@ -714,7 +685,6 @@ export default function IncidentDetailScreen() {
               </View>
             </View>
 
-            {/* ── Reporter card ── */}
             <View style={[styles.card, { backgroundColor: cardBg }]}>
               <View style={styles.cardHeader}>
                 <View style={[styles.cardHeaderIcon, { backgroundColor: colors.brand[500] + '18' }]}>
@@ -753,7 +723,6 @@ export default function IncidentDetailScreen() {
               </View>
             </View>
 
-            {/* ── Quick actions card ── */}
             <View style={[styles.card, { backgroundColor: cardBg }]}>
               <View style={styles.cardHeader}>
                 <View style={[styles.cardHeaderIcon, { backgroundColor: colors.accent[500] + '18' }]}>
@@ -800,7 +769,6 @@ export default function IncidentDetailScreen() {
             </View>
           </ScrollView>
 
-          {/* ── Bottom action bar ── */}
           <View style={[
             styles.actionBar,
             {
@@ -855,7 +823,6 @@ export default function IncidentDetailScreen() {
             )}
           </View>
 
-          {/* ── Update modal ── */}
           <UpdateModal
             visible={modalVisible}
             current={incident.responderStatus}
@@ -869,13 +836,10 @@ export default function IncidentDetailScreen() {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   root:    { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 32 },
 
-  // ── Header ──
   header: { position: 'relative', zIndex: 10 },
   headerBg: {
     ...StyleSheet.absoluteFillObject,
@@ -900,10 +864,8 @@ const styles = StyleSheet.create({
   },
   headerStatusText: { fontSize: 11, fontWeight: '700', color: colors.white },
 
-  // ── Scroll ──
   scroll: { padding: 16, gap: 14, paddingTop: 14 },
 
-  // ── Card ──
   card: {
     borderRadius: 18, padding: 18, gap: 14,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
@@ -916,7 +878,6 @@ const styles = StyleSheet.create({
   },
   cardHeaderTitle: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.slate[900] },
 
-  // Severity row
   severityRow: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
   typeRow:     { flexDirection: 'row' },
   typePill: {
@@ -929,7 +890,6 @@ const styles = StyleSheet.create({
   descDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.slate[100] },
   description: { fontSize: 13, color: colors.slate[600], lineHeight: 21 },
 
-  // Route block
   navChipBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: colors.accent[500],
@@ -964,7 +924,6 @@ const styles = StyleSheet.create({
   },
   etaText: { fontSize: 11, fontWeight: '700' },
 
-  // Evidence
   evidenceCountPill: {
     backgroundColor: colors.slate[100],
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10,
@@ -977,7 +936,6 @@ const styles = StyleSheet.create({
   },
   evidenceText: { fontSize: 13, color: colors.slate[500], fontWeight: '500' },
 
-  // Reporter
   reporterRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   reporterAvatar: {
     width: 46, height: 46, borderRadius: 14,
@@ -994,7 +952,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
-  // Action bar
   actionBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -1024,7 +981,6 @@ const styles = StyleSheet.create({
   },
   resolvedText: { fontSize: 16, color: colors.severity.low, fontWeight: '700' },
 
-  // Quick actions
   quickActionsGrid: { flexDirection: 'row', gap: 10 },
   quickActionBtn: {
     flex: 1, backgroundColor: colors.slate[50],
@@ -1041,7 +997,6 @@ const styles = StyleSheet.create({
   quickActionLabel: { fontSize: 13, fontWeight: '800', color: colors.slate[900], letterSpacing: -0.2 },
   quickActionSub: { fontSize: 10, color: colors.slate[400], fontWeight: '500' },
 
-  // Error
   errorIconWrap: {
     width: 72, height: 72, borderRadius: 20,
     backgroundColor: colors.slate[100],

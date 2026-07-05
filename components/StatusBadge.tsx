@@ -1,8 +1,3 @@
-/**
- * StatusBadge
- * Tinted pill showing report lifecycle state.
- * Color pairs come from colors.status — always bg + contrasting text.
- */
 import { View, Text, StyleSheet } from 'react-native';
 import { colors } from '@/theme/colors';
 

@@ -1,7 +1,3 @@
-/**
- * Alerts screen — premium card-based dashboard style
- * Light header · rounded cards · tinted icons · subtle shadows
- */
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -25,8 +21,6 @@ import type { AlertItem } from '@/types';
 const H_PAD = 20;
 const CARD_GAP = 12;
 const CARD_RADIUS = 20;
-
-// ─── Summary card (Critical / Advisories) ────────────────────────────────────
 
 function SummaryCard({
   icon,
@@ -67,8 +61,6 @@ function SummaryCard({
   );
 }
 
-// ─── Alert card ──────────────────────────────────────────────────────────────
-
 function AlertCard({
   alert,
   isDark,
@@ -108,14 +100,11 @@ function AlertCard({
       accessibilityLabel={`${alert.title}. ${alert.body}`}
     >
       <View style={styles.cardInner}>
-        {/* Top row: icon + title + unread dot / time */}
         <View style={styles.cardTopRow}>
-          {/* Tinted icon */}
           <View style={[styles.iconWrap, { backgroundColor: accentColor + '18' }]}>
             <Ionicons name={iconName} size={18} color={accentColor} />
           </View>
 
-          {/* Title */}
           <View style={styles.cardTitleWrap}>
             <Text
               style={[
@@ -130,7 +119,6 @@ function AlertCard({
             </Text>
           </View>
 
-          {/* Unread dot + time */}
           <View style={styles.cardRight}>
             {!alert.read && (
               <View
@@ -148,7 +136,6 @@ function AlertCard({
           </View>
         </View>
 
-        {/* Body */}
         <Text
           style={[
             styles.cardBody,
@@ -159,7 +146,6 @@ function AlertCard({
           {alert.body}
         </Text>
 
-        {/* Footer: location + kind badge */}
         <View
           style={[
             styles.cardFooter,
@@ -196,8 +182,6 @@ function AlertCard({
     </Pressable>
   );
 }
-
-// ─── Screen ──────────────────────────────────────────────────────────────────
 
 export default function AlertsScreen() {
   const insets = useSafeAreaInsets();
@@ -250,7 +234,6 @@ export default function AlertsScreen() {
       await markAllAlertsRead(allIds, token!);
       setAlerts((prev) => prev.map((a) => ({ ...a, read: true })));
     } catch {
-      // silent — dots persist until next load
     }
   }
 
@@ -263,7 +246,6 @@ export default function AlertsScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
-      {/* ── Header ── */}
       <View
         style={[
           styles.header,
@@ -334,14 +316,12 @@ export default function AlertsScreen() {
         </Text>
       </View>
 
-      {/* ── Loading ── */}
       {loading && (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.brand[500]} />
         </View>
       )}
 
-      {/* ── Error ── */}
       {!loading && error && (
         <View style={styles.centered}>
           <View
@@ -385,7 +365,6 @@ export default function AlertsScreen() {
         </View>
       )}
 
-      {/* ── List ── */}
       {!loading && !error && (
         <ScrollView
           contentContainerStyle={[
@@ -406,7 +385,6 @@ export default function AlertsScreen() {
           }
           showsVerticalScrollIndicator={false}
         >
-          {/* Summary cards row */}
           {alerts.length > 0 && (
             <View style={styles.summaryRow}>
               <SummaryCard
@@ -426,7 +404,6 @@ export default function AlertsScreen() {
             </View>
           )}
 
-          {/* Alert list */}
           {alerts.length > 0 && (
             <View style={styles.alertList}>
               {criticals.map((a) => (
@@ -448,7 +425,6 @@ export default function AlertsScreen() {
             </View>
           )}
 
-          {/* Empty state */}
           {alerts.length === 0 && (
             <View style={styles.emptyState}>
               <View
@@ -492,8 +468,6 @@ export default function AlertsScreen() {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   root: { flex: 1 },
   centered: {
@@ -504,7 +478,6 @@ const styles = StyleSheet.create({
     padding: 32,
   },
 
-  // ── Header ──
   header: {
     paddingHorizontal: H_PAD,
     paddingBottom: 16,
@@ -562,7 +535,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // ── Scroll ──
   scroll: {
     paddingHorizontal: H_PAD,
     paddingTop: 16,
@@ -570,7 +542,6 @@ const styles = StyleSheet.create({
   },
   scrollEmpty: { flex: 1, justifyContent: 'center' },
 
-  // ── Summary row ──
   summaryRow: {
     flexDirection: 'row',
     gap: CARD_GAP,
@@ -604,12 +575,10 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
 
-  // ── Alert list ──
   alertList: {
     gap: CARD_GAP,
   },
 
-  // ── Card ──
   card: {
     borderRadius: CARD_RADIUS,
     borderWidth: 1,
@@ -660,7 +629,7 @@ const styles = StyleSheet.create({
   cardBody: {
     fontSize: 13,
     lineHeight: 18,
-    paddingLeft: 46, // align with text after icon (36 + 10 gap)
+    paddingLeft: 46,
   },
   cardFooter: {
     flexDirection: 'row',
@@ -693,7 +662,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
 
-  // ── Error ──
   errorIconWrap: {
     width: 72,
     height: 72,
@@ -726,7 +694,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  // ── Empty state ──
   emptyState: { alignItems: 'center', gap: 16 },
   emptyIconWrap: {
     width: 88,

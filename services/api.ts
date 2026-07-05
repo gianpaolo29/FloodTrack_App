@@ -1,13 +1,3 @@
-/**
- * API service layer — FloodTrack
- *
- * All functions are async and return the typed shapes defined in @/types.
- * Laravel API responses are adapted here; screens never touch raw API shapes.
- *
- * Base URL: set EXPO_PUBLIC_API_URL in .env
- *   Local dev:   EXPO_PUBLIC_API_URL=http://192.168.x.x:8000/api
- *   Production:  EXPO_PUBLIC_API_URL=https://your-forge-domain.com/api
- */
 import { Platform } from 'react-native';
 import type {
   AlertItem,
@@ -33,9 +23,6 @@ import type {
 import * as Storage from '@/utils/storage';
 
 const BASE_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'https://api.floodtrack.ph/api').replace(/\/$/, '');
-
-// ─── Raw Laravel shapes ───────────────────────────────────────────────────────
-// These live only in this file — screens always receive the adapted types.
 
 interface RawUser {
   id: number;
@@ -92,8 +79,6 @@ interface RawAlert {
   created_at: string;
 }
 
-// ─── Adapters ─────────────────────────────────────────────────────────────────
-
 const HAZARD_LABELS: Record<string, string> = {
   flood:       'Flood incident',
   road_damage: 'Road damage',
@@ -135,7 +120,7 @@ function adaptUser(raw: RawUser): User {
   const roleMap: Record<string, UserRole> = {
     resident: 'Resident',
     responder: 'Responder',
-    admin: 'Responder', // admin uses responder UI on mobile
+    admin: 'Responder',
   };
   return {
     id:        String(raw.id),
@@ -229,7 +214,7 @@ function adaptIncident(raw: RawReport): Incident {
     ...adaptReport(raw),
     reportStatus:    raw.status,
     responderStatus,
-    distance:   '',    // calculated on-device if needed
+    distance:   '',
     nearbyCount: 0,
   };
 }
@@ -243,8 +228,6 @@ function adaptIncidentDetail(raw: RawReport): IncidentDetail {
     evidenceCount: raw.media?.length ?? 0,
   };
 }
-
-// ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
 class ApiError extends Error {
   constructor(
@@ -323,14 +306,12 @@ async function patch<T>(path: string, body: unknown, token: string): Promise<T> 
   return res.json();
 }
 
-/** Multipart POST — used for report submission with photo/video attachments */
 async function formPost<T>(path: string, formData: FormData, token?: string): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      // Do NOT set Content-Type — fetch sets it with boundary automatically
     },
     body: formData,
   });
@@ -341,9 +322,7 @@ async function formPost<T>(path: string, formData: FormData, token?: string): Pr
   return res.json();
 }
 
-/** Multipart PATCH — used for status updates with photo/video attachments */
 async function formPatch<T>(path: string, formData: FormData, token: string): Promise<T> {
-  // Laravel doesn't support PATCH with multipart — use POST + _method override
   formData.append('_method', 'PATCH');
   const res = await fetch(`${BASE_URL}${path}`, {
     method: 'POST',
@@ -359,8 +338,6 @@ async function formPatch<T>(path: string, formData: FormData, token: string): Pr
   }
   return res.json();
 }
-
-// ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export async function apiLogin(
   payload: LoginPayload,
@@ -388,18 +365,14 @@ export async function apiRegister(
 
 export async function apiLogout(token: string): Promise<void> {
   await post('/logout', {}, token).catch(() => {
-    // Swallow network errors — local session is cleared regardless
   });
 }
-
-// ─── Reports ──────────────────────────────────────────────────────────────────
 
 export async function getMyReports(token: string): Promise<Report[]> {
   const data = await get<{ data: RawReport[] }>('/reports?my=1', token);
   return data.data.map(adaptReport);
 }
 
-/** Fetches all active reports for the map (pins + heatmap). */
 export async function getAllReports(token: string): Promise<Report[]> {
   const data = await get<{ data: RawReport[] }>('/reports', token);
   return data.data.map(adaptReport);
@@ -436,14 +409,10 @@ export async function submitReport(
   return { reference: raw.reference_number };
 }
 
-// ─── Alerts ───────────────────────────────────────────────────────────────────
-
 export async function getAlerts(token: string): Promise<AlertItem[]> {
   const data = await get<RawAlert[]>('/alerts', token);
   return data.map(adaptAlert);
 }
-
-// ─── Alert read tracking (database-backed) ─────────────────────────────────
 
 export async function markAlertRead(id: string, token: string): Promise<void> {
   await post(`/alerts/${id}/read`, {}, token);
@@ -453,12 +422,9 @@ export async function markAllAlertsRead(_alertIds: string[], token: string): Pro
   await post('/alerts/read-all', {}, token);
 }
 
-/** Fetch alerts — read state is now included from the server. */
 export async function getAlertsWithReadState(token: string): Promise<AlertItem[]> {
   return getAlerts(token);
 }
-
-// ─── Profile ─────────────────────────────────────────────────────────────────
 
 export async function updateProfile(
   payload: UpdateProfilePayload,
@@ -472,7 +438,6 @@ export async function changePassword(
   payload: ChangePasswordPayload,
   token: string,
 ): Promise<void> {
-  // Try PUT first (Laravel's standard), fall back to POST
   try {
     await put('/user/password', payload, token);
   } catch (e: any) {
@@ -483,8 +448,6 @@ export async function changePassword(
     }
   }
 }
-
-// ─── Responder ────────────────────────────────────────────────────────────────
 
 export async function getAssignedIncidents(token: string): Promise<Incident[]> {
   const data = await get<{ data: RawReport[] }>('/reports?assigned=me', token);
@@ -526,8 +489,6 @@ export async function updateIncidentStatus(
   }
 }
 
-// ─── Push notifications ──────────────────────────────────────────────────────
-
 export async function registerPushToken(pushToken: string, token: string): Promise<void> {
   await post('/device-tokens', { token: pushToken, platform: Platform.OS }, token);
 }
@@ -548,13 +509,9 @@ export async function removePushToken(pushToken: string, token: string): Promise
   }
 }
 
-// ─── Duty status ─────────────────────────────────────────────────────────────
-
 export async function updateDutyStatus(isOnDuty: boolean, token: string): Promise<void> {
   await patch('/user/duty-status', { is_on_duty: isOnDuty }, token);
 }
-
-// ─── Incident messages ──────────────────────────────────────────────────────
 
 export async function getReportMessages(reportId: string, token: string): Promise<IncidentMessage[]> {
   const raw = await get<{ data: Array<{
@@ -588,10 +545,8 @@ export async function sendReportMessage(
   await post(`/reports/${reportId}/messages`, { body, is_quick_reply: isQuickReply }, token);
 }
 
-/** @deprecated Use getReportMessages instead */
 export const getIncidentMessages = getReportMessages;
 
-/** @deprecated Use sendReportMessage instead */
 export async function sendIncidentMessage(
   reportId: string,
   body: string,
@@ -610,8 +565,6 @@ export async function getUnreadCount(reportId: string, token: string): Promise<n
   return data.unread_count;
 }
 
-// ─── Typing indicators ──────────────────────────────────────────────────────
-
 export async function sendTypingEvent(reportId: string, token: string): Promise<void> {
   await post(`/reports/${reportId}/typing`, {}, token).catch(() => {});
 }
@@ -620,8 +573,6 @@ export async function getTypingUsers(reportId: string, token: string): Promise<A
   const data = await get<{ typing: Array<{ id: number; name: string; role: string }> }>(`/reports/${reportId}/typing`, token);
   return data.typing;
 }
-
-// ─── Field report ────────────────────────────────────────────────────────────
 
 export async function getFieldReport(reportId: string, token: string): Promise<FieldReportData | null> {
   try {
@@ -663,8 +614,6 @@ export async function saveFieldReport(
   }, token);
 }
 
-// ─── Responder stats ─────────────────────────────────────────────────────────
-
 export async function getResponderStats(token: string): Promise<ResponderStats> {
   const raw = await get<{
     resolved_total: number;
@@ -681,8 +630,6 @@ export async function getResponderStats(token: string): Promise<ResponderStats> 
     avgResponseMinutes: raw.avg_response_minutes,
   };
 }
-
-// ─── Weather ─────────────────────────────────────────────────────────────────
 
 export interface WeatherData {
   current: {

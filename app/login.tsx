@@ -1,10 +1,3 @@
-/**
- * Login screen — premium sleek design
- *
- * Tall gradient hero with glassmorphic logo badge · organic wave transition
- * Frosted inputs with glow focus · gradient CTA · Google button with icon
- * Staggered entrance animations · shimmer effects · floating particles
- */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -32,8 +25,6 @@ import { AppAlert, AlertConfig } from '@/components/AppAlert';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const HERO_H = SCREEN_H * 0.42;
-
-// ─── Floating particle ─────────────────────────────────────────────────────
 
 function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: number; size?: number }) {
   const translateY = useRef(new Animated.Value(0)).current;
@@ -70,8 +61,6 @@ function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: numb
   );
 }
 
-// ─── Pulse ring ─────────────────────────────────────────────────────────────
-
 function PulseRing({ size, color, delay }: { size: number; color: string; delay: number }) {
   const scale   = useRef(new Animated.Value(0.6)).current;
   const opacity = useRef(new Animated.Value(0.35)).current;
@@ -104,8 +93,6 @@ function PulseRing({ size, color, delay }: { size: number; color: string; delay:
   );
 }
 
-// ─── Screen ─────────────────────────────────────────────────────────────────
-
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -113,7 +100,6 @@ export default function LoginScreen() {
   const isDark = scheme === 'dark';
   const { login } = useAuth();
 
-  // ── Splash ──
   const [showSplash, setShowSplash] = useState(true);
   const splashLogoScale   = useRef(new Animated.Value(0.3)).current;
   const splashLogoOpacity = useRef(new Animated.Value(0)).current;
@@ -123,7 +109,6 @@ export default function LoginScreen() {
   const splashBgOpacity   = useRef(new Animated.Value(1)).current;
   const splashShimmer     = useRef(new Animated.Value(0)).current;
 
-  // ── Form entrance ──
   const heroScale     = useRef(new Animated.Value(1.05)).current;
   const heroOpacity   = useRef(new Animated.Value(0)).current;
   const formOpacity   = useRef(new Animated.Value(0)).current;
@@ -138,7 +123,6 @@ export default function LoginScreen() {
   const gBtnTransY    = useRef(new Animated.Value(15)).current;
   const footerOpacity = useRef(new Animated.Value(0)).current;
 
-  // ── Form state ──
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd]   = useState(false);
@@ -150,13 +134,11 @@ export default function LoginScreen() {
   const [emailFocus, setEmailFocus]     = useState(false);
   const [pwdFocus, setPwdFocus]         = useState(false);
 
-  // Focus glows (non-native driver for border color interpolation)
   const emailGlow = useRef(new Animated.Value(0)).current;
   const pwdGlow   = useRef(new Animated.Value(0)).current;
   useEffect(() => { Animated.timing(emailGlow, { toValue: emailFocus ? 1 : 0, duration: 250, useNativeDriver: false }).start(); }, [emailFocus]);
   useEffect(() => { Animated.timing(pwdGlow,   { toValue: pwdFocus   ? 1 : 0, duration: 250, useNativeDriver: false }).start(); }, [pwdFocus]);
 
-  // ── Splash → form ──
   useEffect(() => {
     Animated.sequence([
       Animated.parallel([
@@ -237,7 +219,6 @@ export default function LoginScreen() {
     setErrorMsg('');
     setIsGoogleLoading(true);
     try {
-      // TODO: Integrate with Google OAuth
       await new Promise(r => setTimeout(r, 1500));
       setErrorMsg('Google sign-in is not yet configured.');
     } finally {
@@ -254,7 +235,6 @@ export default function LoginScreen() {
     <View style={s.root}>
       <StatusBar style="light" />
 
-      {/* ═══════ SPLASH ═══════ */}
       {showSplash && (
         <Animated.View style={[s.splashOverlay, { opacity: splashBgOpacity }]}>
           <LinearGradient
@@ -263,7 +243,6 @@ export default function LoginScreen() {
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFillObject}
           />
-          {/* Pulse rings */}
           <View style={s.pulseCenter}>
             <PulseRing size={180} color="rgba(255,255,255,0.12)" delay={0} />
             <PulseRing size={260} color="rgba(255,255,255,0.08)" delay={800} />
@@ -300,13 +279,11 @@ export default function LoginScreen() {
         </Animated.View>
       )}
 
-      {/* ═══════ MAIN ═══════ */}
       {!showSplash && (
         <KeyboardAvoidingView
           style={s.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          {/* ── Gradient hero ── */}
           <Animated.View style={[s.heroWrap, { opacity: heroOpacity, transform: [{ scale: heroScale }] }]}>
             <LinearGradient
               colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
@@ -314,17 +291,14 @@ export default function LoginScreen() {
               end={{ x: 1, y: 1 }}
               style={[s.hero, { paddingTop: insets.top + 12 }]}
             >
-              {/* Decorative orbs */}
               <View style={[s.orb, s.orb1]} />
               <View style={[s.orb, s.orb2]} />
               <View style={[s.orb, s.orb3]} />
 
-              {/* Floating particles */}
               <Particle delay={200}  x={SCREEN_W * 0.1}  y={40} size={3} />
               <Particle delay={800}  x={SCREEN_W * 0.85} y={60} size={4} />
               <Particle delay={1200} x={SCREEN_W * 0.4}  y={30} size={3} />
 
-              {/* Logo badge */}
               <View style={s.logoBadge}>
                 <View style={s.logoBadgeInner}>
                   <Ionicons name="water" size={44} color="#fff" />
@@ -336,7 +310,6 @@ export default function LoginScreen() {
               <Text style={s.logoSub}>Stay informed, stay safe</Text>
             </LinearGradient>
 
-            {/* Wave transition */}
             <View style={s.waveWrap}>
               <LinearGradient
                 colors={['#6B52F5', '#7C3AED']}
@@ -348,21 +321,18 @@ export default function LoginScreen() {
             </View>
           </Animated.View>
 
-          {/* ── Form area ── */}
           <Animated.View style={[s.formArea, { opacity: formOpacity, transform: [{ translateY: formTransY }] }]}>
             <ScrollView
               contentContainerStyle={[s.formScroll, { paddingBottom: insets.bottom + 36 }]}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              {/* Title */}
               <View style={s.titleRow}>
                 <Text style={s.titleBold}>Welcome </Text>
                 <Text style={s.titleLight}>back !</Text>
               </View>
               <Text style={s.titleSub}>Sign in to access your dashboard</Text>
 
-              {/* Error */}
               {errorMsg ? (
                 <View style={s.errorBanner}>
                   <View style={s.errorDot} />
@@ -371,7 +341,6 @@ export default function LoginScreen() {
                 </View>
               ) : null}
 
-              {/* Email */}
               <Animated.View style={[s.fieldWrap, { opacity: f1Opacity, transform: [{ translateX: f1TransX }] }]}>
                 <Animated.View style={[s.inputRow, { borderColor: emailBorder }, emailFocus && s.inputFocused]}>
                   <View style={[s.inputIconWrap, emailFocus && s.inputIconActive]}>
@@ -398,7 +367,6 @@ export default function LoginScreen() {
                 </Animated.View>
               </Animated.View>
 
-              {/* Password */}
               <Animated.View style={[s.fieldWrap, { opacity: f2Opacity, transform: [{ translateX: f2TransX }] }]}>
                 <Animated.View style={[s.inputRow, { borderColor: pwdBorder }, pwdFocus && s.inputFocused]}>
                   <View style={[s.inputIconWrap, pwdFocus && s.inputIconActive]}>
@@ -426,7 +394,6 @@ export default function LoginScreen() {
                 </Animated.View>
               </Animated.View>
 
-              {/* Options */}
               <View style={s.optionsRow}>
                 <Pressable
                   style={s.rememberRow}
@@ -444,7 +411,6 @@ export default function LoginScreen() {
                 </Pressable>
               </View>
 
-              {/* Login CTA */}
               <Animated.View style={{ opacity: btnOpacity, transform: [{ scale: btnScale }] }}>
                 <Pressable
                   onPress={handleLogin}
@@ -473,7 +439,6 @@ export default function LoginScreen() {
                 </Pressable>
               </Animated.View>
 
-              {/* Divider */}
               <Animated.View style={[s.dividerRow, { opacity: gBtnOpacity, transform: [{ translateY: gBtnTransY }] }]}>
                 <View style={s.dividerLine} />
                 <View style={s.dividerPill}>
@@ -482,9 +447,7 @@ export default function LoginScreen() {
                 <View style={s.dividerLine} />
               </Animated.View>
 
-              {/* Social row */}
               <Animated.View style={[s.socialRow, { opacity: gBtnOpacity, transform: [{ translateY: gBtnTransY }] }]}>
-                {/* Google */}
                 <Pressable
                   style={({ pressed }) => [s.socialBtn, s.googleBtn, pressed && { transform: [{ scale: 0.97 }] }]}
                   onPress={handleGoogleLogin}
@@ -503,7 +466,6 @@ export default function LoginScreen() {
                   )}
                 </Pressable>
 
-                {/* Facebook */}
                 <Pressable
                   style={({ pressed }) => [s.socialBtn, s.fbBtn, pressed && { transform: [{ scale: 0.97 }] }]}
                   accessibilityLabel="Sign in with Facebook"
@@ -513,7 +475,6 @@ export default function LoginScreen() {
                 </Pressable>
               </Animated.View>
 
-              {/* Footer */}
               <Animated.View style={[s.footer, { opacity: footerOpacity }]}>
                 <Text style={s.footerText}>Don't have an account?</Text>
                 <Pressable onPress={() => router.push('/signup')} hitSlop={8}>
@@ -536,13 +497,10 @@ export default function LoginScreen() {
   );
 }
 
-// ─── Styles ─────────────────────────────────────────────────────────────────
-
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#FAFBFE' },
   flex: { flex: 1 },
 
-  // ── Splash ──────────────────────────
   splashOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center', justifyContent: 'center',
@@ -582,7 +540,6 @@ const s = StyleSheet.create({
   },
   splashVersionText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.5)' },
 
-  // ── Hero ────────────────────────────
   heroWrap: {},
   hero: {
     height: HERO_H,
@@ -622,7 +579,6 @@ const s = StyleSheet.create({
     marginTop: 6, letterSpacing: 1,
   },
 
-  // ── Wave ────────────────────────────
   waveWrap: {
     height: 55, position: 'relative', marginTop: -1,
   },
@@ -635,7 +591,6 @@ const s = StyleSheet.create({
     borderTopRightRadius: 36,
   },
 
-  // ── Form ────────────────────────────
   formArea: {
     flex: 1, backgroundColor: '#FAFBFE', marginTop: -2,
   },
@@ -651,7 +606,6 @@ const s = StyleSheet.create({
   titleLight: { fontSize: 30, fontWeight: '300', color: '#1A202C' },
   titleSub: { fontSize: 14, color: '#A0AEC0', marginBottom: 24 },
 
-  // Error
   errorBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: '#FFF5F5',
@@ -663,7 +617,6 @@ const s = StyleSheet.create({
   },
   errorText: { flex: 1, fontSize: 13, color: '#E53E3E', fontWeight: '500' },
 
-  // Fields
   fieldWrap: { marginBottom: 14 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
@@ -701,7 +654,6 @@ const s = StyleSheet.create({
   },
   eyeBtn: { paddingHorizontal: 12 },
 
-  // Options
   optionsRow: {
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between',
@@ -719,7 +671,6 @@ const s = StyleSheet.create({
   rememberLabel: { fontSize: 13, color: '#718096', fontWeight: '500' },
   forgotLink: { fontSize: 13, color: '#5A6FF5', fontWeight: '700' },
 
-  // Login CTA
   loginBtn: {
     height: 56, borderRadius: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -739,7 +690,6 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
-  // Divider
   dividerRow: {
     flexDirection: 'row', alignItems: 'center',
     marginVertical: 20, gap: 12,
@@ -751,7 +701,6 @@ const s = StyleSheet.create({
   },
   dividerText: { fontSize: 12, fontWeight: '600', color: '#A0AEC0' },
 
-  // Social
   socialRow: {
     flexDirection: 'row', gap: 12,
     marginBottom: 22,
@@ -787,7 +736,6 @@ const s = StyleSheet.create({
   },
   fbBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 
-  // Footer
   footer: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     marginBottom: 12,
@@ -795,7 +743,6 @@ const s = StyleSheet.create({
   footerText: { fontSize: 14, color: '#A0AEC0' },
   footerLink: { fontSize: 14, fontWeight: '800', color: '#5A6FF5' },
 
-  // Security
   securityRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, paddingTop: 4,

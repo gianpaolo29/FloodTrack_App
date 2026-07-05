@@ -10,7 +10,6 @@ export default function MapViewFallback(props: { style?: any; children?: React.R
   );
 }
 
-// Re-export stubs for named exports used by the app
 export const Marker = (_props: any) => null;
 export const Circle = (_props: any) => null;
 export const Heatmap = (_props: any) => null;

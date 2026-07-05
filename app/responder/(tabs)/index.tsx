@@ -1,10 +1,3 @@
-/**
- * Home tab — card-based responder dashboard
- *
- * Smart-home–inspired layout with rounded cards, greeting header,
- * weather + stats side-by-side, category tabs, and a device-grid–style
- * incident overview.
- */
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -31,7 +24,7 @@ const { width: SCREEN_W } = Dimensions.get('window');
 const CARD_GAP = 12;
 const H_PAD = 20;
 const SMALL_CARD = (SCREEN_W - H_PAD * 2 - CARD_GAP) / 2;
-const BIG_CARD = SMALL_CARD; // same width, taller height
+const BIG_CARD = SMALL_CARD;
 
 const STATUS_LABELS: Record<ResponderStatus, string> = {
   pending: 'Pending',
@@ -74,7 +67,6 @@ export default function HomeTab() {
   const textSecondary = isDark ? colors.slate[400] : colors.slate[500];
   const textTertiary = isDark ? colors.slate[500] : colors.slate[400];
 
-  // ── Load incidents ──
   const load = useCallback(
     async (isRefresh = false) => {
       try {
@@ -82,7 +74,6 @@ export default function HomeTab() {
         const data = await getAssignedIncidents(token!);
         setIncidents(data);
       } catch {
-        /* handled by empty state */
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -91,7 +82,6 @@ export default function HomeTab() {
     [token],
   );
 
-  // ── Load weather ──
   useEffect(() => {
     (async () => {
       try {
@@ -108,7 +98,6 @@ export default function HomeTab() {
             return;
           }
         } catch {
-          /* backend failed */
         }
         const KEY = '492a0ca6810997c64038621e373ae0de';
         const res = await fetch(
@@ -133,7 +122,6 @@ export default function HomeTab() {
           forecast: [],
         });
       } catch {
-        /* non-critical */
       }
     })();
   }, [token]);
@@ -142,7 +130,6 @@ export default function HomeTab() {
     load();
   }, [load]);
 
-  // ── Derived counts ──
   const active = incidents.filter((i) => i.responderStatus !== 'resolved');
   const pendingCount = incidents.filter((i) => i.responderStatus === 'pending').length;
   const enRouteCount = incidents.filter((i) => i.responderStatus === 'en_route').length;
@@ -171,7 +158,6 @@ export default function HomeTab() {
     { key: 'active', label: 'Active' },
   ];
 
-  // Resolve rate
   const resolveRate =
     incidents.length > 0
       ? Math.round((resolvedCount / incidents.length) * 100)
@@ -199,7 +185,6 @@ export default function HomeTab() {
           }
           showsVerticalScrollIndicator={false}
         >
-          {/* ── Greeting ── */}
           <View style={$.greeting}>
             <View>
               <Text style={[$.greetHi, { color: textPrimary }]}>
@@ -221,9 +206,7 @@ export default function HomeTab() {
             </Pressable>
           </View>
 
-          {/* ── Weather + Resolve Rate (side by side) ── */}
           <View style={$.topRow}>
-            {/* Location / Weather card */}
             <View
               style={[
                 $.topCard,
@@ -270,7 +253,6 @@ export default function HomeTab() {
               </View>
             </View>
 
-            {/* Resolve rate card */}
             <View
               style={[
                 $.topCard,
@@ -306,7 +288,6 @@ export default function HomeTab() {
             </View>
           </View>
 
-          {/* ── Tabs ── */}
           <View style={$.tabs}>
             {TABS.map((t) => {
               const isActive = activeTab === t.key;
@@ -340,11 +321,8 @@ export default function HomeTab() {
             })}
           </View>
 
-          {/* ── Card Grid ── */}
           <View style={$.grid}>
-            {/* Row 1: Large card + stacked small cards */}
             <View style={$.gridRow}>
-              {/* Large "Active Incidents" card */}
               <Pressable
                 onPress={() => setActiveTab('active')}
                 style={({ pressed }) => [
@@ -404,7 +382,6 @@ export default function HomeTab() {
                 </View>
               </Pressable>
 
-              {/* Stacked: En Route + On Scene */}
               <View style={$.gridStack}>
                 <Pressable
                   onPress={() =>
@@ -508,7 +485,6 @@ export default function HomeTab() {
               </View>
             </View>
 
-            {/* Row 2: Two small cards */}
             <View style={$.gridRow}>
               <Pressable
                 onPress={() => setActiveTab('critical')}
@@ -612,7 +588,6 @@ export default function HomeTab() {
             </View>
           </View>
 
-          {/* ── Bottom bar: date + quick actions ── */}
           <View style={$.bottomBar}>
             <Text style={[$.dateText, { color: textSecondary }]}>
               {dateStr}
@@ -657,7 +632,6 @@ export default function HomeTab() {
             </View>
           </View>
 
-          {/* ── Recent Incidents List ── */}
           {incidents.length > 0 && (
             <View style={$.recentSection}>
               <Text style={[$.sectionTitle, { color: textPrimary }]}>
@@ -727,8 +701,6 @@ export default function HomeTab() {
   );
 }
 
-// ─── Styles ─────────────────────────────────────────────────────────────────
-
 const $ = StyleSheet.create({
   root: { flex: 1 },
   centered: {
@@ -737,7 +709,6 @@ const $ = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Greeting
   greeting: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -769,7 +740,6 @@ const $ = StyleSheet.create({
     color: colors.white,
   },
 
-  // Top row (weather + resolve rate)
   topRow: {
     flexDirection: 'row',
     paddingHorizontal: H_PAD,
@@ -831,7 +801,6 @@ const $ = StyleSheet.create({
     marginTop: 4,
   },
 
-  // Tabs
   tabs: {
     flexDirection: 'row',
     paddingHorizontal: H_PAD,
@@ -854,7 +823,6 @@ const $ = StyleSheet.create({
     borderRadius: 2,
   },
 
-  // Grid
   grid: {
     paddingHorizontal: H_PAD,
     gap: CARD_GAP,
@@ -958,7 +926,6 @@ const $ = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Bottom bar
   bottomBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -989,7 +956,6 @@ const $ = StyleSheet.create({
     elevation: 2,
   },
 
-  // Recent incidents
   recentSection: {
     paddingHorizontal: H_PAD,
     marginTop: 20,

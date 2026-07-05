@@ -1,7 +1,3 @@
-/**
- * Incident chat — responder-to-admin messaging thread
- * Premium sleek design · animated bubbles · quick replies · real-time feel
- */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -36,9 +32,8 @@ const QUICK_REPLIES = [
   'Awaiting instructions',
 ];
 
-const POLL_INTERVAL = 10_000; // 10 seconds
+const POLL_INTERVAL = 10_000;
 
-/* ── Typing indicator dots ── */
 function TypingDots() {
   const dot1 = useRef(new Animated.Value(0)).current;
   const dot2 = useRef(new Animated.Value(0)).current;
@@ -77,7 +72,6 @@ function TypingDots() {
   );
 }
 
-/* ── Animated message bubble wrapper ── */
 function AnimatedBubble({ children }: { children: React.ReactNode }) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(12)).current;
@@ -122,14 +116,13 @@ export default function IncidentChatScreen() {
 
   const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
 
-  // Poll typing status
   useEffect(() => {
     if (!isConnected) return;
     const interval = setInterval(async () => {
       try {
         const users = await getTypingUsers(id, token!);
         setTypingUsers(users);
-      } catch { /* ignore */ }
+      } catch {}
     }, 2000);
     return () => clearInterval(interval);
   }, [id, token, isConnected]);
@@ -148,7 +141,6 @@ export default function IncidentChatScreen() {
       if (!silent) setLoading(true);
       const data = await getIncidentMessages(id, token!);
       setMessages(data);
-      // Mark messages as read
       markMessagesRead(id, token!).catch(() => {});
     } catch (e: any) {
       if (!silent) Alert.alert('Load failed', `${e?.status ?? ''} ${e?.message ?? 'Could not load messages.'}`);
@@ -159,7 +151,6 @@ export default function IncidentChatScreen() {
 
   useEffect(() => { loadMessages(); }, [loadMessages]);
 
-  // Poll for new messages (only when online)
   useEffect(() => {
     if (!isConnected) return;
     const interval = setInterval(() => loadMessages(true), POLL_INTERVAL);
@@ -222,7 +213,6 @@ export default function IncidentChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
     >
-      {/* ── Curved Header ── */}
       <View
         style={[
           s.headerBg,
@@ -236,7 +226,6 @@ export default function IncidentChatScreen() {
           <View style={{ flex: 1 }}>
             <View style={s.headerTitleRow}>
               <Text style={s.headerTitle}>Incident Chat</Text>
-              {/* Online indicator dot */}
               <View style={s.onlineDot} />
             </View>
             <Text style={s.headerSub}>Communicate with dispatch</Text>
@@ -247,7 +236,6 @@ export default function IncidentChatScreen() {
         </View>
       </View>
 
-      {/* ── Quick replies ── */}
       {showQuickReplies && (
         <View style={[s.quickReplies, isDark && { backgroundColor: colors.dark.card }]}>
           <Text style={[s.quickLabel, isDark && { color: colors.slate[400] }]}>Quick replies</Text>
@@ -275,7 +263,6 @@ export default function IncidentChatScreen() {
         </View>
       )}
 
-      {/* ── Offline banner ── */}
       {!isConnected && (
         <View style={s.offlineBanner}>
           <Ionicons name="cloud-offline" size={14} color={colors.white} />
@@ -283,7 +270,6 @@ export default function IncidentChatScreen() {
         </View>
       )}
 
-      {/* ── Messages ── */}
       {loading ? (
         <View style={s.centered}>
           <ActivityIndicator size="large" color={colors.accent[500]} />
@@ -382,7 +368,6 @@ export default function IncidentChatScreen() {
         />
       )}
 
-      {/* ── Input bar ── */}
       <View
         style={[
           s.inputBar,
@@ -438,7 +423,6 @@ const s = StyleSheet.create({
   root: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  /* ── Header ── */
   headerBg: {
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
@@ -488,7 +472,6 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  /* ── Quick replies ── */
   quickReplies: {
     padding: 14,
     backgroundColor: colors.white,
@@ -523,7 +506,6 @@ const s = StyleSheet.create({
   },
   quickChipText: { fontSize: 12, fontWeight: '600', color: colors.slate[600] },
 
-  /* ── Messages ── */
   messageList: { padding: 16, gap: 12 },
   emptyChat: {
     alignItems: 'center',
@@ -552,7 +534,6 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
 
-  /* ── Bubbles ── */
   bubble: { maxWidth: '80%' },
   bubbleMine: { alignSelf: 'flex-end', alignItems: 'flex-end' },
   bubbleTheirs: { alignSelf: 'flex-start', alignItems: 'flex-start' },
@@ -590,7 +571,6 @@ const s = StyleSheet.create({
     marginHorizontal: 4,
   },
 
-  /* ── Input bar ── */
   inputBar: {
     paddingHorizontal: 16,
     paddingTop: 10,
@@ -633,7 +613,6 @@ const s = StyleSheet.create({
     elevation: 4,
   },
 
-  /* ── Typing indicator ── */
   typingIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -647,7 +626,6 @@ const s = StyleSheet.create({
     fontWeight: '500',
   },
 
-  /* ── Typing dots ── */
   typingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -663,7 +641,6 @@ const s = StyleSheet.create({
     backgroundColor: colors.accent[500],
   },
 
-  /* ── Offline banner ── */
   offlineBanner: {
     flexDirection: 'row',
     alignItems: 'center',

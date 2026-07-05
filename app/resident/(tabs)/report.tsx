@@ -1,12 +1,3 @@
-/**
- * Submit report screen — multi-step wizard
- *
- * Step 1: Location (auto-detected via expo-location, address reverse-geocoded)
- * Step 2: Hazard type
- * Step 3: Severity
- * Step 4: Evidence (photo/video — wires to expo-image-picker)
- * Step 5: Description + submit → confirmation
- */
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -52,26 +43,19 @@ import { useAlert } from '@/context/AlertContext';
 import type { AlertConfig } from '@/components/AppAlert';
 import { getAllReports, submitReport } from '@/services/api';
 
-// ─── Draft key ────────────────────────────────────────────────────────────────
 const DRAFT_KEY = 'ft_report_draft';
 
-// ─── Video detection helper ───────────────────────────────────────────────────
 function isVideoUri(uri: string): boolean {
   const ext = uri.split('.').pop()?.toLowerCase();
   return ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext ?? '');
 }
 
-// ─── Haversine distance (km) ──────────────────────────────────────────────────
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371, toRad = (d: number) => d * Math.PI / 180;
   const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.asin(Math.sqrt(a));
 }
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-// TOTAL_STEPS is dynamic — 6 when flood (adds depth picker), 5 otherwise
 
 const HAZARD_TYPES = [
   { key: 'flood',    label: 'Flood',         icon: 'water'            as const },
@@ -96,8 +80,6 @@ const SEVERITY_OPTIONS: SeverityOption[] = [
   { level: 'high',     label: 'High',     description: 'Unsafe, prompt action needed'      },
   { level: 'critical', label: 'Critical', description: 'Life-threatening, immediate dispatch' },
 ];
-
-// ─── Step indicator ───────────────────────────────────────────────────────────
 
 function StepIndicator({ current, total }: { current: number; total: number }) {
   return (
@@ -124,15 +106,12 @@ const stepStyles = StyleSheet.create({
   dot: { height: 6, width: 6, borderRadius: 3 },
 });
 
-// ─── Step 1 — Location ────────────────────────────────────────────────────────
-
 interface LocationData {
   latitude: number;
   longitude: number;
   address: string;
 }
 
-// Location banner — compact, shown at top of every step
 function LocationBanner({
   isDark,
   location,
@@ -172,8 +151,6 @@ function LocationBanner({
     </View>
   );
 }
-
-// ─── Step 2 — Hazard type ─────────────────────────────────────────────────────
 
 function HazardTypeStep({
   selected,
@@ -230,8 +207,6 @@ function HazardTypeStep({
     </View>
   );
 }
-
-// ─── Step 3 — Severity ───────────────────────────────────────────────────────
 
 function SeverityStep({
   selected,
@@ -303,8 +278,6 @@ function SeverityStep({
   );
 }
 
-// ─── Flood depth picker ──────────────────────────────────────────────────────
-
 const DEPTH_LEVELS = [
   { key: 'ankle', label: 'Ankle-deep',    cm: 30,  severity: 'low'      as Severity, desc: '~ 1 ft — passable with caution' },
   { key: 'knee',  label: 'Knee-deep',     cm: 60,  severity: 'moderate' as Severity, desc: '~ 1.5–2 ft — difficult for vehicles' },
@@ -315,16 +288,11 @@ const DEPTH_LEVELS = [
 type DepthKey = typeof DEPTH_LEVELS[number]['key'];
 
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
-// Scale picker height relative to screen — clamp between 320 and 480
 const PICKER_H = Math.max(320, Math.min(480, SCREEN_H * 0.48));
-// Scale factor for the human figure (base designed at 400px picker height)
 const FIGURE_SCALE = PICKER_H / 400;
 
-// Snap points as fraction of picker height (from bottom): ankle, knee, waist, chest
-// Mapped to avg Filipino body (~161 cm): ankle 9%, knee 28%, waist 55%, chest 75%
 const SNAPS = [0.12, 0.30, 0.52, 0.74];
 
-// Right-side tick labels positioned to match snap points
 const TICK_LABELS = ['0.5 ft', '1.5 ft', '3 ft', '4+ ft'];
 
 function FloodDepthPicker({
@@ -342,12 +310,11 @@ function FloodDepthPicker({
   const waterFrac = useSharedValue(initFrac);
   const dragStart = useSharedValue(initFrac);
 
-  // Wave animation offset
   const waveOffset = useSharedValue(0);
   useEffect(() => {
     waveOffset.value = withRepeat(
       withTiming(1, { duration: 2400, easing: Easing.linear }),
-      -1, // infinite
+      -1,
       false,
     );
   }, []);
@@ -371,7 +338,6 @@ function FloodDepthPicker({
     onSelect(l.key, l.severity);
   }
 
-  // Tap-to-select a depth level directly
   function onTapLevel(idx: number) {
     waterFrac.value = withSpring(SNAPS[idx], { damping: 20, stiffness: 200 });
     onPick(idx);
@@ -389,12 +355,10 @@ function FloodDepthPicker({
       runOnJS(onPick)(idx);
     });
 
-  // Water fill height
   const waterStyle = useAnimatedStyle(() => ({
     height: `${waterFrac.value * 100}%`,
   }));
 
-  // Water color by level — higher alpha in dark mode for visibility
   const waterColorStyle = useAnimatedStyle(() => {
     const c = isDark
       ? interpolateColor(
@@ -422,16 +386,13 @@ function FloodDepthPicker({
     return { backgroundColor: c };
   });
 
-  // Handle line position
   const handlePos = useAnimatedStyle(() => ({
     bottom: `${waterFrac.value * 100}%`,
   }));
 
-  // Depth cm for the handle pill
-  // Depth in feet (161 cm = 5.28 ft)
   const depthFt = useDerivedValue(() => {
     const cm = interpolate(waterFrac.value, [0, 1], [0, 161]);
-    return Math.round(cm / 30.48 * 10) / 10; // 1 decimal
+    return Math.round(cm / 30.48 * 10) / 10;
   });
 
   const textColor  = isDark ? colors.white : colors.slate[900];
@@ -444,7 +405,6 @@ function FloodDepthPicker({
   const groundDark = isDark ? '#1A2636' : '#D4DDE8';
   const groundMid  = isDark ? '#15202E' : '#C8D5E2';
 
-  // Glow pulse for active label dot
   const glowPulse = useSharedValue(0);
   useEffect(() => {
     glowPulse.value = withRepeat(
@@ -489,12 +449,10 @@ function FloodDepthPicker({
         <GestureDetector gesture={pan}>
           <Animated.View style={[fdp.card, { backgroundColor: bg, borderColor: border }]}>
 
-            {/* ── Ground base layer — always visible below figure ── */}
             <View style={[fdp.ground, { backgroundColor: groundDark }]} pointerEvents="none">
               <View style={[fdp.groundTopStripe, { backgroundColor: groundMid }]} />
             </View>
 
-            {/* ── Scale ticks on left ── */}
             <View style={fdp.scaleCol} pointerEvents="none">
               {SNAPS.map((snap, i) => (
                 <View key={i} style={[fdp.tick, { bottom: `${snap * 100}%` }]}>
@@ -504,11 +462,8 @@ function FloodDepthPicker({
               ))}
             </View>
 
-            {/* ── Center: human + water ── */}
             <View style={fdp.centerCol}>
-              {/* Water fill */}
               <Animated.View style={[fdp.water, waterStyle, waterColorStyle]}>
-                {/* Animated waves */}
                 <Animated.View style={[fdp.waves, waveStyle]}>
                   {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => (
                     <View key={i} style={[fdp.wave, {
@@ -516,7 +471,6 @@ function FloodDepthPicker({
                     }]} />
                   ))}
                 </Animated.View>
-                {/* Secondary wave row for depth */}
                 <Animated.View style={[fdp.waves, { top: 3 }, waveStyle]}>
                   {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => (
                     <View key={i} style={[fdp.wave, { width: 20, height: 7, marginLeft: -2,
@@ -526,7 +480,6 @@ function FloodDepthPicker({
                 </Animated.View>
               </Animated.View>
 
-              {/* Human figure */}
               <View style={fdp.human} pointerEvents="none">
                 <View style={[fdp.hair, { backgroundColor: hairColor }]} />
                 <View style={[fdp.head, { backgroundColor: skinColor }]}>
@@ -579,7 +532,6 @@ function FloodDepthPicker({
                 </View>
               </View>
 
-              {/* Handle line + floating pill */}
               <Animated.View style={[fdp.handleRow, handlePos]} pointerEvents="none">
                 <View style={[fdp.handleLine, { backgroundColor: isDark ? 'rgba(59,165,246,0.55)' : 'rgba(59,130,246,0.40)' }]} />
                 <View style={[fdp.pill, {
@@ -591,7 +543,6 @@ function FloodDepthPicker({
                 <View style={[fdp.handleLine, { backgroundColor: isDark ? 'rgba(59,165,246,0.55)' : 'rgba(59,130,246,0.40)' }]} />
               </Animated.View>
 
-              {/* Drag hint arrow */}
               {!selected && (
                 <View style={fdp.dragHint} pointerEvents="none">
                   <Ionicons name="chevron-up" size={20} color={colors.brand[500]} />
@@ -601,7 +552,6 @@ function FloodDepthPicker({
               )}
             </View>
 
-            {/* ── Right: tappable severity labels ── */}
             <View style={fdp.labelCol}>
               {DEPTH_LEVELS.map((level, i) => {
                 const c = colors.severity[level.severity];
@@ -638,7 +588,6 @@ function FloodDepthPicker({
         </GestureDetector>
       </GestureHandlerRootView>
 
-      {/* Selected info banner */}
       {selected && (() => {
         const l = DEPTH_LEVELS.find(d => d.key === selected)!;
         const c = colors.severity[l.severity];
@@ -676,7 +625,6 @@ function DepthFtText({ depthFt }: { depthFt: SharedValue<number> }) {
   return <Text style={fdp.pillText}>{(Math.round(val * 10) / 10).toFixed(1)} ft</Text>;
 }
 
-// Helper to round scaled values
 const s = (v: number) => Math.round(v * FIGURE_SCALE);
 
 const fdp = StyleSheet.create({
@@ -690,7 +638,6 @@ const fdp = StyleSheet.create({
     borderWidth: 1,
     height: PICKER_H,
     overflow: 'hidden',
-    // Premium shadow
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18,
@@ -698,7 +645,6 @@ const fdp = StyleSheet.create({
     elevation: 12,
   },
 
-  // Ground base
   ground: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     height: '12%', zIndex: 0,
@@ -708,7 +654,6 @@ const fdp = StyleSheet.create({
     height: 3, opacity: 0.5,
   },
 
-  // Left scale
   scaleCol: { width: s(52), position: 'relative', zIndex: 2 },
   tick: {
     position: 'absolute', left: 0, right: 0,
@@ -718,10 +663,8 @@ const fdp = StyleSheet.create({
   tickLine: { width: 10, height: 1, borderRadius: 0.5 },
   tickLabel: { fontSize: SCREEN_W < 360 ? 8 : 9, fontWeight: '700', letterSpacing: 0.3 },
 
-  // Center column
   centerCol: { flex: 1, position: 'relative', overflow: 'hidden', zIndex: 1 },
 
-  // Water
   water: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     overflow: 'hidden', zIndex: 1,
@@ -731,7 +674,6 @@ const fdp = StyleSheet.create({
   },
   wave: { width: 24, height: 10, borderRadius: 12, marginLeft: -3 },
 
-  // Human figure
   human: {
     position: 'absolute',
     bottom: s(10),
@@ -747,7 +689,6 @@ const fdp = StyleSheet.create({
   head: {
     width: s(40), height: s(40), borderRadius: s(20),
     zIndex: 2, alignItems: 'center', justifyContent: 'center',
-    // Subtle head shadow
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08, shadowRadius: 2, elevation: 1,
   },
@@ -800,7 +741,6 @@ const fdp = StyleSheet.create({
     width: s(7), height: s(5), borderRadius: s(2.5),
   },
 
-  // Handle — premium floating pill
   handleRow: {
     position: 'absolute', left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center',
@@ -817,14 +757,12 @@ const fdp = StyleSheet.create({
   },
   pillText: { color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
 
-  // Drag hint
   dragHint: {
     position: 'absolute', alignSelf: 'center',
     top: '35%', alignItems: 'center', opacity: 0.6, zIndex: 5,
   },
   dragHintText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
 
-  // Right labels — premium styling
   labelCol: {
     width: SCREEN_W < 360 ? 74 : 86,
     position: 'relative', zIndex: 3,
@@ -834,12 +772,10 @@ const fdp = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 6,
     marginBottom: -9,
   },
-  // Inactive dot — muted ring
   labelDot: {
     width: 9, height: 9, borderRadius: 4.5,
     borderWidth: 1.5,
   },
-  // Active dot — glowing ring + solid center
   labelDotOuter: {
     width: 14, height: 14, borderRadius: 7,
     borderWidth: 1.5,
@@ -851,7 +787,6 @@ const fdp = StyleSheet.create({
   labelText: { fontSize: SCREEN_W < 360 ? 10 : 11, fontWeight: '500' },
   labelTextActive: { fontWeight: '800', letterSpacing: 0.2 },
 
-  // Banner — elevated card
   banner: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     padding: 16, borderRadius: 16, borderWidth: 1,
@@ -870,8 +805,6 @@ const fdp = StyleSheet.create({
   },
   bannerBadgeText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
 });
-
-// ─── Road damage picker ─────────────────────────────────────────────────────
 
 const ROAD_DAMAGE_LEVELS = [
   { key: 'pothole',  label: 'Pothole',          icon: 'ellipse'    as const, severity: 'low'      as Severity, desc: 'Small hole — passable with caution' },
@@ -942,7 +875,6 @@ function RoadDamagePicker({
         })}
       </View>
 
-      {/* Selected severity auto-sync notice */}
       {selected && (() => {
         const l = ROAD_DAMAGE_LEVELS.find(d => d.key === selected)!;
         const c = colors.severity[l.severity];
@@ -975,7 +907,6 @@ const rdp = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.slate[200],
     backgroundColor: colors.white,
-    // Premium shadow
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -999,8 +930,6 @@ const rdp = StyleSheet.create({
   },
   noticeText: { flex: 1, fontSize: 12, lineHeight: 17 },
 });
-
-// ─── Evidence step ──────────────────────────────────────────────────────────
 
 function EvidenceStep({
   isDark,
@@ -1061,23 +990,19 @@ function EvidenceStep({
         Optional but strongly recommended. Helps admins verify faster.
       </Text>
 
-      {/* Photo grid */}
       {photos.length > 0 && (
         <View style={styles.photoGrid}>
           {photos.map((uri, idx) => (
             <View key={uri} style={styles.photoCell}>
               <Image source={{ uri }} style={styles.photoImg} resizeMode="cover" />
-              {/* Video play overlay */}
               {isVideoUri(uri) && (
                 <View style={styles.videoOverlay}>
                   <Ionicons name="play-circle" size={30} color={colors.white} />
                 </View>
               )}
-              {/* Counter badge */}
               <View style={styles.photoBadge}>
                 <Text style={styles.photoBadgeText}>{idx + 1}</Text>
               </View>
-              {/* Remove button */}
               <Pressable
                 style={styles.photoRemove}
                 onPress={() => removePhoto(uri)}
@@ -1091,7 +1016,6 @@ function EvidenceStep({
             </View>
           ))}
 
-          {/* Add more cell (inline in grid) */}
           {remaining > 0 && (
             <Pressable
               style={[styles.photoAddCell, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}
@@ -1107,7 +1031,6 @@ function EvidenceStep({
         </View>
       )}
 
-      {/* Buttons when no photos yet */}
       {photos.length === 0 && (
         <View style={styles.evidenceGrid}>
           <Pressable
@@ -1135,7 +1058,6 @@ function EvidenceStep({
         </View>
       )}
 
-      {/* Camera / Gallery row when photos already added */}
       {photos.length > 0 && remaining > 0 && (
         <View style={styles.evidenceRowBtns}>
           <Pressable
@@ -1168,8 +1090,6 @@ function EvidenceStep({
     </View>
   );
 }
-
-// ─── Step 5 — Description + submit ───────────────────────────────────────────
 
 function DescriptionStep({
   value,
@@ -1215,8 +1135,6 @@ function DescriptionStep({
   );
 }
 
-// ─── Confirmation screen ──────────────────────────────────────────────────────
-
 function ConfirmationScreen({ reference, onDone }: { reference: string; onDone: () => void }) {
   return (
     <View style={styles.confirmRoot}>
@@ -1238,8 +1156,6 @@ function ConfirmationScreen({ reference, onDone }: { reference: string; onDone: 
     </View>
   );
 }
-
-// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ReportScreen() {
   const router   = useRouter();
@@ -1264,7 +1180,6 @@ export default function ReportScreen() {
   const [draftRestored, setDraftRestored] = useState(false);
   const [checkingDups, setCheckingDups]   = useState(false);
 
-  // Step transition animation
   const stepOpacity = useSharedValue(1);
   const stepTranslateX = useSharedValue(0);
   const stepAnimStyle = useAnimatedStyle(() => ({
@@ -1272,7 +1187,6 @@ export default function ReportScreen() {
     transform: [{ translateX: stepTranslateX.value }],
   }));
 
-  // Shake animation for validation
   const shakeX = useSharedValue(0);
   const shakeStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: shakeX.value }],
@@ -1303,12 +1217,8 @@ export default function ReportScreen() {
   const isFlood    = hazardType === 'flood';
   const isRoad     = hazardType === 'road';
   const isLandslide = hazardType === 'landslide';
-  // Extra step for flood (depth) or road (damage type)
   const hasExtraStep = isFlood || isRoad;
   const TOTAL_STEPS  = hasExtraStep ? 5 : 4;
-  // Step 0: Hazard type, 1: Severity, 2: Extra (flood/road), 3: Evidence, 4: Description
-
-  // ── Auto-detect location on mount ──
   async function detectLocation() {
     setLocDetecting(true);
     try {
@@ -1343,14 +1253,12 @@ export default function ReportScreen() {
 
   useEffect(() => { if (!location) detectLocation(); }, []);
 
-  // ── Landslide auto-escalation ──
   useEffect(() => {
     if (isLandslide && (!severity || severity === 'low')) {
       setSeverity('moderate');
     }
   }, [hazardType]);
 
-  // Load draft on mount
   useEffect(() => {
     Storage.getItem(DRAFT_KEY).then(json => {
       if (!json) return;
@@ -1367,7 +1275,6 @@ export default function ReportScreen() {
     }).catch(() => {});
   }, []);
 
-  // Auto-save draft
   useEffect(() => {
     if (submitted) return;
     Storage.setItem(DRAFT_KEY, JSON.stringify({
@@ -1390,7 +1297,6 @@ export default function ReportScreen() {
   const screenBg = isDark ? colors.dark.bg      : colors.slate[50];
   const cardBg   = isDark ? colors.dark.surface  : colors.white;
 
-  // Step 0: Hazard type → 1: Severity → [2: Extra step] → Evidence → Description
   const STEP_TITLES = hasExtraStep
     ? ['Hazard type', 'Severity', isFlood ? 'Flood depth' : 'Damage type', 'Evidence', 'Description']
     : ['Hazard type', 'Severity', 'Evidence', 'Description'];
@@ -1411,7 +1317,6 @@ export default function ReportScreen() {
       return;
     }
     if (step < TOTAL_STEPS - 1) {
-      // Duplicate detection: when leaving hazard type step with location set
       if (step === 0 && location && hazardType && token) {
         setCheckingDups(true);
         try {
@@ -1429,7 +1334,7 @@ export default function ReportScreen() {
             });
             return;
           }
-        } catch { /* silent — don't block submit */ }
+        } catch {}
         finally { setCheckingDups(false); }
       }
       animateStepTransition('forward', () => setStep(s => s + 1));
@@ -1491,7 +1396,6 @@ export default function ReportScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
-      {/* ── Header ── */}
       <View style={[styles.header, { paddingTop: insets.top + 12, backgroundColor: colors.brand[500] }]}>
         <Pressable
           onPress={step === 0 ? () => router.back() : () => animateStepTransition('back', () => setStep(s => s - 1))}
@@ -1513,7 +1417,6 @@ export default function ReportScreen() {
         <StepIndicator current={step} total={TOTAL_STEPS} />
       </View>
 
-      {/* ── Step content ── */}
       <ScrollView
         style={[styles.scroll, { backgroundColor: cardBg }]}
         contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
@@ -1521,7 +1424,6 @@ export default function ReportScreen() {
         showsVerticalScrollIndicator={false}
         scrollEnabled={!(hasExtraStep && step === 2)}
       >
-        {/* Compact location banner — always visible */}
         <LocationBanner
           isDark={isDark}
           location={location}
@@ -1529,7 +1431,6 @@ export default function ReportScreen() {
           onRefresh={detectLocation}
         />
 
-        {/* Draft banner */}
         {draftRestored && (
           <View style={[styles.draftBanner, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}>
             <Ionicons name="document-text" size={14} color={colors.brand[500]} />
@@ -1543,7 +1444,6 @@ export default function ReportScreen() {
         )}
 
         <Animated.View style={stepAnimStyle}>
-        {/* Step 0: Hazard type */}
         {step === 0 && (
           <HazardTypeStep
             selected={hazardType}
@@ -1551,7 +1451,6 @@ export default function ReportScreen() {
             isDark={isDark}
           />
         )}
-        {/* Step 1: Severity */}
         {step === 1 && (
           <>
             {isLandslide && (
@@ -1570,7 +1469,6 @@ export default function ReportScreen() {
             <SeverityStep
               selected={severity}
               onSelect={s => {
-                // Landslide cannot be set below moderate
                 if (isLandslide && s === 'low') {
                   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
                   return;
@@ -1581,7 +1479,6 @@ export default function ReportScreen() {
             />
           </>
         )}
-        {/* Step 2: Extra step — Flood depth or Road damage */}
         {hasExtraStep && step === 2 && isFlood && (
           <FloodDepthPicker
             selected={floodDepth}
@@ -1602,7 +1499,6 @@ export default function ReportScreen() {
             isDark={isDark}
           />
         )}
-        {/* Evidence step */}
         {step === (hasExtraStep ? 3 : 2) && (
           <EvidenceStep
             isDark={isDark}
@@ -1685,12 +1581,9 @@ export default function ReportScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   root: { flex: 1 },
 
-  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1709,15 +1602,12 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: '700', color: colors.white },
   headerStep:  { fontSize: 12, color: 'rgba(255,255,255,0.72)' },
 
-  // Scroll
   scroll: { flex: 1 },
 
-  // Shared step
   stepBody: { padding: 24, gap: 20 },
   stepTitle:    { fontSize: 20, fontWeight: '700', color: colors.slate[900] },
   stepSubtitle: { fontSize: 14, color: colors.slate[600], lineHeight: 20 },
 
-  // Location banner (compact, always visible)
   locBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1738,7 +1628,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
-  // Dispatch warning banner
   dispatchBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1755,7 +1644,6 @@ const styles = StyleSheet.create({
   dispatchTitle: { fontSize: 13, fontWeight: '700' },
   dispatchDesc:  { fontSize: 12, lineHeight: 17, color: colors.slate[600], marginTop: 2 },
 
-  // Hazard type step
   hazardGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1776,7 +1664,6 @@ const styles = StyleSheet.create({
   },
   hazardLabel: { fontSize: 12, color: colors.slate[600], textAlign: 'center' },
 
-  // Severity step
   severityCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1798,7 +1685,6 @@ const styles = StyleSheet.create({
   severityLabel: { fontSize: 15, fontWeight: '600', color: colors.slate[900] },
   severityDesc:  { fontSize: 12, color: colors.slate[600] },
 
-  // Evidence step — photo grid
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   photoCell: {
     width: '47%', aspectRatio: 1,
@@ -1827,7 +1713,7 @@ const styles = StyleSheet.create({
   photoAddCell: {
     width: '47%', aspectRatio: 1,
     borderRadius: 12, borderWidth: 2,
-    borderStyle: 'dashed', borderColor: colors.brand[200],
+    borderStyle: 'dashed', borderColor: colors.brand[100],
     backgroundColor: colors.brand[50],
     alignItems: 'center', justifyContent: 'center', gap: 4,
   },
@@ -1856,7 +1742,6 @@ const styles = StyleSheet.create({
   },
   evidenceHintText: { flex: 1, fontSize: 12, color: colors.slate[600], lineHeight: 18 },
 
-  // Description step
   textarea: {
     borderWidth: 1.5,
     borderColor: colors.slate[200],
@@ -1869,7 +1754,6 @@ const styles = StyleSheet.create({
   },
   charCount: { fontSize: 12, color: colors.slate[400], alignSelf: 'flex-end' },
 
-  // Action bar
   actionBar: {
     position: 'absolute',
     bottom: 0,
@@ -1892,7 +1776,6 @@ const styles = StyleSheet.create({
   },
   summaryChipText: { fontSize: 12, color: colors.slate[600], fontWeight: '500' },
 
-  // Draft banner
   draftBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     marginHorizontal: 24, marginTop: 16,
@@ -1901,7 +1784,6 @@ const styles = StyleSheet.create({
   },
   draftBannerText: { flex: 1, fontSize: 13, color: colors.brand[700] },
 
-  // Confirmation
   confirmRoot: {
     flex: 1,
     backgroundColor: colors.white,
