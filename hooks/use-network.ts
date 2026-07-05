@@ -1,7 +1,3 @@
-/**
- * Network connectivity hook
- * Provides online/offline state and a sync trigger for queued updates.
- */
 import { useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { updateIncidentStatus } from '@/services/api';
@@ -10,7 +6,7 @@ import {
   removePendingUpdate,
 } from '@/services/offline';
 
-const PING_INTERVAL = 15_000; // 15 seconds
+const PING_INTERVAL = 15_000;
 const PING_URL = 'https://clients3.google.com/generate_204';
 
 export function useNetwork(token: string | null) {
@@ -18,7 +14,6 @@ export function useNetwork(token: string | null) {
   const [syncing, setSyncing] = useState(false);
   const wasOffline = useRef(false);
 
-  // Periodically check connectivity
   useEffect(() => {
     async function check() {
       try {
@@ -28,7 +23,6 @@ export function useNetwork(token: string | null) {
         clearTimeout(timeout);
         setIsOnline(true);
 
-        // If we were offline and now online, sync queued updates
         if (wasOffline.current && token) {
           wasOffline.current = false;
           syncQueue(token);
@@ -57,7 +51,6 @@ export function useNetwork(token: string | null) {
         await removePendingUpdate(item.id);
         successCount++;
       } catch {
-        // Stop on first failure — remaining items stay queued
         break;
       }
     }

@@ -1,16 +1,5 @@
-/**
- * Push notification service — FloodTrack
- *
- * Handles Expo push token registration, permission requests, and
- * notification channel setup. Uses Expo Push Notifications (routes to APNs/FCM).
- *
- * Skips loading entirely in Expo Go where push notifications are not supported.
- * Will work fully in development builds and production.
- */
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-
-// ─── Detect Expo Go — skip notifications entirely ───────────────────────────
 
 const isExpoGo = Constants.appOwnership === 'expo';
 
@@ -22,11 +11,8 @@ if (!isExpoGo) {
     Notifications = require('expo-notifications');
     Device = require('expo-device');
   } catch {
-    // Module not available
   }
 }
-
-// ─── Initialize (call once at app start) ────────────────────────────────────
 
 let initialized = false;
 
@@ -55,11 +41,8 @@ export function initNotifications() {
       });
     }
   } catch {
-    // Silently fail
   }
 }
-
-// ─── Get Expo push token ────────────────────────────────────────────────────
 
 export async function getExpoPushToken(): Promise<string | null> {
   if (!Notifications || !Device || isExpoGo) return null;
@@ -88,8 +71,6 @@ export async function getExpoPushToken(): Promise<string | null> {
     return null;
   }
 }
-
-// ─── Listener helpers ───────────────────────────────────────────────────────
 
 const noop = { remove: () => {} };
 

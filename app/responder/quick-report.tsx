@@ -1,7 +1,3 @@
-/**
- * Quick Report — streamlined one-tap hazard report for responders
- * Auto-fills location · minimal steps · links to active incident if applicable
- */
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -42,8 +38,6 @@ const SEVERITIES: { key: Severity; label: string; color: string }[] = [
   { key: 'high',     label: 'High',     color: colors.severity.high },
   { key: 'critical', label: 'Critical', color: colors.severity.critical },
 ];
-
-/* ───── animated helpers ───── */
 
 function usePressAnimation() {
   const scale = useRef(new Animated.Value(1)).current;
@@ -129,14 +123,12 @@ export default function QuickReportScreen() {
   const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
   const cardBg = isDark ? colors.dark.card : colors.white;
 
-  /* Submit press animation */
   const submitScale = useRef(new Animated.Value(1)).current;
   const onSubmitPressIn = () =>
     Animated.spring(submitScale, { toValue: 0.96, useNativeDriver: true }).start();
   const onSubmitPressOut = () =>
     Animated.spring(submitScale, { toValue: 1, friction: 4, useNativeDriver: true }).start();
 
-  /* Card press helpers */
   const cameraPress = usePressAnimation();
 
   useEffect(() => {
@@ -198,7 +190,6 @@ export default function QuickReportScreen() {
 
   return (
     <View style={[s.root, { backgroundColor: screenBg }]}>
-      {/* Curved header */}
       <View style={[s.headerBg, { paddingTop: insets.top + 8, backgroundColor: isDark ? colors.dark.surface : colors.accent[700] }]}>
         <View style={s.headerInner}>
           <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
@@ -218,7 +209,6 @@ export default function QuickReportScreen() {
       </View>
 
       <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 100 }]} showsVerticalScrollIndicator={false}>
-        {/* Location card */}
         <View style={[s.card, { backgroundColor: cardBg }]}>
           <View style={s.locationRow}>
             <Ionicons name="location" size={16} color={colors.accent[500]} />
@@ -229,7 +219,6 @@ export default function QuickReportScreen() {
           </View>
         </View>
 
-        {/* Hazard type */}
         <View style={[s.card, { backgroundColor: cardBg }]}>
           <Text style={[s.sectionTitle, isDark && { color: colors.white }]}>Hazard type</Text>
           <View style={s.chipGrid}>
@@ -256,7 +245,6 @@ export default function QuickReportScreen() {
           </View>
         </View>
 
-        {/* Severity */}
         <View style={[s.card, { backgroundColor: cardBg }]}>
           <Text style={[s.sectionTitle, isDark && { color: colors.white }]}>Severity</Text>
           <View style={s.sevRow}>
@@ -273,7 +261,6 @@ export default function QuickReportScreen() {
                     sel && { backgroundColor: sv.color + '14' },
                   ]}
                 >
-                  {/* Colored accent line */}
                   <View style={[s.sevAccent, { backgroundColor: sv.color }]} />
                   <View style={s.sevContent}>
                     <View style={[s.sevDot, { backgroundColor: sv.color }]} />
@@ -287,7 +274,6 @@ export default function QuickReportScreen() {
           </View>
         </View>
 
-        {/* Photo + Description */}
         <View style={[s.card, { backgroundColor: cardBg }]}>
           <Text style={[s.sectionTitle, isDark && { color: colors.white }]}>Evidence & notes</Text>
 
@@ -332,7 +318,6 @@ export default function QuickReportScreen() {
         </View>
       </ScrollView>
 
-      {/* Submit button */}
       <View style={[s.bottomBar, { paddingBottom: insets.bottom + 14, backgroundColor: isDark ? colors.dark.surface : colors.white }]}>
         <Pressable
           onPress={handleSubmit}
@@ -365,7 +350,6 @@ export default function QuickReportScreen() {
 const s = StyleSheet.create({
   root: { flex: 1 },
 
-  /* ── curved header ── */
   headerBg: {
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
@@ -396,7 +380,6 @@ const s = StyleSheet.create({
 
   scroll: { padding: 16, gap: 14 },
 
-  /* ── cards ── */
   card: {
     borderRadius: 18, padding: 18, gap: 12,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
@@ -404,11 +387,9 @@ const s = StyleSheet.create({
   },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: colors.slate[900] },
 
-  /* ── location ── */
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   locationText: { flex: 1, fontSize: 13, color: colors.slate[600] },
 
-  /* ── hazard chips (3-column grid) ── */
   chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   typeChip: {
     width: '31%' as any,
@@ -423,7 +404,6 @@ const s = StyleSheet.create({
   },
   typeChipText: { fontSize: 11, fontWeight: '600', color: colors.slate[600], textAlign: 'center' },
 
-  /* ── severity ── */
   sevRow: { flexDirection: 'row', gap: 8 },
   sevChip: {
     flex: 1,
@@ -446,7 +426,6 @@ const s = StyleSheet.create({
   sevDot: { width: 12, height: 12, borderRadius: 6 },
   sevText: { fontSize: 12, fontWeight: '800' },
 
-  /* ── camera ── */
   cameraBtn: {
     height: 100,
     borderRadius: 18,
@@ -461,7 +440,6 @@ const s = StyleSheet.create({
   cameraBtnLabel: { fontSize: 14, fontWeight: '700', color: colors.slate[700] },
   cameraBtnSub: { fontSize: 11, fontWeight: '500', color: colors.slate[400] },
 
-  /* ── photo preview ── */
   photoWrap: { height: 160, borderRadius: 18, overflow: 'hidden' },
   photoPreview: { width: '100%', height: '100%' },
   photoGradient: {
@@ -480,14 +458,12 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
   },
 
-  /* ── description ── */
   descInput: {
     borderWidth: 1.5, borderColor: colors.slate[200], borderRadius: 18,
     padding: 14, fontSize: 14, color: colors.slate[900], minHeight: 60,
     backgroundColor: colors.slate[50],
   },
 
-  /* ── bottom bar ── */
   bottomBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     paddingHorizontal: 16, paddingTop: 14,

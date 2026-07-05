@@ -1,11 +1,6 @@
-/**
- * Alerts screen — premium redesign
- * Gradient header · accent-bar cards · animated unread pulse
- */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Animated,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -23,50 +18,48 @@ import { useAuth } from '@/context/AuthContext';
 import { getAlertsWithReadState, markAlertRead, markAllAlertsRead } from '@/services/api';
 import type { AlertItem } from '@/types';
 
-// ─── Animated unread pulse dot ────────────────────────────────────────────────
+const H_PAD = 20;
+const CARD_GAP = 12;
+const CARD_RADIUS = 20;
 
-function PulseDot({ color }: { color: string }) {
-  const scale   = useRef(new Animated.Value(1)).current;
-  const opacity = useRef(new Animated.Value(0.7)).current;
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(scale,   { toValue: 1.8, duration: 900, useNativeDriver: true }),
-          Animated.timing(scale,   { toValue: 1,   duration: 900, useNativeDriver: true }),
-        ]),
-        Animated.sequence([
-          Animated.timing(opacity, { toValue: 0,   duration: 900, useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 0.7, duration: 900, useNativeDriver: true }),
-        ]),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [scale, opacity]);
-
+function SummaryCard({
+  icon,
+  label,
+  count,
+  accentColor,
+  isDark,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  count: number;
+  accentColor: string;
+  isDark: boolean;
+}) {
   return (
-    <View style={{ width: 12, height: 12, alignItems: 'center', justifyContent: 'center' }}>
-      {/* Ripple ring */}
-      <Animated.View
-        style={{
-          position: 'absolute',
-          width: 12,
-          height: 12,
-          borderRadius: 6,
-          backgroundColor: color,
-          opacity,
-          transform: [{ scale }],
-        }}
-      />
-      {/* Solid dot */}
-      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
+    <View
+      style={[
+        styles.summaryCard,
+        {
+          backgroundColor: isDark ? colors.dark.card : colors.white,
+          borderColor: isDark ? colors.dark.border : '#E8ECF0',
+        },
+      ]}
+    >
+      <View style={[styles.summaryIcon, { backgroundColor: accentColor + '18' }]}>
+        <Ionicons name={icon} size={16} color={accentColor} />
+      </View>
+      <Text
+        style={[
+          styles.summaryLabel,
+          { color: isDark ? colors.dark.subtext : colors.slate[500] },
+        ]}
+      >
+        {label}
+      </Text>
+      <Text style={[styles.summaryCount, { color: accentColor }]}>{count}</Text>
     </View>
   );
 }
-
-// ─── Alert card ───────────────────────────────────────────────────────────────
 
 function AlertCard({
   alert,
@@ -77,7 +70,7 @@ function AlertCard({
   isDark: boolean;
   onPress: () => void;
 }) {
-  const isCritical     = alert.kind === 'critical';
+  const isCritical = alert.kind === 'critical';
   const isStatusUpdate = alert.kind === 'status_update';
 
   const accentColor = isCritical
@@ -86,44 +79,37 @@ function AlertCard({
     ? colors.severity.low
     : colors.brand[500];
 
-  const iconName = isCritical
+  const iconName: keyof typeof Ionicons.glyphMap = isCritical
     ? 'alert-circle'
     : isStatusUpdate
     ? 'checkmark-circle'
     : 'information-circle';
-
-  const cardBg = isCritical
-    ? isDark ? '#1E0808' : '#FFF5F5'
-    : isDark  ? colors.slate[900] : colors.white;
 
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         styles.card,
-        { backgroundColor: cardBg },
+        {
+          backgroundColor: isDark ? colors.dark.card : colors.white,
+          borderColor: isDark ? colors.dark.border : '#E8ECF0',
+        },
         pressed && { opacity: 0.85, transform: [{ scale: 0.985 }] },
       ]}
       accessibilityRole="button"
       accessibilityLabel={`${alert.title}. ${alert.body}`}
     >
-      {/* Left accent bar */}
-      <View style={[styles.accentBar, { backgroundColor: accentColor }]} />
-
       <View style={styles.cardInner}>
-        {/* Top row: icon + title + time */}
         <View style={styles.cardTopRow}>
-          {/* Icon */}
           <View style={[styles.iconWrap, { backgroundColor: accentColor + '18' }]}>
             <Ionicons name={iconName} size={18} color={accentColor} />
           </View>
 
-          {/* Title + unread */}
           <View style={styles.cardTitleWrap}>
             <Text
               style={[
                 styles.cardTitle,
-                isDark && { color: colors.white },
+                { color: isDark ? colors.dark.text : colors.slate[900] },
                 isCritical && { color: colors.severity.critical },
                 !alert.read && { fontWeight: '700' },
               ]}
@@ -133,34 +119,60 @@ function AlertCard({
             </Text>
           </View>
 
-          {/* Unread pulse or time */}
           <View style={styles.cardRight}>
-            {!alert.read && <PulseDot color={accentColor} />}
-            <View style={[styles.timePill, isDark && { backgroundColor: colors.slate[800] }]}>
-              <Text style={[styles.timeText, isDark && { color: colors.slate[400] }]}>
-                {alert.time}
-              </Text>
-            </View>
+            {!alert.read && (
+              <View
+                style={[styles.unreadDot, { backgroundColor: accentColor }]}
+              />
+            )}
+            <Text
+              style={[
+                styles.timeText,
+                { color: isDark ? colors.dark.subtext : colors.slate[400] },
+              ]}
+            >
+              {alert.time}
+            </Text>
           </View>
         </View>
 
-        {/* Body */}
         <Text
-          style={[styles.cardBody, isDark && { color: colors.slate[400] }]}
+          style={[
+            styles.cardBody,
+            { color: isDark ? colors.dark.subtext : colors.slate[500] },
+          ]}
           numberOfLines={2}
         >
           {alert.body}
         </Text>
 
-        {/* Footer: area + kind badge */}
-        <View style={styles.cardFooter}>
+        <View
+          style={[
+            styles.cardFooter,
+            {
+              borderTopColor: isDark
+                ? colors.dark.border
+                : '#E8ECF0',
+            },
+          ]}
+        >
           <View style={styles.footerLeft}>
-            <Ionicons name="location-outline" size={11} color={colors.slate[400]} />
-            <Text style={[styles.footerText, isDark && { color: colors.slate[500] }]} numberOfLines={1}>
+            <Ionicons
+              name="location-outline"
+              size={12}
+              color={isDark ? colors.dark.subtext : colors.slate[400]}
+            />
+            <Text
+              style={[
+                styles.footerText,
+                { color: isDark ? colors.dark.subtext : colors.slate[400] },
+              ]}
+              numberOfLines={1}
+            >
               {alert.area}
             </Text>
           </View>
-          <View style={[styles.kindBadge, { backgroundColor: accentColor + '18' }]}>
+          <View style={[styles.kindBadge, { backgroundColor: accentColor + '14' }]}>
             <Text style={[styles.kindText, { color: accentColor }]}>
               {isCritical ? 'Critical' : isStatusUpdate ? 'Update' : 'Advisory'}
             </Text>
@@ -171,68 +183,45 @@ function AlertCard({
   );
 }
 
-// ─── Section header ───────────────────────────────────────────────────────────
-
-function SectionLabel({
-  icon,
-  label,
-  count,
-  color,
-  isDark,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  count: number;
-  color: string;
-  isDark: boolean;
-}) {
-  return (
-    <View style={styles.sectionRow}>
-      <View style={[styles.sectionIconWrap, { backgroundColor: color + '18' }]}>
-        <Ionicons name={icon} size={13} color={color} />
-      </View>
-      <Text style={[styles.sectionLabel, { color }]}>{label}</Text>
-      <View style={[styles.sectionCount, { backgroundColor: color + '18' }]}>
-        <Text style={[styles.sectionCountText, { color }]}>{count}</Text>
-      </View>
-    </View>
-  );
-}
-
-// ─── Screen ───────────────────────────────────────────────────────────────────
-
 export default function AlertsScreen() {
-  const insets    = useSafeAreaInsets();
-  const scheme    = useColorScheme();
-  const isDark    = scheme === 'dark';
+  const insets = useSafeAreaInsets();
+  const scheme = useColorScheme();
+  const isDark = scheme === 'dark';
   const { token } = useAuth();
-  const router    = useRouter();
+  const router = useRouter();
 
-  const [alerts, setAlerts]         = useState<AlertItem[]>([]);
-  const [loading, setLoading]       = useState(true);
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError]           = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (isRefresh = false) => {
-    try {
-      if (!isRefresh) setLoading(true);
-      setError(null);
-      const data = await getAlertsWithReadState(token!);
-      setAlerts(data);
-    } catch {
-      setError('Could not load alerts. Pull down to retry.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [token]);
+  const load = useCallback(
+    async (isRefresh = false) => {
+      try {
+        if (!isRefresh) setLoading(true);
+        setError(null);
+        const data = await getAlertsWithReadState(token!);
+        setAlerts(data);
+      } catch {
+        setError('Could not load alerts. Pull down to retry.');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [token],
+  );
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   async function handleAlertPress(alert: AlertItem) {
     if (!alert.read) {
       await markAlertRead(alert.id, token!);
-      setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, read: true } : a));
+      setAlerts((prev) =>
+        prev.map((a) => (a.id === alert.id ? { ...a, read: true } : a)),
+      );
     }
     if (alert.reportId) {
       router.push(`/responder/incident/${alert.reportId}`);
@@ -241,93 +230,141 @@ export default function AlertsScreen() {
 
   async function handleMarkAllRead() {
     try {
-      const allIds = alerts.map(a => a.id);
+      const allIds = alerts.map((a) => a.id);
       await markAllAlertsRead(allIds, token!);
-      setAlerts(prev => prev.map(a => ({ ...a, read: true })));
+      setAlerts((prev) => prev.map((a) => ({ ...a, read: true })));
     } catch {
-      // silent — dots persist until next load
     }
   }
 
-  const criticals    = alerts.filter(a => a.kind === 'critical');
-  const nonCriticals = alerts.filter(a => a.kind !== 'critical');
-  const unreadCount  = alerts.filter(a => !a.read).length;
+  const criticals = alerts.filter((a) => a.kind === 'critical');
+  const nonCriticals = alerts.filter((a) => a.kind !== 'critical');
+  const unreadCount = alerts.filter((a) => !a.read).length;
 
-  const screenBg = isDark ? '#080C10' : '#F4F6F9';
-  const headerBg = isDark ? '#0D1117' : colors.accent[700];
+  const screenBg = isDark ? colors.dark.bg : '#F2F4F7';
+  const headerBg = isDark ? colors.dark.surface : '#F2F4F7';
 
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
-
-      {/* ── Premium header ── */}
-      <View style={[styles.header, { paddingTop: insets.top + 6, backgroundColor: headerBg }]}>
-        {/* Top row */}
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top + 10, backgroundColor: headerBg },
+        ]}
+      >
         <View style={styles.headerTop}>
           <View style={styles.headerLeft}>
-            <View style={styles.headerIconWrap}>
-              <Ionicons name="notifications" size={20} color="rgba(255,255,255,0.9)" />
-              {unreadCount > 0 && (
-                <View style={styles.headerBadge}>
-                  <Text style={styles.headerBadgeText}>
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </Text>
-                </View>
-              )}
-            </View>
-            <Text style={styles.headerTitle}>Alerts</Text>
+            <Text
+              style={[
+                styles.headerTitle,
+                { color: isDark ? colors.dark.text : colors.slate[900] },
+              ]}
+            >
+              Alerts
+            </Text>
+            {unreadCount > 0 && (
+              <View style={styles.headerBadge}>
+                <Text style={styles.headerBadgeText}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </Text>
+              </View>
+            )}
           </View>
 
           {unreadCount > 0 && (
             <Pressable
               onPress={handleMarkAllRead}
-              style={styles.markAllPill}
+              style={({ pressed }) => [
+                styles.markAllBtn,
+                {
+                  backgroundColor: isDark ? colors.dark.card : colors.white,
+                  borderColor: isDark ? colors.dark.border : '#E8ECF0',
+                },
+                pressed && { opacity: 0.75 },
+              ]}
               accessibilityRole="button"
               accessibilityLabel="Mark all as read"
             >
-              <Ionicons name="checkmark-done" size={13} color={colors.white} />
-              <Text style={styles.markAllText}>Mark all read</Text>
+              <Ionicons
+                name="checkmark-done"
+                size={13}
+                color={colors.brand[500]}
+              />
+              <Text
+                style={[
+                  styles.markAllText,
+                  { color: isDark ? colors.dark.text : colors.slate[700] },
+                ]}
+              >
+                Mark all read
+              </Text>
             </Pressable>
           )}
         </View>
 
-        {/* Subtitle */}
-        <Text style={styles.headerSub}>
+        <Text
+          style={[
+            styles.headerSub,
+            { color: isDark ? colors.dark.subtext : colors.slate[500] },
+          ]}
+        >
           {loading
-            ? 'Loading…'
+            ? 'Loading...'
             : unreadCount > 0
             ? `${unreadCount} unread notification${unreadCount !== 1 ? 's' : ''}`
             : "You're all caught up"}
         </Text>
-
-        {/* Decorative bottom curve */}
-        <View style={styles.headerCurve} />
       </View>
 
-      {/* ── Loading ── */}
       {loading && (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.brand[500]} />
         </View>
       )}
 
-      {/* ── Error ── */}
       {!loading && error && (
         <View style={styles.centered}>
-          <View style={[styles.errorIconWrap, isDark && { backgroundColor: colors.slate[900] }]}>
-            <Ionicons name="cloud-offline-outline" size={36} color={colors.slate[400]} />
+          <View
+            style={[
+              styles.errorIconWrap,
+              {
+                backgroundColor: isDark ? colors.dark.card : colors.slate[100],
+              },
+            ]}
+          >
+            <Ionicons
+              name="cloud-offline-outline"
+              size={36}
+              color={colors.slate[400]}
+            />
           </View>
-          <Text style={[styles.errorTitle, isDark && { color: colors.white }]}>
+          <Text
+            style={[
+              styles.errorTitle,
+              { color: isDark ? colors.dark.text : colors.slate[900] },
+            ]}
+          >
             Connection issue
           </Text>
-          <Text style={[styles.errorBody, isDark && { color: colors.slate[400] }]}>{error}</Text>
-          <Pressable onPress={() => load()} style={styles.retryBtn} accessibilityRole="button">
+          <Text
+            style={[
+              styles.errorBody,
+              { color: isDark ? colors.dark.subtext : colors.slate[500] },
+            ]}
+          >
+            {error}
+          </Text>
+          <Pressable
+            onPress={() => load()}
+            style={styles.retryBtn}
+            accessibilityRole="button"
+          >
             <Ionicons name="refresh" size={15} color={colors.white} />
             <Text style={styles.retryText}>Try again</Text>
           </Pressable>
         </View>
       )}
 
-      {/* ── List ── */}
       {!loading && !error && (
         <ScrollView
           contentContainerStyle={[
@@ -338,57 +375,90 @@ export default function AlertsScreen() {
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => { setRefreshing(true); load(true); }}
-              tintColor={colors.accent[400]}
-              colors={[colors.accent[500]]}
+              onRefresh={() => {
+                setRefreshing(true);
+                load(true);
+              }}
+              tintColor={colors.brand[500]}
+              colors={[colors.brand[500]]}
             />
           }
           showsVerticalScrollIndicator={false}
         >
-
-          {/* Critical section */}
-          {criticals.length > 0 && (
-            <View style={styles.section}>
-              <SectionLabel
+          {alerts.length > 0 && (
+            <View style={styles.summaryRow}>
+              <SummaryCard
                 icon="alert-circle"
                 label="Critical Alerts"
                 count={criticals.length}
-                color={colors.severity.critical}
+                accentColor={colors.severity.critical}
                 isDark={isDark}
               />
-              {criticals.map(a => (
-                <AlertCard key={a.id} alert={a} isDark={isDark} onPress={() => handleAlertPress(a)} />
-              ))}
-            </View>
-          )}
-
-          {/* Advisories & updates section */}
-          {nonCriticals.length > 0 && (
-            <View style={styles.section}>
-              <SectionLabel
-                icon="notifications-outline"
-                label="Advisories & Updates"
+              <SummaryCard
+                icon="information-circle"
+                label="Advisories"
                 count={nonCriticals.length}
-                color={isDark ? colors.slate[400] : colors.slate[600]}
+                accentColor={colors.brand[500]}
                 isDark={isDark}
               />
-              {nonCriticals.map(a => (
-                <AlertCard key={a.id} alert={a} isDark={isDark} onPress={() => handleAlertPress(a)} />
+            </View>
+          )}
+
+          {alerts.length > 0 && (
+            <View style={styles.alertList}>
+              {criticals.map((a) => (
+                <AlertCard
+                  key={a.id}
+                  alert={a}
+                  isDark={isDark}
+                  onPress={() => handleAlertPress(a)}
+                />
+              ))}
+              {nonCriticals.map((a) => (
+                <AlertCard
+                  key={a.id}
+                  alert={a}
+                  isDark={isDark}
+                  onPress={() => handleAlertPress(a)}
+                />
               ))}
             </View>
           )}
 
-          {/* Empty state */}
           {alerts.length === 0 && (
             <View style={styles.emptyState}>
-              <View style={[styles.emptyIconWrap, isDark && { backgroundColor: colors.slate[900] }]}>
-                <Ionicons name="notifications-off-outline" size={40} color={colors.slate[400]} />
+              <View
+                style={[
+                  styles.emptyIconWrap,
+                  {
+                    backgroundColor: isDark
+                      ? colors.dark.card
+                      : colors.slate[100],
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="notifications-off-outline"
+                  size={40}
+                  color={colors.slate[400]}
+                />
               </View>
-              <Text style={[styles.emptyTitle, isDark && { color: colors.white }]}>
+              <Text
+                style={[
+                  styles.emptyTitle,
+                  { color: isDark ? colors.dark.text : colors.slate[900] },
+                ]}
+              >
                 All quiet
               </Text>
-              <Text style={[styles.emptySub, isDark && { color: colors.slate[400] }]}>
-                No active alerts right now.{'\n'}Critical incidents will appear here immediately.
+              <Text
+                style={[
+                  styles.emptySub,
+                  { color: isDark ? colors.dark.subtext : colors.slate[400] },
+                ]}
+              >
+                No active alerts right now.{'\n'}Critical incidents will appear
+                here immediately.
               </Text>
             </View>
           )}
@@ -398,17 +468,19 @@ export default function AlertsScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  root:    { flex: 1 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 32 },
+  root: { flex: 1 },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    padding: 32,
+  },
 
-  // ── Header ──
   header: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    zIndex: 10,
+    paddingHorizontal: H_PAD,
+    paddingBottom: 16,
   },
   headerTop: {
     flexDirection: 'row',
@@ -421,165 +493,191 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  headerIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.3,
   },
   headerBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: colors.severity.critical,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 3,
-    borderWidth: 1.5,
-    borderColor: colors.accent[700],
+    paddingHorizontal: 6,
   },
-  headerBadgeText: { fontSize: 9, fontWeight: '800', color: colors.white },
-  headerTitle: {
-    fontSize: 24,
+  headerBadgeText: {
+    fontSize: 11,
     fontWeight: '800',
     color: colors.white,
-    letterSpacing: -0.3,
   },
-  markAllPill: {
+  markAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  markAllText: { fontSize: 12, color: colors.white, fontWeight: '600' },
+  markAllText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   headerSub: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.68)',
     marginTop: 2,
   },
-  // Decorative bottom curve separator
-  headerCurve: {
-    position: 'absolute',
-    bottom: -12,
-    left: 0,
-    right: 0,
-    height: 24,
-    backgroundColor: 'transparent',
-  },
 
-  // ── Scroll ──
-  scroll:      { padding: 16, gap: 20, paddingTop: 20 },
+  scroll: {
+    paddingHorizontal: H_PAD,
+    paddingTop: 16,
+    gap: CARD_GAP,
+  },
   scrollEmpty: { flex: 1, justifyContent: 'center' },
 
-  // ── Section ──
-  section: { gap: 10 },
-  sectionRow: {
+  summaryRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 2,
-    paddingLeft: 2,
+    gap: CARD_GAP,
   },
-  sectionIconWrap: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
+  summaryCard: {
+    flex: 1,
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 16,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  summaryIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sectionLabel: {
-    flex: 1,
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+  summaryLabel: {
+    fontSize: 12,
+    fontWeight: '600',
   },
-  sectionCount: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
+  summaryCount: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
-  sectionCountText: { fontSize: 11, fontWeight: '700' },
 
-  // ── Card ──
+  alertList: {
+    gap: CARD_GAP,
+  },
+
   card: {
-    flexDirection: 'row',
-    borderRadius: 16,
-    overflow: 'hidden',
+    borderRadius: CARD_RADIUS,
+    borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
+    shadowOpacity: 0.06,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 2,
   },
-  accentBar: { width: 4 },
-  cardInner: { flex: 1, padding: 14, gap: 8 },
-
-  cardTopRow:    { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  cardInner: {
+    padding: 16,
+    gap: 10,
+  },
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
   iconWrap: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
-  cardTitleWrap: { flex: 1 },
+  cardTitleWrap: { flex: 1, paddingTop: 2 },
   cardTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.slate[900],
     lineHeight: 20,
   },
-  cardRight: { alignItems: 'flex-end', gap: 6, flexShrink: 0 },
-  timePill: {
-    backgroundColor: colors.slate[100],
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 8,
+  cardRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+    flexShrink: 0,
+    paddingTop: 2,
   },
-  timeText: { fontSize: 10, fontWeight: '600', color: colors.slate[500] },
-
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  timeText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
   cardBody: {
     fontSize: 13,
-    color: colors.slate[500],
     lineHeight: 18,
+    paddingLeft: 46,
   },
-
   cardFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 6,
+    paddingTop: 10,
+    marginTop: 2,
     borderTopWidth: 1,
-    borderTopColor: colors.slate[100] + 'CC',
+    paddingLeft: 46,
   },
-  footerLeft: { flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 },
-  footerText: { fontSize: 11, color: colors.slate[400], flex: 1 },
-  kindBadge:  { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  kindText:   { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
+  footerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+  },
+  footerText: {
+    fontSize: 11,
+    flex: 1,
+  },
+  kindBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  kindText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
 
-  // ── Error ──
   errorIconWrap: {
     width: 72,
     height: 72,
     borderRadius: 20,
-    backgroundColor: colors.slate[100],
     alignItems: 'center',
     justifyContent: 'center',
   },
-  errorTitle: { fontSize: 17, fontWeight: '700', color: colors.slate[900] },
-  errorBody:  { fontSize: 13, color: colors.slate[500], textAlign: 'center', lineHeight: 20 },
+  errorTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  errorBody: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
   retryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -587,26 +685,30 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brand[500],
     paddingHorizontal: 20,
     paddingVertical: 11,
-    borderRadius: 12,
+    borderRadius: 14,
     marginTop: 4,
   },
-  retryText: { color: colors.white, fontWeight: '700', fontSize: 14 },
+  retryText: {
+    color: colors.white,
+    fontWeight: '700',
+    fontSize: 14,
+  },
 
-  // ── Empty state ──
   emptyState: { alignItems: 'center', gap: 16 },
   emptyIconWrap: {
     width: 88,
     height: 88,
     borderRadius: 28,
-    backgroundColor: colors.slate[100],
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
   },
-  emptyTitle: { fontSize: 20, fontWeight: '800', color: colors.slate[900] },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+  },
   emptySub: {
     fontSize: 14,
-    color: colors.slate[400],
     textAlign: 'center',
     lineHeight: 22,
   },

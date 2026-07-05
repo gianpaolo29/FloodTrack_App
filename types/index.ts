@@ -1,13 +1,8 @@
-// ─── Shared domain types ──────────────────────────────────────────────────────
-// Single source of truth — import from here, never redefine per-screen.
-
 export type Severity       = 'low' | 'moderate' | 'high' | 'critical';
 export type ReportStatus   = 'pending' | 'verified' | 'assigned' | 'resolved' | 'rejected';
 export type ResponderStatus = 'pending' | 'en_route' | 'on_scene' | 'resolved';
 export type UserRole       = 'Resident' | 'Responder';
 export type AlertKind      = 'critical' | 'advisory' | 'status_update';
-
-// ─── User ─────────────────────────────────────────────────────────────────────
 
 export interface User {
   id: string;
@@ -16,7 +11,7 @@ export interface User {
   email: string;
   contact: string;
   role: UserRole;
-  joinedAt: string;       // ISO date string
+  joinedAt: string;
 }
 
 export interface LoginPayload {
@@ -43,8 +38,6 @@ export interface ChangePasswordPayload {
   password: string;
   password_confirmation: string;
 }
-
-// ─── Reports ──────────────────────────────────────────────────────────────────
 
 export interface Report {
   id: string;
@@ -91,10 +84,8 @@ export interface ReportSubmission {
   hazardType: string;
   severity: Severity;
   description: string;
-  photos?: string[];   // local file URIs from camera / gallery
+  photos?: string[];
 }
-
-// ─── Alerts ───────────────────────────────────────────────────────────────────
 
 export interface AlertItem {
   id: string;
@@ -104,10 +95,8 @@ export interface AlertItem {
   area: string;
   time: string;
   read: boolean;
-  reportId?: string;       // if kind === 'status_update', links to report detail
+  reportId?: string;
 }
-
-// ─── Responder incidents ──────────────────────────────────────────────────────
 
 export interface Incident {
   id: string;
@@ -136,10 +125,8 @@ export interface StatusUpdatePayload {
   incidentId: string;
   status: ResponderStatus;
   notes?: string;
-  media?: string[];   // local file URIs from camera / gallery
+  media?: string[];
 }
-
-// ─── Incident messages (chat) ────────────────────────────────────────────────
 
 export interface IncidentMessage {
   id: string;
@@ -153,8 +140,6 @@ export interface IncidentMessage {
   createdAt: string;
 }
 
-// ─── Field report ────────────────────────────────────────────────────────────
-
 export interface FieldReportData {
   id?: string;
   reportId: string;
@@ -164,8 +149,6 @@ export interface FieldReportData {
   damageAssessment: string;
   checklist: Record<string, boolean>;
 }
-
-// ─── Responder stats ─────────────────────────────────────────────────────────
 
 export interface ResponderStats {
   resolvedTotal: number;

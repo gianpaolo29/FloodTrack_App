@@ -1,4 +1,9 @@
+
 # FloodTrack - Real-time Flood Monitoring System
+=======
+# FloodTrack App
+
+FloodTrack PH is a real-time flood monitoring and alert app built to help residents and emergency responders in flood-prone areas stay informed. It provides live incident reporting, map/heatmap visualization of flood-affected zones, and timely alerts to support faster, more coordinated disaster response.
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
@@ -6,15 +11,15 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
 
 1. Install dependencies
 
-   ```bash
+```bash
    npm install
-   ```
+```
 
 2. Start the app
 
-   ```bash
+```bash
    npx expo start
-   ```
+```
 
 In the output, you'll find options to open the app in a
 

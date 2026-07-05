@@ -1,12 +1,9 @@
-/**
- * Profile screen — premium redesign
- * Hero header with avatar ring · stat cards · icon-tinted rows · smooth toggles
- */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -24,22 +22,112 @@ import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
 import { updateProfile, changePassword, updateDutyStatus } from '@/services/api';
 
-// ─── Row icon colors per key ──────────────────────────────────────────────────
+interface PwdCheck {
+  label: string;
+  met: boolean;
+}
+
+function getPasswordChecks(pwd: string): PwdCheck[] {
+  return [
+    { label: 'At least 8 characters', met: pwd.length >= 8 },
+    { label: 'Uppercase letter (A-Z)', met: /[A-Z]/.test(pwd) },
+    { label: 'Lowercase letter (a-z)', met: /[a-z]/.test(pwd) },
+    { label: 'Number (0-9)', met: /[0-9]/.test(pwd) },
+    { label: 'Special character (!@#$...)', met: /[^A-Za-z0-9]/.test(pwd) },
+  ];
+}
+
+function getStrengthLevel(checks: PwdCheck[]): { score: number; label: string; color: string } {
+  const met = checks.filter((c) => c.met).length;
+  if (met <= 1) return { score: met, label: 'Very Weak', color: colors.severity.critical };
+  if (met === 2) return { score: met, label: 'Weak', color: colors.severity.high };
+  if (met === 3) return { score: met, label: 'Fair', color: colors.severity.moderate };
+  if (met === 4) return { score: met, label: 'Strong', color: '#66BB6A' };
+  return { score: met, label: 'Very Strong', color: colors.severity.low };
+}
+
+function PasswordStrengthBar({
+  password,
+  isDark,
+}: {
+  password: string;
+  isDark: boolean;
+}) {
+  const checks = getPasswordChecks(password);
+  const { score, label, color } = getStrengthLevel(checks);
+  const textPrimary = isDark ? colors.white : colors.slate[900];
+  const textTertiary = isDark ? colors.slate[500] : colors.slate[400];
+
+  if (!password) return null;
+
+  return (
+    <View style={{ gap: 8 }}>
+      <View style={{ gap: 4 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', color: textTertiary }}>
+            Password Strength
+          </Text>
+          <Text style={{ fontSize: 11, fontWeight: '700', color }}>
+            {label}
+          </Text>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 4, height: 4, borderRadius: 2 }}>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <View
+              key={i}
+              style={{
+                flex: 1,
+                height: 4,
+                borderRadius: 2,
+                backgroundColor: i <= score
+                  ? color
+                  : isDark
+                  ? colors.dark.border
+                  : colors.slate[200],
+              }}
+            />
+          ))}
+        </View>
+      </View>
+      <View style={{ gap: 4 }}>
+        {checks.map((c) => (
+          <View
+            key={c.label}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+          >
+            <Ionicons
+              name={c.met ? 'checkmark-circle' : 'ellipse-outline'}
+              size={14}
+              color={c.met ? colors.severity.low : textTertiary}
+            />
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: '500',
+                color: c.met ? textPrimary : textTertiary,
+              }}
+            >
+              {c.label}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 const ICON_COLORS: Record<string, string> = {
-  'person-outline':            '#4F8EF7',
-  'lock-closed-outline':       '#A855F7',
-  'call-outline':              '#10B981',
-  'alert-circle-outline':      colors.severity.critical,
-  'information-circle-outline':'#F59E0B',
-  'document-text-outline':     colors.brand[500],
-  'shield-outline':            '#6366F1',
-  'help-circle-outline':       '#0EA5E9',
-  'information-outline':       colors.slate[400],
-  'log-out-outline':           colors.severity.critical,
+  'person-outline':             '#4F8EF7',
+  'lock-closed-outline':        '#A855F7',
+  'call-outline':               '#10B981',
+  'alert-circle-outline':       colors.severity.critical,
+  'information-circle-outline': '#F59E0B',
+  'document-text-outline':      colors.brand[500],
+  'shield-outline':             '#6366F1',
+  'help-circle-outline':        '#0EA5E9',
+  'information-outline':        colors.slate[400],
+  'log-out-outline':            colors.severity.critical,
 };
-
-// ─── Setting row ──────────────────────────────────────────────────────────────
 
 function SettingRow({
   icon,
@@ -74,18 +162,18 @@ function SettingRow({
         onPress={onPress}
         style={({ pressed }) => [
           styles.row,
-          isDark && { backgroundColor: colors.slate[900] },
-          pressed && onPress && { backgroundColor: isDark ? '#1a2030' : colors.slate[50] },
+          isDark && { backgroundColor: colors.dark.card },
+          pressed && onPress && {
+            backgroundColor: isDark ? colors.dark.elevated : '#F0F4FF',
+          },
         ]}
         accessibilityRole={onPress ? 'button' : 'none'}
         accessibilityLabel={label}
       >
-        {/* Tinted icon tile */}
-        <View style={[styles.rowIcon, { backgroundColor: accentColor + '18' }]}>
+        <View style={[styles.rowIcon, { backgroundColor: accentColor + '20' }]}>
           <Ionicons name={icon} size={17} color={accentColor} />
         </View>
 
-        {/* Text */}
         <View style={styles.rowText}>
           <Text style={[styles.rowLabel, { color: labelColor }]}>{label}</Text>
           {description && (
@@ -95,7 +183,6 @@ function SettingRow({
           )}
         </View>
 
-        {/* Right slot */}
         {right !== undefined
           ? right
           : onPress && !destructive
@@ -110,8 +197,6 @@ function SettingRow({
   );
 }
 
-// ─── Section label ────────────────────────────────────────────────────────────
-
 function SectionLabel({ title, isDark }: { title: string; isDark: boolean }) {
   return (
     <Text style={[styles.sectionLabel, isDark && { color: colors.slate[500] }]}>
@@ -120,35 +205,84 @@ function SectionLabel({ title, isDark }: { title: string; isDark: boolean }) {
   );
 }
 
-// ─── Stat tile ────────────────────────────────────────────────────────────────
-
 function StatTile({
   value,
   label,
   icon,
   color,
   isDark,
+  animValue,
 }: {
   value: string;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
   color: string;
   isDark: boolean;
+  animValue: Animated.Value;
 }) {
   return (
-    <View style={[styles.statTile, isDark && { backgroundColor: colors.slate[900] }]}>
-      <View style={[styles.statIcon, { backgroundColor: color + '18' }]}>
+    <Animated.View
+      style={[
+        styles.statTile,
+        isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
+        {
+          opacity: animValue,
+          transform: [{
+            translateY: animValue.interpolate({
+              inputRange: [0, 1],
+              outputRange: [20, 0],
+            }),
+          }],
+        },
+      ]}
+    >
+      <LinearGradient
+        colors={isDark
+          ? [color + '12', color + '06']
+          : [color + '14', color + '06']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      <View style={[styles.statIcon, { backgroundColor: color + '22' }]}>
         <Ionicons name={icon} size={15} color={color} />
       </View>
       <Text style={[styles.statValue, isDark && { color: colors.white }]} numberOfLines={1}>
         {value}
       </Text>
       <Text style={[styles.statLabel, isDark && { color: colors.slate[500] }]}>{label}</Text>
-    </View>
+    </Animated.View>
   );
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
+function GlassInput({
+  icon,
+  isDark,
+  children,
+  style,
+}: {
+  icon?: keyof typeof Ionicons.glyphMap;
+  isDark: boolean;
+  children: React.ReactNode;
+  style?: object;
+}) {
+  return (
+    <View
+      style={[
+        styles.glassField,
+        isDark
+          ? { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.12)' }
+          : { backgroundColor: 'rgba(255,255,255,0.85)', borderColor: 'rgba(79,142,247,0.18)' },
+        style,
+      ]}
+    >
+      {icon && (
+        <Ionicons name={icon} size={16} color={isDark ? 'rgba(255,255,255,0.45)' : colors.slate[400]} style={{ marginRight: 2 }} />
+      )}
+      {children}
+    </View>
+  );
+}
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -164,14 +298,12 @@ export default function ProfileScreen() {
   const [notifAdvisory,  setNotifAdvisory]  = useState(true);
   const [notifMyReports, setNotifMyReports] = useState(true);
 
-  // Edit profile modal
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editFirstName, setEditFirstName]     = useState('');
   const [editLastName, setEditLastName]       = useState('');
   const [editContact, setEditContact]         = useState('');
   const [editSaving, setEditSaving]           = useState(false);
 
-  // Change password modal
   const [showChangePwd, setShowChangePwd]         = useState(false);
   const [currentPwd, setCurrentPwd]               = useState('');
   const [newPwd, setNewPwd]                       = useState('');
@@ -179,6 +311,32 @@ export default function ProfileScreen() {
   const [pwdSaving, setPwdSaving]                 = useState(false);
   const [showCurrentPwd, setShowCurrentPwd]       = useState(false);
   const [showNewPwd, setShowNewPwd]               = useState(false);
+
+  const heroAnim    = useRef(new Animated.Value(0)).current;
+  const stat0Anim   = useRef(new Animated.Value(0)).current;
+  const stat1Anim   = useRef(new Animated.Value(0)).current;
+  const stat2Anim   = useRef(new Animated.Value(0)).current;
+  const contentAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.stagger(80, [
+      Animated.timing(heroAnim, {
+        toValue: 1, duration: 520, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+      }),
+      Animated.timing(stat0Anim, {
+        toValue: 1, duration: 420, easing: Easing.out(Easing.back(1.1)), useNativeDriver: true,
+      }),
+      Animated.timing(stat1Anim, {
+        toValue: 1, duration: 420, easing: Easing.out(Easing.back(1.1)), useNativeDriver: true,
+      }),
+      Animated.timing(stat2Anim, {
+        toValue: 1, duration: 420, easing: Easing.out(Easing.back(1.1)), useNativeDriver: true,
+      }),
+      Animated.timing(contentAnim, {
+        toValue: 1, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   async function toggleDuty(value: boolean) {
     setDutyLoading(true);
@@ -224,19 +382,27 @@ export default function ProfileScreen() {
     setCurrentPwd('');
     setNewPwd('');
     setConfirmPwd('');
+    setShowCurrentPwd(false);
+    setShowNewPwd(false);
     setShowChangePwd(true);
   }
+
+  const pwdChecks = getPasswordChecks(newPwd);
+  const pwdStrength = getStrengthLevel(pwdChecks);
+  const allChecksMet = pwdChecks.every((c) => c.met);
+  const passwordsMatch = newPwd.length > 0 && newPwd === confirmPwd;
 
   async function handleChangePwd() {
     if (!currentPwd) {
       showAlert({ type: 'error', title: 'Error', message: 'Enter your current password.' });
       return;
     }
-    if (newPwd.length < 8) {
-      showAlert({ type: 'error', title: 'Error', message: 'New password must be at least 8 characters.' });
+    if (!allChecksMet) {
+      const missing = pwdChecks.filter((c) => !c.met).map((c) => c.label).join(', ');
+      showAlert({ type: 'error', title: 'Weak Password', message: `Password must meet all requirements: ${missing}` });
       return;
     }
-    if (newPwd !== confirmPwd) {
+    if (!passwordsMatch) {
       showAlert({ type: 'error', title: 'Error', message: 'Passwords do not match.' });
       return;
     }
@@ -250,16 +416,15 @@ export default function ProfileScreen() {
       showAlert({ type: 'success', title: 'Done', message: 'Your password has been changed.' });
       setShowChangePwd(false);
     } catch (e: any) {
-      showAlert({ type: 'error', title: 'Failed', message: e?.message ?? 'Could not change password.' });
+      showAlert({ type: 'error', title: 'Failed', message: e?.message ?? 'Could not change password. Check your current password.' });
     } finally {
       setPwdSaving(false);
     }
   }
 
-  const screenBg  = isDark ? '#080C10' : '#F2F4F8';
-  const headerBg  = isDark ? '#0D1117' : colors.accent[700];
-  const roleColor = user?.role === 'Responder' ? colors.accent[500] : colors.brand[300];
-  const accentBrand = user?.role === 'Responder' ? colors.accent[500] : colors.brand[500];
+  const screenBg    = isDark ? colors.dark.bg : '#F0F4FA';
+  const roleColor   = colors.accent[500];
+  const accentBrand = colors.accent[500];
 
   const fullName   = user ? `${user.firstName} ${user.lastName}` : '—';
   const initials   = user
@@ -278,43 +443,56 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
 
-        {/* ── Hero header ── */}
-        <View style={[styles.hero, { paddingTop: insets.top + 20, backgroundColor: headerBg }]}>
+        <Animated.View
+          style={{
+            opacity: heroAnim,
+            transform: [{
+              translateY: heroAnim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }),
+            }],
+          }}
+        >
+          <LinearGradient
+            colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.hero, { paddingTop: insets.top + 20 }]}
+          >
+            <View style={styles.orb1} />
+            <View style={styles.orb2} />
+            <View style={styles.orb3} />
 
-          {/* Edit shortcut */}
-          <Pressable style={styles.editBtn} onPress={openEditProfile} accessibilityRole="button" accessibilityLabel="Edit profile">
-            <Ionicons name="pencil" size={15} color="rgba(255,255,255,0.85)" />
-          </Pressable>
+            <Pressable style={styles.editBtn} onPress={openEditProfile} accessibilityRole="button" accessibilityLabel="Edit profile">
+              <Ionicons name="pencil" size={15} color="rgba(255,255,255,0.92)" />
+            </Pressable>
 
-          {/* Avatar ring */}
-          <View style={styles.avatarRing}>
-            <View style={[styles.avatarRingInner, { borderColor: roleColor }]}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{initials}</Text>
+            <View style={styles.avatarRing}>
+              <View style={[styles.avatarRingInner, { borderColor: roleColor }]}>
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.10)']}
+                  style={styles.avatar}
+                >
+                  <Text style={styles.avatarText}>{initials}</Text>
+                </LinearGradient>
               </View>
             </View>
-          </View>
 
-          <Text style={styles.heroName}>{fullName}</Text>
-          <Text style={styles.heroEmail}>{user?.email ?? '—'}</Text>
+            <Text style={styles.heroName}>{fullName}</Text>
+            <Text style={styles.heroEmail}>{user?.email ?? '—'}</Text>
 
-          {/* Role badge */}
-          <View style={[styles.roleBadge, { backgroundColor: roleColor + '28', borderColor: roleColor + '60' }]}>
-            <Ionicons
-              name={user?.role === 'Responder' ? 'shield-checkmark' : 'person-circle'}
-              size={11}
-              color={roleColor}
-            />
-            <Text style={[styles.roleBadgeText, { color: roleColor }]}>
-              {user?.role ?? 'Resident'}
-            </Text>
-          </View>
+            <View style={[styles.roleBadge, { backgroundColor: 'rgba(255,255,255,0.18)', borderColor: 'rgba(255,255,255,0.35)' }]}>
+              <Ionicons name="shield-checkmark" size={11} color={colors.white} />
+              <Text style={[styles.roleBadgeText, { color: colors.white }]}>
+                {user?.role ?? 'Responder'}
+              </Text>
+            </View>
 
-          {/* Curved bottom edge */}
-          <View style={[styles.heroCurve, { backgroundColor: screenBg }]} />
-        </View>
+            <View style={styles.waveContainer} pointerEvents="none">
+              <View style={[styles.waveBack, { backgroundColor: screenBg, opacity: 0.35 }]} />
+              <View style={[styles.waveFront, { backgroundColor: screenBg }]} />
+            </View>
+          </LinearGradient>
+        </Animated.View>
 
-        {/* ── Stat cards ── */}
         <View style={styles.statsRow}>
           <StatTile
             value={user?.role ?? '—'}
@@ -322,6 +500,7 @@ export default function ProfileScreen() {
             icon="shield-outline"
             color={accentBrand}
             isDark={isDark}
+            animValue={stat0Anim}
           />
           <StatTile
             value={user?.contact ?? '—'}
@@ -329,6 +508,7 @@ export default function ProfileScreen() {
             icon="call-outline"
             color="#10B981"
             isDark={isDark}
+            animValue={stat1Anim}
           />
           <StatTile
             value={joinedYear}
@@ -336,19 +516,29 @@ export default function ProfileScreen() {
             icon="calendar-outline"
             color="#A855F7"
             isDark={isDark}
+            animValue={stat2Anim}
           />
         </View>
 
-        <View style={styles.content}>
+        <Animated.View
+          style={[
+            styles.content,
+            {
+              opacity: contentAnim,
+              transform: [{
+                translateY: contentAnim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }),
+              }],
+            },
+          ]}
+        >
 
-          {/* ── Duty Status ── */}
           <SectionLabel title="Duty Status" isDark={isDark} />
           <View style={[
             styles.card,
-            isDark && { backgroundColor: colors.slate[900] },
+            isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
             isOnDuty && { borderWidth: 1.5, borderColor: colors.severity.low + '40' },
           ]}>
-            <View style={[styles.row, isDark && { backgroundColor: colors.slate[900] }]}>
+            <View style={[styles.row, isDark && { backgroundColor: colors.dark.card }]}>
               <View style={[
                 styles.rowIcon,
                 { backgroundColor: (isOnDuty ? colors.severity.low : colors.slate[400]) + '18' },
@@ -393,17 +583,26 @@ export default function ProfileScreen() {
             )}
           </View>
 
-          {/* ── Account ── */}
           <SectionLabel title="Account" isDark={isDark} />
-          <View style={[styles.card, isDark && { backgroundColor: colors.slate[900] }]}>
-            <SettingRow icon="person-outline"      label="Edit profile"    description="Name, contact number" onPress={openEditProfile} isDark={isDark} />
-            <SettingRow icon="lock-closed-outline" label="Change password" onPress={openChangePwd} isDark={isDark} />
-            <SettingRow icon="call-outline"        label="Mobile number"   description={user?.contact ?? '—'} isDark={isDark} isLast />
+          <View style={[styles.card, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
+            <SettingRow
+              icon="person-outline"
+              label="Edit profile"
+              description="Name, contact number"
+              onPress={openEditProfile}
+              isDark={isDark}
+            />
+            <SettingRow
+              icon="lock-closed-outline"
+              label="Change password"
+              onPress={openChangePwd}
+              isDark={isDark}
+            />
+            <SettingRow icon="call-outline" label="Mobile number" description={user?.contact ?? '—'} isDark={isDark} isLast />
           </View>
 
-          {/* ── Notifications ── */}
           <SectionLabel title="Notifications" isDark={isDark} />
-          <View style={[styles.card, isDark && { backgroundColor: colors.slate[900] }]}>
+          <View style={[styles.card, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
             <SettingRow
               icon="alert-circle-outline"
               label="Critical alerts"
@@ -455,19 +654,35 @@ export default function ProfileScreen() {
             />
           </View>
 
-          {/* ── About ── */}
           <SectionLabel title="About" isDark={isDark} />
-          <View style={[styles.card, isDark && { backgroundColor: colors.slate[900] }]}>
-            <SettingRow icon="shield-outline"      label="Privacy policy" onPress={() => showAlert({ type: 'info', title: 'Privacy Policy', message: 'Your data is securely stored and never shared with third parties.' })} isDark={isDark} />
-            <SettingRow icon="help-circle-outline" label="Help & support" onPress={() => showAlert({ type: 'info', title: 'Help & Support', message: 'For assistance, contact your local DRRM office or email support@floodtrack.ph.' })} isDark={isDark} />
-            <SettingRow icon="information-outline" label="App version"    description="1.0.0" isDark={isDark} isLast />
+          <View style={[styles.card, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
+            <SettingRow
+              icon="shield-outline"
+              label="Privacy policy"
+              onPress={() => showAlert({ type: 'info', title: 'Privacy Policy', message: 'Your data is securely stored and never shared with third parties.' })}
+              isDark={isDark}
+            />
+            <SettingRow
+              icon="help-circle-outline"
+              label="Help & support"
+              onPress={() => showAlert({ type: 'info', title: 'Help & Support', message: 'For assistance, contact your local DRRM office or email support@floodtrack.ph.' })}
+              isDark={isDark}
+            />
+            <SettingRow icon="information-outline" label="App version" description="1.0.0" isDark={isDark} isLast />
           </View>
 
-          {/* ── Log out ── */}
           <Pressable
-            onPress={logout}
+            onPress={() => showAlert({
+              type: 'confirm',
+              title: 'Log out?',
+              message: 'You will need to sign in again to access your account.',
+              confirmText: 'Log out',
+              cancelText: 'Cancel',
+              onConfirm: logout,
+            })}
             style={({ pressed }) => [
               styles.logoutBtn,
+              isDark && { backgroundColor: colors.severity.critical + '12', borderColor: colors.severity.critical + '30' },
               pressed && { opacity: 0.8 },
             ]}
             accessibilityRole="button"
@@ -480,72 +695,210 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={15} color={colors.severity.critical + '88'} />
           </Pressable>
 
-        </View>
+        </Animated.View>
       </ScrollView>
 
-      {/* ═══════ Edit Profile Modal ═══════ */}
       <Modal visible={showEditProfile} transparent animationType="slide" onRequestClose={() => setShowEditProfile(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }]}>
-            <View style={styles.modalHandle} />
-            <Text style={[styles.modalTitle, isDark && { color: colors.white }]}>Edit Profile</Text>
-            <View style={styles.modalFields}>
-              <View style={styles.modalFieldRow}>
-                <View style={[styles.modalField, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
-                  <Ionicons name="person-outline" size={16} color={colors.slate[400]} />
-                  <TextInput style={[styles.modalInput, isDark && { color: colors.white }]} value={editFirstName} onChangeText={setEditFirstName} placeholder="First name" placeholderTextColor={colors.slate[400]} autoCapitalize="words" />
+            <LinearGradient
+              colors={['#4A6CF7', '#7C3AED']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.modalGradHeader}
+            >
+              <View style={styles.modalHandle} />
+              <View style={styles.modalHeaderRow}>
+                <View style={styles.modalHeaderIcon}>
+                  <Ionicons name="person-outline" size={18} color={colors.white} />
                 </View>
-                <View style={[styles.modalField, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
-                  <Ionicons name="person-outline" size={16} color={colors.slate[400]} />
-                  <TextInput style={[styles.modalInput, isDark && { color: colors.white }]} value={editLastName} onChangeText={setEditLastName} placeholder="Last name" placeholderTextColor={colors.slate[400]} autoCapitalize="words" />
+                <Text style={styles.modalHeaderTitle}>Edit Profile</Text>
+              </View>
+            </LinearGradient>
+
+            <View style={styles.modalBody}>
+              <View style={styles.modalFields}>
+                <View style={styles.modalFieldRow}>
+                  <GlassInput icon="person-outline" isDark={isDark} style={{ flex: 1 }}>
+                    <TextInput
+                      style={[styles.modalInput, isDark && { color: colors.white }]}
+                      value={editFirstName}
+                      onChangeText={setEditFirstName}
+                      placeholder="First name"
+                      placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                      autoCapitalize="words"
+                    />
+                  </GlassInput>
+                  <GlassInput icon="person-outline" isDark={isDark} style={{ flex: 1 }}>
+                    <TextInput
+                      style={[styles.modalInput, isDark && { color: colors.white }]}
+                      value={editLastName}
+                      onChangeText={setEditLastName}
+                      placeholder="Last name"
+                      placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                      autoCapitalize="words"
+                    />
+                  </GlassInput>
                 </View>
+                <GlassInput icon="call-outline" isDark={isDark}>
+                  <TextInput
+                    style={[styles.modalInput, isDark && { color: colors.white }]}
+                    value={editContact}
+                    onChangeText={setEditContact}
+                    placeholder="Contact number"
+                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                    keyboardType="phone-pad"
+                  />
+                </GlassInput>
               </View>
-              <View style={[styles.modalField, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
-                <Ionicons name="call-outline" size={16} color={colors.slate[400]} />
-                <TextInput style={[styles.modalInput, isDark && { color: colors.white }]} value={editContact} onChangeText={setEditContact} placeholder="Contact number" placeholderTextColor={colors.slate[400]} keyboardType="phone-pad" />
+
+              <View style={styles.modalActions}>
+                <Pressable
+                  style={[styles.modalCancelBtn, isDark && { borderColor: colors.dark.border }]}
+                  onPress={() => setShowEditProfile(false)}
+                >
+                  <Text style={[styles.modalCancelText, isDark && { color: colors.slate[400] }]}>Cancel</Text>
+                </Pressable>
+                <Pressable style={styles.modalSaveBtn} onPress={handleSaveProfile} disabled={editSaving}>
+                  <LinearGradient
+                    colors={['#4A6CF7', '#7C3AED']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.modalSaveBtnGrad}
+                  >
+                    {editSaving
+                      ? <ActivityIndicator size="small" color={colors.white} />
+                      : <Text style={styles.modalSaveText}>Save Changes</Text>
+                    }
+                  </LinearGradient>
+                </Pressable>
               </View>
-            </View>
-            <View style={styles.modalActions}>
-              <Pressable style={[styles.modalCancelBtn, isDark && { borderColor: colors.dark.border }]} onPress={() => setShowEditProfile(false)}>
-                <Text style={[styles.modalCancelText, isDark && { color: colors.slate[400] }]}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.modalSaveBtn} onPress={handleSaveProfile} disabled={editSaving}>
-                {editSaving ? <ActivityIndicator size="small" color={colors.white} /> : <Text style={styles.modalSaveText}>Save</Text>}
-              </Pressable>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* ═══════ Change Password Modal ═══════ */}
       <Modal visible={showChangePwd} transparent animationType="slide" onRequestClose={() => setShowChangePwd(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }]}>
-            <View style={styles.modalHandle} />
-            <Text style={[styles.modalTitle, isDark && { color: colors.white }]}>Change Password</Text>
-            <View style={styles.modalFields}>
-              <View style={[styles.modalField, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
-                <Ionicons name="lock-closed-outline" size={16} color={colors.slate[400]} />
-                <TextInput style={[styles.modalInput, isDark && { color: colors.white }]} value={currentPwd} onChangeText={setCurrentPwd} placeholder="Current password" placeholderTextColor={colors.slate[400]} secureTextEntry={!showCurrentPwd} />
-                <Pressable onPress={() => setShowCurrentPwd(v => !v)} hitSlop={8}><Ionicons name={showCurrentPwd ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.slate[400]} /></Pressable>
+            <LinearGradient
+              colors={['#A855F7', '#6366F1']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.modalGradHeader}
+            >
+              <View style={styles.modalHandle} />
+              <View style={styles.modalHeaderRow}>
+                <View style={styles.modalHeaderIcon}>
+                  <Ionicons name="lock-closed-outline" size={18} color={colors.white} />
+                </View>
+                <Text style={styles.modalHeaderTitle}>Change Password</Text>
               </View>
-              <View style={[styles.modalField, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
-                <Ionicons name="lock-closed-outline" size={16} color={colors.slate[400]} />
-                <TextInput style={[styles.modalInput, isDark && { color: colors.white }]} value={newPwd} onChangeText={setNewPwd} placeholder="New password (min. 8)" placeholderTextColor={colors.slate[400]} secureTextEntry={!showNewPwd} />
-                <Pressable onPress={() => setShowNewPwd(v => !v)} hitSlop={8}><Ionicons name={showNewPwd ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.slate[400]} /></Pressable>
+            </LinearGradient>
+
+            <View style={styles.modalBody}>
+              <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+              <View style={styles.modalFields}>
+                <GlassInput icon="lock-closed-outline" isDark={isDark}>
+                  <TextInput
+                    style={[styles.modalInput, isDark && { color: colors.white }]}
+                    value={currentPwd}
+                    onChangeText={setCurrentPwd}
+                    placeholder="Current password"
+                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                    secureTextEntry={!showCurrentPwd}
+                  />
+                  <Pressable onPress={() => setShowCurrentPwd(v => !v)} hitSlop={8}>
+                    <Ionicons
+                      name={showCurrentPwd ? 'eye-off-outline' : 'eye-outline'}
+                      size={18}
+                      color={isDark ? 'rgba(255,255,255,0.45)' : colors.slate[400]}
+                    />
+                  </Pressable>
+                </GlassInput>
+
+                <GlassInput icon="lock-closed-outline" isDark={isDark} style={
+                  newPwd.length > 0
+                    ? { borderColor: (allChecksMet ? colors.severity.low : pwdStrength.color) + '60' }
+                    : undefined
+                }>
+                  <TextInput
+                    style={[styles.modalInput, isDark && { color: colors.white }]}
+                    value={newPwd}
+                    onChangeText={setNewPwd}
+                    placeholder="New password"
+                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                    secureTextEntry={!showNewPwd}
+                  />
+                  <Pressable onPress={() => setShowNewPwd(v => !v)} hitSlop={8}>
+                    <Ionicons
+                      name={showNewPwd ? 'eye-off-outline' : 'eye-outline'}
+                      size={18}
+                      color={isDark ? 'rgba(255,255,255,0.45)' : colors.slate[400]}
+                    />
+                  </Pressable>
+                </GlassInput>
+
+                <PasswordStrengthBar password={newPwd} isDark={isDark} />
+
+                <GlassInput icon="lock-closed-outline" isDark={isDark} style={
+                  confirmPwd.length > 0
+                    ? { borderColor: (passwordsMatch ? colors.severity.low : colors.severity.critical) + '60' }
+                    : undefined
+                }>
+                  <TextInput
+                    style={[styles.modalInput, isDark && { color: colors.white }]}
+                    value={confirmPwd}
+                    onChangeText={setConfirmPwd}
+                    placeholder="Confirm new password"
+                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                    secureTextEntry={!showNewPwd}
+                  />
+                </GlassInput>
+
+                {confirmPwd.length > 0 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons
+                      name={passwordsMatch ? 'checkmark-circle' : 'close-circle'}
+                      size={14}
+                      color={passwordsMatch ? colors.severity.low : colors.severity.critical}
+                    />
+                    <Text style={{
+                      fontSize: 11, fontWeight: '600',
+                      color: passwordsMatch ? colors.severity.low : colors.severity.critical,
+                    }}>
+                      {passwordsMatch ? 'Passwords match' : 'Passwords do not match'}
+                    </Text>
+                  </View>
+                )}
               </View>
-              <View style={[styles.modalField, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
-                <Ionicons name="lock-closed-outline" size={16} color={colors.slate[400]} />
-                <TextInput style={[styles.modalInput, isDark && { color: colors.white }]} value={confirmPwd} onChangeText={setConfirmPwd} placeholder="Confirm new password" placeholderTextColor={colors.slate[400]} secureTextEntry={!showNewPwd} />
+              </ScrollView>
+
+              <View style={styles.modalActions}>
+                <Pressable
+                  style={[styles.modalCancelBtn, isDark && { borderColor: colors.dark.border }]}
+                  onPress={() => setShowChangePwd(false)}
+                >
+                  <Text style={[styles.modalCancelText, isDark && { color: colors.slate[400] }]}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.modalSaveBtn, (!allChecksMet || !passwordsMatch || !currentPwd) && { opacity: 0.5 }]}
+                  onPress={handleChangePwd}
+                  disabled={pwdSaving || !allChecksMet || !passwordsMatch || !currentPwd}
+                >
+                  <LinearGradient
+                    colors={['#A855F7', '#6366F1']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.modalSaveBtnGrad}
+                  >
+                    {pwdSaving
+                      ? <ActivityIndicator size="small" color={colors.white} />
+                      : <Text style={styles.modalSaveText}>Update Password</Text>
+                    }
+                  </LinearGradient>
+                </Pressable>
               </View>
-            </View>
-            <View style={styles.modalActions}>
-              <Pressable style={[styles.modalCancelBtn, isDark && { borderColor: colors.dark.border }]} onPress={() => setShowChangePwd(false)}>
-                <Text style={[styles.modalCancelText, isDark && { color: colors.slate[400] }]}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.modalSaveBtn} onPress={handleChangePwd} disabled={pwdSaving}>
-                {pwdSaving ? <ActivityIndicator size="small" color={colors.white} /> : <Text style={styles.modalSaveText}>Update</Text>}
-              </Pressable>
             </View>
           </View>
         </View>
@@ -554,53 +907,84 @@ export default function ProfileScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   root: { flex: 1 },
 
-  // ── Hero ──
   hero: {
     alignItems: 'center',
-    paddingBottom: 48,
+    paddingBottom: 52,
     gap: 6,
     position: 'relative',
+    overflow: 'hidden',
   },
+
+  orb1: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    top: -50,
+    left: -40,
+  },
+  orb2: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    top: 20,
+    right: -30,
+  },
+  orb3: {
+    position: 'absolute',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    bottom: 40,
+    left: 30,
+  },
+
   editBtn: {
     position: 'absolute',
     top: 20,
     right: 20,
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.20)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: 'rgba(255,255,255,0.30)',
   },
   avatarRing: {
-    padding: 3,
-    borderRadius: 52,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    padding: 4,
+    borderRadius: 56,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     marginBottom: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 10,
   },
   avatarRingInner: {
     padding: 3,
-    borderRadius: 48,
+    borderRadius: 50,
     borderWidth: 2.5,
   },
   avatar: {
     width: 84,
     height: 84,
     borderRadius: 42,
-    backgroundColor: 'rgba(255,255,255,0.22)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: { fontSize: 30, fontWeight: '800', color: colors.white },
   heroName:   { fontSize: 22, fontWeight: '800', color: colors.white, letterSpacing: -0.3 },
-  heroEmail:  { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: -2 },
+  heroEmail:  { fontSize: 13, color: 'rgba(255,255,255,0.70)', marginTop: -2 },
   roleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -612,8 +996,24 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   roleBadgeText: { fontSize: 12, fontWeight: '700' },
-  // Curved bottom overlap
-  heroCurve: {
+
+  waveContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 36,
+  },
+  waveBack: {
+    position: 'absolute',
+    bottom: 0,
+    left: -8,
+    right: -8,
+    height: 36,
+    borderTopLeftRadius: 40,
+    borderTopRightRadius: 40,
+  },
+  waveFront: {
     position: 'absolute',
     bottom: 0,
     left: 0,
@@ -623,7 +1023,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
   },
 
-  // ── Stats ──
   statsRow: {
     flexDirection: 'row',
     gap: 10,
@@ -634,20 +1033,23 @@ const styles = StyleSheet.create({
   statTile: {
     flex: 1,
     backgroundColor: colors.white,
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 14,
     alignItems: 'center',
     gap: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowColor: '#4A6CF7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.10,
+    shadowRadius: 12,
+    elevation: 4,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(74,108,247,0.10)',
   },
   statIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -659,7 +1061,6 @@ const styles = StyleSheet.create({
   },
   statLabel: { fontSize: 10, color: colors.slate[400], textAlign: 'center' },
 
-  // ── Content ──
   content: { padding: 16, gap: 8 },
 
   sectionLabel: {
@@ -673,19 +1074,19 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 
-  // ── Card ──
   card: {
     backgroundColor: colors.white,
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
-    shadowRadius: 8,
+    shadowRadius: 10,
     elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.04)',
   },
 
-  // ── Row ──
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -698,7 +1099,7 @@ const styles = StyleSheet.create({
   rowIcon: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -711,13 +1112,12 @@ const styles = StyleSheet.create({
     marginLeft: 66,
   },
 
-  // ── Logout ──
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
     backgroundColor: colors.severity.critical + '0E',
-    borderRadius: 16,
+    borderRadius: 18,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderWidth: 1,
@@ -727,7 +1127,7 @@ const styles = StyleSheet.create({
   logoutIcon: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: 11,
     backgroundColor: colors.severity.critical + '18',
     alignItems: 'center',
     justifyContent: 'center',
@@ -739,32 +1139,94 @@ const styles = StyleSheet.create({
     color: colors.severity.critical,
   },
 
-  // ── Modals ──
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalSheet: {
-    backgroundColor: colors.white, borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 22, paddingBottom: 36,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 20,
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
   },
-  modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.slate[300], alignSelf: 'center', marginBottom: 18 },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: colors.slate[900], marginBottom: 20 },
+  modalSheet: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 24,
+  },
+
+  modalGradHeader: {
+    paddingTop: 14,
+    paddingBottom: 20,
+    paddingHorizontal: 22,
+    alignItems: 'flex-start',
+  },
+  modalHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.45)',
+    alignSelf: 'center', marginBottom: 16,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  modalHeaderIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalHeaderTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.white,
+    letterSpacing: -0.3,
+  },
+
+  modalBody: {
+    padding: 22,
+    paddingBottom: 36,
+  },
+
   modalFields: { gap: 12, marginBottom: 22 },
   modalFieldRow: { flexDirection: 'row', gap: 10 },
-  modalField: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
-    height: 52, borderRadius: 14, backgroundColor: colors.slate[50],
-    borderWidth: 1, borderColor: colors.slate[200], paddingHorizontal: 14,
+
+  glassField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 14,
   },
-  modalInput: { flex: 1, fontSize: 15, color: colors.slate[900], height: '100%', paddingVertical: 0 },
-  modalActions: { flexDirection: 'row', gap: 10 },
+
+  modalInput: {
+    flex: 1, fontSize: 15, color: colors.slate[900],
+    height: '100%', paddingVertical: 0,
+  },
+  modalActions: {
+    flexDirection: 'row', gap: 10,
+  },
   modalCancelBtn: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
-    height: 48, borderRadius: 14, borderWidth: 1.5, borderColor: colors.slate[200],
+    height: 50, borderRadius: 14,
+    borderWidth: 1.5, borderColor: colors.slate[200],
   },
   modalCancelText: { fontSize: 15, fontWeight: '600', color: colors.slate[600] },
   modalSaveBtn: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    height: 48, borderRadius: 14, backgroundColor: colors.accent[500],
+    flex: 1,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  modalSaveBtnGrad: {
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalSaveText: { fontSize: 15, fontWeight: '700', color: colors.white },
 });

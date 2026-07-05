@@ -1,7 +1,3 @@
-/**
- * Emergency contacts directory — quick-dial list
- * Organized by category · one-tap call · dark mode support
- */
 import { useEffect, useRef } from 'react';
 import {
   Animated,
@@ -86,7 +82,6 @@ export default function ContactsScreen() {
   const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
   const cardBg = isDark ? colors.dark.card : colors.white;
 
-  // Pulse animation for 911 banner phone icon
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -112,7 +107,6 @@ export default function ContactsScreen() {
 
   return (
     <View style={[s.root, { backgroundColor: screenBg }]}>
-      {/* Curved header */}
       <View
         style={[
           s.headerBg,
@@ -137,7 +131,6 @@ export default function ContactsScreen() {
         contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 40 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Animated 911 banner */}
         <Pressable
           onPress={() => call('911')}
           style={({ pressed }) => [
@@ -229,7 +222,6 @@ export default function ContactsScreen() {
                   >
                     <Ionicons name="call" size={17} color={group.color} />
                   </View>
-                  {/* Divider with left offset */}
                   {idx !== group.contacts.length - 1 && (
                     <View
                       style={[
@@ -251,7 +243,6 @@ export default function ContactsScreen() {
 const s = StyleSheet.create({
   root: { flex: 1 },
 
-  /* Curved header */
   headerBg: {
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
@@ -277,7 +268,6 @@ const s = StyleSheet.create({
 
   scroll: { padding: 16, gap: 6 },
 
-  /* 911 banner */
   emergBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -307,7 +297,6 @@ const s = StyleSheet.create({
     marginTop: 1,
   },
 
-  /* Group titles with count badge */
   groupTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -336,7 +325,6 @@ const s = StyleSheet.create({
     fontWeight: '800',
   },
 
-  /* Card with elevation */
   card: {
     borderRadius: 18,
     overflow: 'hidden',
@@ -347,7 +335,6 @@ const s = StyleSheet.create({
     elevation: 4,
   },
 
-  /* Contact rows */
   contactRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -370,7 +357,6 @@ const s = StyleSheet.create({
   },
   contactNumber: { fontSize: 12, color: colors.slate[400] },
 
-  /* Call button with border ring and glow */
   callBtn: {
     width: 42,
     height: 42,
@@ -384,7 +370,6 @@ const s = StyleSheet.create({
     elevation: 3,
   },
 
-  /* Divider with left offset */
   divider: {
     position: 'absolute',
     bottom: 0,

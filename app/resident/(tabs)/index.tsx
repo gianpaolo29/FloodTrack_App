@@ -1,18 +1,7 @@
-/**
- * Map screen — Google Maps-style UI
- *
- * Features:
- *   • MapView with Standard / Satellite / Hybrid / Terrain type switcher
- *   • Hazard-type filter chips (Flood, Slippery, Landslide, Fallen Tree, Blocked Road)
- *   • Severity-colored custom markers with animated pulse ring on critical
- *   • Heatmap overlay (Google Maps only)
- *   • Right-side control panel: layers, locate, compass
- *   • Google Maps-style bottom sheet on marker tap
- *   • Active reports summary bar above tab
- */
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Image,
   Keyboard,
   Linking,
@@ -44,8 +33,9 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { getAllReports, getReportDetail } from '@/services/api';
 import type { Report as ApiReport } from '@/types';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { HeatmapLegend } from '@/components/HeatmapLegend';
+import { HeatmapZoneSummary } from '@/components/HeatmapZoneSummary';
+import { HeatmapTimeScrubber } from '@/components/HeatmapTimeScrubber';
 
 type HazardType = 'all' | 'flood' | 'slippery' | 'landslide' | 'fallen_tree' | 'blocked_road' | 'debris';
 
@@ -71,8 +61,6 @@ interface EvacCenter {
   longitude: number;
 }
 
-// ─── Hazard definitions ───────────────────────────────────────────────────────
-
 const HAZARD_META: Record<Exclude<HazardType, 'all'>, {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
@@ -96,8 +84,6 @@ const HAZARD_FILTERS: { key: HazardType; label: string; icon: keyof typeof Ionic
   { key: 'debris',       label: 'Debris',       icon: 'trash',         color: '#9AA6B2' },
 ];
 
-// ─── Map type definitions ─────────────────────────────────────────────────────
-
 type MapTypeKey = MapType | 'flood';
 
 const MAP_TYPES: { key: MapTypeKey; label: string; icon: keyof typeof Ionicons.glyphMap; desc: string }[] = [
@@ -108,21 +94,16 @@ const MAP_TYPES: { key: MapTypeKey; label: string; icon: keyof typeof Ionicons.g
   { key: 'flood',     label: 'Flood',     icon: 'water',          desc: 'Severity heatmap'   },
 ];
 
-// ─── Severity weights ─────────────────────────────────────────────────────────
-
 const SEVERITY_WEIGHT: Record<Severity, number> = {
   low: 1, moderate: 3, high: 6, critical: 10,
 };
 
-// Flood overlay dot colors & radii per severity
 const FLOOD_DOT: Record<Severity, { fill: string; stroke: string; radius: number }> = {
-  low:      { fill: 'rgba(34,197,94,0.25)',  stroke: 'rgba(34,197,94,0.6)',  radius: 10 },
-  moderate: { fill: 'rgba(250,204,21,0.25)', stroke: 'rgba(250,204,21,0.6)', radius: 14 },
-  high:     { fill: 'rgba(249,115,22,0.30)', stroke: 'rgba(249,115,22,0.7)', radius: 18 },
-  critical: { fill: 'rgba(239,68,68,0.30)',  stroke: 'rgba(239,68,68,0.7)',  radius: 22 },
+  low:      { fill: 'rgba(144,202,249,0.25)', stroke: 'rgba(144,202,249,0.6)',  radius: 10 },
+  moderate: { fill: 'rgba(66,165,245,0.30)',  stroke: 'rgba(66,165,245,0.65)', radius: 14 },
+  high:     { fill: 'rgba(21,101,192,0.35)',  stroke: 'rgba(21,101,192,0.7)',  radius: 18 },
+  critical: { fill: 'rgba(13,71,161,0.40)',   stroke: 'rgba(13,71,161,0.75)', radius: 22 },
 };
-
-// ─── Flood depth estimates per severity ──────────────────────────────────────
 
 const FLOOD_DEPTH: Record<Severity, string> = {
   low:      '~ 1 ft (ankle-deep)',
@@ -130,8 +111,6 @@ const FLOOD_DEPTH: Record<Severity, string> = {
   high:     '~ 3 ft (waist-deep)',
   critical: '> 4 ft — dangerous',
 };
-
-// ─── API → local report adapter ───────────────────────────────────────────────
 
 const API_TYPE_TO_HAZARD: Record<string, Exclude<HazardType, 'all'>> = {
   'Flood':       'flood',
@@ -160,8 +139,6 @@ const INITIAL_REGION: Region = {
   latitudeDelta: 0.06, longitudeDelta: 0.06,
 };
 
-// ─── Evacuation centers — Nasugbu, Batangas ───────────────────────────────────
-
 const EVAC_TYPE_META: Record<EvacCenter['type'], { icon: keyof typeof Ionicons.glyphMap; label: string }> = {
   school:        { icon: 'school',          label: 'School'         },
   gymnasium:     { icon: 'fitness',         label: 'Gymnasium'      },
@@ -170,9 +147,7 @@ const EVAC_TYPE_META: Record<EvacCenter['type'], { icon: keyof typeof Ionicons.g
   church:        { icon: 'location',        label: 'Church'         },
 };
 
-const EVAC_COLOR = '#0E9E6E'; // teal-green
-
-// ─── Distance utility (Haversine, km) ────────────────────────────────────────
+const EVAC_COLOR = '#0E9E6E';
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -318,8 +293,6 @@ const EVACUATION_CENTERS: EvacCenter[] = [
   },
 ];
 
-// ─── Custom marker — flat circle, center-anchored (fixes zoom tracking) ──────
-
 function HazardMarker({ report }: { report: Report }) {
   const meta     = report.hazardType !== 'all' ? HAZARD_META[report.hazardType] : null;
   const color    = meta?.color ?? colors.brand[500];
@@ -337,7 +310,6 @@ function HazardMarker({ report }: { report: Report }) {
 }
 
 const mk = StyleSheet.create({
-  // Fixed size square wrapper — anchor (0.5,0.5) centers it on the coordinate
   wrapper: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   pulse: {
     position: 'absolute',
@@ -353,8 +325,6 @@ const mk = StyleSheet.create({
     shadowOpacity: 0.28, shadowRadius: 4, elevation: 5,
   },
 });
-
-// ─── Evacuation center marker ─────────────────────────────────────────────────
 
 function EvacuationMarker() {
   return (
@@ -378,8 +348,6 @@ const em = StyleSheet.create({
     shadowOpacity: 0.4, shadowRadius: 4, elevation: 5,
   },
 });
-
-// ─── Map Type Selector modal ──────────────────────────────────────────────────
 
 function MapTypeModal({
   visible,
@@ -464,8 +432,6 @@ const mtm = StyleSheet.create({
   tileDesc:  { fontSize: 10, textAlign: 'center' },
 });
 
-// ─── Report bottom sheet ──────────────────────────────────────────────────────
-
 function ReportSheet({
   report,
   onClose,
@@ -493,11 +459,9 @@ function ReportSheet({
 
   return (
     <View style={[bs.sheet, { backgroundColor: bg, paddingBottom: bottomInset + 16 }]}>
-      {/* Accent bar */}
       <View style={[bs.accentBar, { backgroundColor: pinColor }]} />
       <View style={bs.handle} />
 
-      {/* Header */}
       <View style={bs.header}>
         <View style={[bs.hazardIcon, { backgroundColor: (hazardMeta?.color ?? colors.brand[500]) + '1A' }]}>
           <Ionicons
@@ -532,7 +496,6 @@ function ReportSheet({
         </Pressable>
       </View>
 
-      {/* Photo strip */}
       {(photosLoading || photoUrls.length > 0) && (
         <>
           <View style={[bs.divider, { backgroundColor: sepColor }]} />
@@ -565,10 +528,8 @@ function ReportSheet({
         </>
       )}
 
-      {/* Divider */}
       <View style={[bs.divider, { backgroundColor: sepColor }]} />
 
-      {/* Flood depth gauge */}
       {report.hazardType === 'flood' && (
         <View style={[bs.depthRow, { borderColor: sepColor }]}>
           <View style={bs.depthIconWrap}>
@@ -581,7 +542,6 @@ function ReportSheet({
         </View>
       )}
 
-      {/* Status row */}
       <View style={bs.statusRow}>
         <SeverityChip level={report.severity} />
         <StatusBadge status={report.status} />
@@ -591,7 +551,6 @@ function ReportSheet({
         </View>
       </View>
 
-      {/* Actions */}
       <View style={bs.actions}>
         <Pressable
           style={({ pressed }) => [bs.primaryBtn, { backgroundColor: colors.brand[500], opacity: pressed ? 0.88 : 1 }]}
@@ -678,8 +637,6 @@ const bs = StyleSheet.create({
   depthLabel: { fontSize: 11, fontWeight: '500' },
   depthValue: { fontSize: 13, fontWeight: '700', marginTop: 1 },
 });
-
-// ─── Evacuation center bottom sheet ──────────────────────────────────────────
 
 function EvacSheet({
   center,
@@ -817,8 +774,6 @@ const evs = StyleSheet.create({
   dirBtnText: { color: colors.white, fontWeight: '700', fontSize: 15 },
 });
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
-
 export default function MapScreen() {
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
@@ -841,19 +796,38 @@ export default function MapScreen() {
   const [photoUrls,          setPhotoUrls]          = useState<string[]>([]);
   const [photosLoading,      setPhotosLoading]      = useState(false);
   const [advisoryDismissed,  setAdvisoryDismissed]  = useState(false);
+  const [timeScrubHours, setTimeScrubHours] = useState(0);
+  const [zoneSummary, setZoneSummary] = useState<{ latitude: number; longitude: number } | null>(null);
+  const heatmapOpacity = useRef(new Animated.Value(0)).current;
   const showFloodHeatmap = mapTypeKey === 'flood';
   const mapType: MapType = mapTypeKey === 'flood' ? 'standard' : mapTypeKey;
+
+  useEffect(() => {
+    Animated.timing(heatmapOpacity, {
+      toValue: showFloodHeatmap ? 1 : 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [showFloodHeatmap, heatmapOpacity]);
 
   useEffect(() => {
     if (!token) return;
     getAllReports(token)
       .then(data => setReports(data.map(fromApiReport)))
-      .catch(() => {}); // map stays empty on error — non-blocking
+      .catch(() => {});
   }, [token]);
 
   const filtered = filter === 'all'
     ? reports
     : reports.filter(r => r.hazardType === filter);
+
+  const now = Date.now();
+  const timeFiltered = timeScrubHours === 0
+    ? filtered
+    : filtered.filter(r => {
+        const reportTime = new Date(r.reportedAt).getTime();
+        return (now - reportTime) <= timeScrubHours * 3600000;
+      });
 
   function handleMarkerPress(report: Report) {
     setSelected(report);
@@ -864,7 +838,6 @@ export default function MapScreen() {
       longitude: report.longitude,
       latitudeDelta: 0.03, longitudeDelta: 0.03,
     }, 450);
-    // Async load photos
     if (token) {
       setPhotosLoading(true);
       getReportDetail(report.id, token)
@@ -894,8 +867,6 @@ export default function MapScreen() {
     }
   }
 
-  // ── Search helpers ──────────────────────────────────────────────────────────
-
   async function fetchUserLocation() {
     if (userLocation) return;
     try {
@@ -903,7 +874,7 @@ export default function MapScreen() {
       if (status !== 'granted') return;
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-    } catch { /* silent */ }
+    } catch {}
   }
 
   const trimmed = searchQuery.trim().toLowerCase();
@@ -934,7 +905,6 @@ export default function MapScreen() {
   function openDirections(center: EvacCenter) {
     const { latitude: lat, longitude: lng } = center;
     const label = encodeURIComponent(center.name);
-    // iOS → Apple Maps natively; Android → Google Maps app via navigation intent
     const url = Platform.OS === 'ios'
       ? `maps://?daddr=${lat},${lng}&dirflg=d`
       : `google.navigation:q=${lat},${lng}&mode=d`;
@@ -942,7 +912,6 @@ export default function MapScreen() {
       if (supported) {
         Linking.openURL(url);
       } else {
-        // Fallback: geo: URI opens whichever maps app is installed on Android
         Linking.openURL(`geo:${lat},${lng}?q=${lat},${lng}(${label})`);
       }
     });
@@ -956,7 +925,6 @@ export default function MapScreen() {
 
   return (
     <View style={s.root}>
-      {/* ── Map ── */}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
@@ -967,9 +935,26 @@ export default function MapScreen() {
         showsMyLocationButton={false}
         showsCompass={false}
         showsScale={false}
-        onPress={() => { setSelected(null); setSelectedEvac(null); setPhotoUrls([]); }}
+        onPress={(e: any) => {
+          setSelected(null);
+          setSelectedEvac(null);
+          setPhotoUrls([]);
+          if (showFloodHeatmap && e?.nativeEvent?.coordinate) {
+            const { latitude, longitude } = e.nativeEvent.coordinate;
+            const nearbyCount = reports.filter(r =>
+              Math.abs(r.latitude - latitude) < 0.005 && Math.abs(r.longitude - longitude) < 0.005
+            ).length;
+            if (nearbyCount > 0) {
+              setZoneSummary({ latitude, longitude });
+            } else {
+              setZoneSummary(null);
+            }
+          } else {
+            setZoneSummary(null);
+          }
+        }}
       >
-        {showFloodHeatmap && reports.map(r => {
+        {showFloodHeatmap && timeFiltered.map(r => {
           const dot = FLOOD_DOT[r.severity];
           return (
             <Circle
@@ -984,7 +969,7 @@ export default function MapScreen() {
           );
         })}
 
-        {filtered.map(report => (
+        {timeFiltered.map(report => (
           <Marker
             key={report.id}
             coordinate={{ latitude: report.latitude, longitude: report.longitude }}
@@ -1009,12 +994,10 @@ export default function MapScreen() {
         )}
       </MapView>
 
-      {/* ── Top header (solid card, chips fully contained) ── */}
       <View
         style={[s.topCard, { paddingTop: insets.top + 8, backgroundColor: cardBg }]}
         onLayout={e => setTopCardHeight(e.nativeEvent.layout.height)}
       >
-        {/* Search bar row */}
         <View style={s.searchRow}>
           <View style={[
             s.searchBar,
@@ -1045,7 +1028,6 @@ export default function MapScreen() {
             )}
           </View>
 
-          {/* Active count badge */}
           <View style={[s.countBadge, {
             backgroundColor: colors.severity.critical + '15',
             borderColor:     colors.severity.critical + '40',
@@ -1055,10 +1037,8 @@ export default function MapScreen() {
           </View>
         </View>
 
-        {/* Divider */}
         <View style={[s.chipDivider, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]} />
 
-        {/* Hazard filter chips — contained inside card background */}
         <View style={[s.chipRow, { backgroundColor: cardBg }]}>
           <ScrollView
             horizontal
@@ -1101,7 +1081,6 @@ export default function MapScreen() {
           </ScrollView>
         </View>
 
-        {/* ── Legend strip (inside the card, below chips) ── */}
         <View style={[s.legendDivider, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]} />
         <View style={[s.legendRow, { backgroundColor: cardBg }]}>
           <Text style={[s.legendTitle, { color: textSub }]}>LEGEND</Text>
@@ -1122,14 +1101,12 @@ export default function MapScreen() {
         </View>
       </View>
 
-      {/* ── Search dropdown (suggestions or results) ── */}
       {searchFocused && topCardHeight > 0 && (
         <View style={[
           s.dropdown,
           { top: topCardHeight, backgroundColor: isDark ? colors.dark.surface : colors.white },
         ]}>
           {trimmed.length < 2 ? (
-            /* ── Smart suggestions ── */
             <>
               <View style={[s.dropdownSuggestHeader, { borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
                 <Ionicons name="sparkles" size={13} color={colors.brand[500]} />
@@ -1163,7 +1140,6 @@ export default function MapScreen() {
               ))}
             </>
           ) : (
-            /* ── Filtered results ── */
             searchResults.length === 0 ? (
               <View style={s.dropdownEmpty}>
                 <Ionicons name="search-outline" size={22} color={colors.slate[300]} />
@@ -1214,10 +1190,8 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* ── Right-side controls — stacked above each other (Google Maps style) ── */}
       {!selected && !selectedEvac && (
         <>
-          {/* Layers button */}
           <Pressable
             style={({ pressed }) => [
               s.ctrlBtn,
@@ -1235,7 +1209,6 @@ export default function MapScreen() {
             />
           </Pressable>
 
-          {/* Locate me */}
           <Pressable
             style={({ pressed }) => [
               s.ctrlBtn,
@@ -1254,10 +1227,6 @@ export default function MapScreen() {
         </>
       )}
 
-      {/* Legend is now inside the top card — no standalone bottom legend */}
-
-
-      {/* ── Report bottom sheet ── */}
       {selected && (
         <ReportSheet
           report={selected}
@@ -1270,7 +1239,6 @@ export default function MapScreen() {
         />
       )}
 
-      {/* ── Evacuation center bottom sheet ── */}
       {selectedEvac && (
         <EvacSheet
           center={selectedEvac}
@@ -1286,7 +1254,6 @@ export default function MapScreen() {
         />
       )}
 
-      {/* ── Flood advisory banner ── */}
       {!advisoryDismissed && !selected && !selectedEvac && topCardHeight > 0 && (() => {
         const highCount = reports.filter(r => r.severity === 'critical' || r.severity === 'high').length;
         if (highCount === 0) return null;
@@ -1303,7 +1270,39 @@ export default function MapScreen() {
         );
       })()}
 
-      {/* ── Map type modal ── */}
+      {showFloodHeatmap && !selected && !selectedEvac && !zoneSummary && (
+        <View style={s.legendFloat}>
+          <HeatmapLegend mode="floodDepth" isDark={isDark} />
+        </View>
+      )}
+
+      {showFloodHeatmap && !selected && !selectedEvac && !zoneSummary && (
+        <View style={s.timeScrubber}>
+          <HeatmapTimeScrubber
+            value={timeScrubHours}
+            onTimeChange={setTimeScrubHours}
+            isDark={isDark}
+          />
+        </View>
+      )}
+
+      {zoneSummary && (
+        <HeatmapZoneSummary
+          latitude={zoneSummary.latitude}
+          longitude={zoneSummary.longitude}
+          reports={reports.map(r => ({
+            id: r.id,
+            severity: r.severity,
+            hazardType: r.hazardType,
+            latitude: r.latitude,
+            longitude: r.longitude,
+          }))}
+          radiusKm={0.5}
+          onClose={() => setZoneSummary(null)}
+          isDark={isDark}
+        />
+      )}
+
       <MapTypeModal
         visible={layersVisible}
         current={mapTypeKey}
@@ -1315,19 +1314,14 @@ export default function MapScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const s = StyleSheet.create({
   root: { flex: 1 },
 
-  // ── Top card ──
   topCard: {
     position: 'absolute', top: 0, left: 0, right: 0,
-    // No paddingBottom here — chipRow handles its own padding
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12, shadowRadius: 14, elevation: 10,
-    // Clip children so nothing bleeds outside
     overflow: 'hidden',
   },
   searchRow: {
@@ -1349,10 +1343,8 @@ const s = StyleSheet.create({
   countDot: { width: 6, height: 6, borderRadius: 3 },
   countNum: { fontSize: 13, fontWeight: '800' },
 
-  // Divider between search and chips
   chipDivider: { height: StyleSheet.hairlineWidth },
 
-  // Chip row — explicit background so it's clearly part of the card
   chipRow: { paddingBottom: 12 },
   chipScroll: { paddingHorizontal: 12, paddingTop: 10, gap: 8 },
   chip: {
@@ -1362,7 +1354,6 @@ const s = StyleSheet.create({
   },
   chipLabel: { fontSize: 12, fontWeight: '500' },
 
-  // ── Individual control buttons (Google Maps style) ──
   ctrlBtn: {
     position: 'absolute',
     width: 46, height: 46,
@@ -1373,7 +1364,6 @@ const s = StyleSheet.create({
     shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
   },
 
-  // ── Legend strip (inside top card) ──
   legendDivider: { height: StyleSheet.hairlineWidth },
   legendRow: {
     flexDirection: 'row', alignItems: 'center',
@@ -1384,7 +1374,7 @@ const s = StyleSheet.create({
     textTransform: 'uppercase', flexShrink: 0,
   },
   legendScroll: { gap: 12, paddingRight: 4 },
-  // ── Search dropdown ──
+
   dropdown: {
     position: 'absolute', left: 0, right: 0,
     zIndex: 99,
@@ -1421,7 +1411,6 @@ const s = StyleSheet.create({
   legendPillEvac:  { borderLeftWidth: 1, borderLeftColor: colors.slate[200], paddingLeft: 12 },
   legendLabel:     { fontSize: 11, fontWeight: '500' },
 
-  // ── Advisory banner ──
   advisoryBanner: {
     position: 'absolute', left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -1431,5 +1420,18 @@ const s = StyleSheet.create({
   },
   advisoryText: { flex: 1, fontSize: 12, fontWeight: '600', color: '#fff' },
 
-});
+  legendFloat: {
+    position: 'absolute',
+    bottom: 240,
+    left: 12,
+    zIndex: 20,
+  },
 
+  timeScrubber: {
+    position: 'absolute',
+    bottom: 170,
+    left: 12,
+    right: 12,
+    zIndex: 20,
+  },
+});

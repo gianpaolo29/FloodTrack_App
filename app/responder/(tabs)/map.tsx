@@ -1,9 +1,3 @@
-/**
- * Responder Tactical Map — premium redesign
- *
- * Full-bleed map · frosted glass header · severity-colored markers with status rings
- * Incident bottom sheet · status filters with live counts · map type switcher
- */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -36,8 +30,9 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { getAssignedIncidents } from '@/services/api';
 import type { Incident, ResponderStatus, Severity } from '@/types';
-
-// ─── Constants ───────────────────────────────────────────────────────────────
+import { HeatmapLegend } from '@/components/HeatmapLegend';
+import { HeatmapZoneSummary } from '@/components/HeatmapZoneSummary';
+import { HeatmapTimeScrubber } from '@/components/HeatmapTimeScrubber';
 
 const INITIAL_REGION: Region = {
   latitude: 14.0771, longitude: 120.6361,
@@ -85,8 +80,6 @@ const MAP_TYPES: { key: MapType; label: string; icon: keyof typeof Ionicons.glyp
   { key: 'terrain',   label: 'Terrain',   icon: 'layers-outline', desc: 'Topographic'        },
 ];
 
-// ─── Utilities ───────────────────────────────────────────────────────────────
-
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -101,8 +94,6 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
 function fmtDist(km: number): string {
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
 }
-
-// ─── Animated critical pulse ─────────────────────────────────────────────────
 
 function PulseRing({ color }: { color: string }) {
   const scale   = useRef(new Animated.Value(1)).current;
@@ -135,8 +126,6 @@ function PulseRing({ color }: { color: string }) {
   );
 }
 
-// ─── Incident marker — premium ──────────────────────────────────────────────
-
 function IncidentMarker({ incident }: { incident: Incident }) {
   const sevColor    = colors.severity[incident.severity];
   const isCrit      = incident.severity === 'critical';
@@ -148,7 +137,6 @@ function IncidentMarker({ incident }: { incident: Incident }) {
       <View style={[mk.circle, { backgroundColor: sevColor }]}>
         <Ionicons name="shield-checkmark" size={13} color={colors.white} />
       </View>
-      {/* Status indicator ring */}
       <View style={[mk.statusRing, { backgroundColor: statusColor, borderColor: colors.white }]} />
     </View>
   );
@@ -169,8 +157,6 @@ const mk = StyleSheet.create({
     borderWidth: 2.5,
   },
 });
-
-// ─── Map type modal ──────────────────────────────────────────────────────────
 
 function MapTypeModal({
   visible, current, onSelect, onClose, isDark,
@@ -223,7 +209,7 @@ const mtm = StyleSheet.create({
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: 22, paddingBottom: 42,
     shadowColor: '#000', shadowOffset: { width: 0, height: -6 },
     shadowOpacity: 0.15, shadowRadius: 20, elevation: 20,
@@ -235,13 +221,11 @@ const mtm = StyleSheet.create({
   },
   heading:   { fontSize: 18, fontWeight: '800', marginBottom: 16, letterSpacing: -0.2 },
   grid:      { flexDirection: 'row', gap: 10 },
-  tile:      { flex: 1, borderRadius: 14, padding: 12, alignItems: 'center', gap: 8 },
+  tile:      { flex: 1, borderRadius: 16, padding: 12, alignItems: 'center', gap: 8 },
   tileIcon:  { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   tileLabel: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
   tileDesc:  { fontSize: 10, textAlign: 'center' },
 });
-
-// ─── Incident bottom sheet — premium ─────────────────────────────────────────
 
 function IncidentSheet({
   incident, onClose, onNavigate, onViewDetail, isDark, bottomInset, distanceKm,
@@ -264,11 +248,9 @@ function IncidentSheet({
 
   return (
     <View style={[bs.root, { backgroundColor: bg, paddingBottom: bottomInset + 16 }]}>
-      {/* Severity accent */}
       <View style={[bs.accentBar, { backgroundColor: sevColor }]} />
       <View style={bs.handle} />
 
-      {/* Header row */}
       <View style={bs.header}>
         <View style={[bs.iconWrap, { backgroundColor: sevColor + '14' }]}>
           <Ionicons name="shield-checkmark" size={22} color={sevColor} />
@@ -299,7 +281,6 @@ function IncidentSheet({
 
       <View style={[bs.divider, { backgroundColor: sepColor }]} />
 
-      {/* Info pills */}
       <View style={bs.pillRow}>
         <SeverityChip level={incident.severity} size="sm" />
         <View style={[bs.statusPill, { backgroundColor: statusColor + '14' }]}>
@@ -324,7 +305,6 @@ function IncidentSheet({
         )}
       </View>
 
-      {/* Actions */}
       <View style={bs.actions}>
         <Pressable
           style={({ pressed }) => [bs.navBtn, { opacity: pressed ? 0.85 : 1 }]}
@@ -351,10 +331,10 @@ function IncidentSheet({
 const bs = StyleSheet.create({
   root: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
     overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.18, shadowRadius: 24, elevation: 20,
+    shadowOpacity: 0.15, shadowRadius: 20, elevation: 18,
   },
   accentBar: { height: 4 },
   handle: {
@@ -382,14 +362,12 @@ const bs = StyleSheet.create({
   navBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 7, backgroundColor: colors.accent[500],
-    paddingHorizontal: 22, paddingVertical: 14, borderRadius: 14,
+    paddingHorizontal: 22, paddingVertical: 14, borderRadius: 16,
     shadowColor: colors.accent[500], shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
   },
   navBtnText: { color: colors.white, fontWeight: '800', fontSize: 14 },
 });
-
-// ─── Screen ──────────────────────────────────────────────────────────────────
 
 export default function ResponderMapScreen() {
   const router  = useRouter();
@@ -407,6 +385,9 @@ export default function ResponderMapScreen() {
   const [layersVisible, setLayersVisible] = useState(false);
   const [locating,      setLocating]      = useState(false);
   const [userLocation,  setUserLocation]  = useState<{ latitude: number; longitude: number } | null>(null);
+  const [timeScrubHours, setTimeScrubHours] = useState(0);
+  const [zoneSummary, setZoneSummary] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [heatmapVisible, setHeatmapVisible] = useState(true);
 
   const load = useCallback(async () => {
     try {
@@ -414,7 +395,6 @@ export default function ResponderMapScreen() {
       const data = await getAssignedIncidents(token!);
       setIncidents(data);
     } catch {
-      // map stays empty — non-blocking
     } finally {
       setLoading(false);
     }
@@ -429,7 +409,7 @@ export default function ResponderMapScreen() {
         if (status !== 'granted') return;
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-      } catch { /* silent */ }
+      } catch {}
     })();
   }, []);
 
@@ -438,10 +418,32 @@ export default function ResponderMapScreen() {
     ? active
     : active.filter(i => i.responderStatus === filter);
 
-  const heatmapPoints = active.map(i => ({
+  const now = Date.now();
+  const timeFiltered = timeScrubHours === 0
+    ? filtered
+    : filtered.filter(i => {
+        const reportTime = new Date(i.reportedAt).getTime();
+        return (now - reportTime) <= timeScrubHours * 3600000;
+      });
+
+  const timeFilteredActive = timeScrubHours === 0
+    ? active
+    : active.filter(i => {
+        const reportTime = new Date(i.reportedAt).getTime();
+        return (now - reportTime) <= timeScrubHours * 3600000;
+      });
+
+  const heatmapPoints = timeFilteredActive.map(i => ({
     latitude: i.latitude, longitude: i.longitude,
     weight: SEVERITY_WEIGHT[i.severity],
   }));
+
+  const severityCounts = {
+    low: timeFilteredActive.filter(i => i.severity === 'low').length,
+    moderate: timeFilteredActive.filter(i => i.severity === 'moderate').length,
+    high: timeFilteredActive.filter(i => i.severity === 'high').length,
+    critical: timeFilteredActive.filter(i => i.severity === 'critical').length,
+  };
 
   const criticalCount = active.filter(i => i.severity === 'critical').length;
 
@@ -482,13 +484,12 @@ export default function ResponderMapScreen() {
     }
   }
 
-  const cardBg = isDark ? 'rgba(13,17,23,0.97)' : '#FFFFFF';
-  const ctrlBg = isDark ? 'rgba(13,17,23,0.95)' : '#FFFFFF';
+  const cardBg = isDark ? 'rgba(17,24,39,0.95)' : 'rgba(255,255,255,0.95)';
+  const ctrlBg = isDark ? 'rgba(17,24,39,0.95)' : 'rgba(255,255,255,0.95)';
   const tabClear = insets.bottom + 80;
 
   return (
     <View style={s.root}>
-      {/* ── Map ── */}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
@@ -499,9 +500,24 @@ export default function ResponderMapScreen() {
         showsMyLocationButton={false}
         showsCompass={false}
         showsScale={false}
-        onPress={() => setSelected(null)}
+        onPress={(e: any) => {
+          setSelected(null);
+          if (heatmapVisible && e?.nativeEvent?.coordinate) {
+            const { latitude, longitude } = e.nativeEvent.coordinate;
+            const nearbyCount = active.filter(i =>
+              Math.abs(i.latitude - latitude) < 0.003 && Math.abs(i.longitude - longitude) < 0.003
+            ).length;
+            if (nearbyCount > 0) {
+              setZoneSummary({ latitude, longitude });
+            } else {
+              setZoneSummary(null);
+            }
+          } else {
+            setZoneSummary(null);
+          }
+        }}
       >
-        {heatmapPoints.length > 0 && (
+        {heatmapVisible && heatmapPoints.length > 0 && (
           <Heatmap
             points={heatmapPoints}
             radius={40}
@@ -513,7 +529,7 @@ export default function ResponderMapScreen() {
             }}
           />
         )}
-        {filtered.map(incident => (
+        {timeFiltered.map(incident => (
           <Marker
             key={incident.id}
             coordinate={{ latitude: incident.latitude, longitude: incident.longitude }}
@@ -526,14 +542,13 @@ export default function ResponderMapScreen() {
         ))}
       </MapView>
 
-      {/* ── Premium header card ── */}
       <View style={[s.topCard, { paddingTop: insets.top + 8, backgroundColor: cardBg }]}>
         <View style={s.titleRow}>
           <View style={[s.titleBadge, { backgroundColor: colors.accent[500] + '18' }]}>
             <Ionicons name="map" size={16} color={colors.accent[500]} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[s.headerTitle, isDark && { color: colors.white }]}>Tactical map</Text>
+            <Text style={[s.headerTitle, isDark && { color: colors.white }]}>Tactical Map</Text>
             {!loading && (
               <Text style={[s.headerSub, isDark && { color: colors.slate[500] }]}>
                 {active.length} active incident{active.length !== 1 ? 's' : ''}
@@ -560,7 +575,6 @@ export default function ResponderMapScreen() {
 
         <View style={[s.chipDivider, { backgroundColor: isDark ? colors.dark.border : colors.slate[100] }]} />
 
-        {/* Status filter chips */}
         <ScrollView
           horizontal showsHorizontalScrollIndicator={false}
           contentContainerStyle={s.chipScroll}
@@ -609,7 +623,6 @@ export default function ResponderMapScreen() {
         </ScrollView>
       </View>
 
-      {/* ── Right-side controls ── */}
       {!selected && (
         <>
           <Pressable
@@ -630,6 +643,21 @@ export default function ResponderMapScreen() {
           <Pressable
             style={({ pressed }) => [
               s.ctrlBtn,
+              { bottom: tabClear + 122, right: 12, backgroundColor: ctrlBg },
+              isDark && { borderColor: colors.dark.border },
+              pressed && { opacity: 0.8 },
+            ]}
+            onPress={() => setHeatmapVisible(!heatmapVisible)}
+            accessibilityLabel="Toggle heatmap"
+          >
+            <Ionicons
+              name="flame" size={20}
+              color={heatmapVisible ? colors.severity.high : (isDark ? colors.slate[300] : colors.slate[700])}
+            />
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              s.ctrlBtn,
               { bottom: tabClear + 14, right: 12, backgroundColor: ctrlBg },
               isDark && { borderColor: colors.dark.border },
               pressed && { opacity: 0.8 },
@@ -645,7 +673,6 @@ export default function ResponderMapScreen() {
         </>
       )}
 
-      {/* ── Empty state ── */}
       {!loading && active.length === 0 && !selected && (
         <View style={[s.emptyOverlay, { bottom: tabClear + 14 }]}>
           <View style={[s.emptyCard, { backgroundColor: isDark ? colors.dark.card : colors.white }]}>
@@ -660,7 +687,6 @@ export default function ResponderMapScreen() {
         </View>
       )}
 
-      {/* ── Critical alert banner ── */}
       {criticalCount > 0 && !selected && (
         <View style={[s.critBanner, { bottom: tabClear + 14, left: 12, right: 68 }]}>
           <View style={s.critBannerIcon}>
@@ -672,7 +698,6 @@ export default function ResponderMapScreen() {
         </View>
       )}
 
-      {/* ── Bottom sheet ── */}
       {selected && (
         <IncidentSheet
           incident={selected}
@@ -692,7 +717,46 @@ export default function ResponderMapScreen() {
         />
       )}
 
-      {/* ── Map type modal ── */}
+      {heatmapVisible && !selected && !zoneSummary && (
+        <View style={s.legendFloat}>
+          <HeatmapLegend
+            mode="density"
+            isDark={isDark}
+            detailed
+            counts={severityCounts}
+          />
+        </View>
+      )}
+
+      {!selected && !zoneSummary && (
+        <View style={s.timeScrubber}>
+          <HeatmapTimeScrubber
+            value={timeScrubHours}
+            onTimeChange={setTimeScrubHours}
+            isDark={isDark}
+            alwaysVisible
+          />
+        </View>
+      )}
+
+      {zoneSummary && (
+        <HeatmapZoneSummary
+          latitude={zoneSummary.latitude}
+          longitude={zoneSummary.longitude}
+          reports={active.map(i => ({
+            id: i.id,
+            severity: i.severity,
+            hazardType: i.type,
+            latitude: i.latitude,
+            longitude: i.longitude,
+          }))}
+          radiusKm={0.2}
+          onClose={() => setZoneSummary(null)}
+          isDark={isDark}
+          isResponder
+        />
+      )}
+
       <MapTypeModal
         visible={layersVisible}
         current={mapType}
@@ -704,16 +768,14 @@ export default function ResponderMapScreen() {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
-
 const s = StyleSheet.create({
   root: { flex: 1 },
 
-  // ── Top card ──
   topCard: {
     position: 'absolute', top: 0, left: 0, right: 0,
+    borderBottomLeftRadius: 22, borderBottomRightRadius: 22,
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12, shadowRadius: 16, elevation: 12,
+    shadowOpacity: 0.10, shadowRadius: 14, elevation: 10,
     overflow: 'hidden',
   },
   titleRow: {
@@ -753,20 +815,19 @@ const s = StyleSheet.create({
   chipCount:     { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
   chipCountText: { fontSize: 10, fontWeight: '800' },
 
-  // ── Controls ──
   ctrlBtn: {
     position: 'absolute',
-    width: 48, height: 48, borderRadius: 14, borderWidth: 1,
+    width: 46, height: 46, borderRadius: 16, borderWidth: 1,
+    borderColor: '#E8ECF0',
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
+    shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
   },
 
-  // ── Empty ──
   emptyOverlay: { position: 'absolute', left: 16, right: 16, alignItems: 'center' },
   emptyCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 20, paddingVertical: 16, borderRadius: 16,
+    paddingHorizontal: 20, paddingVertical: 16, borderRadius: 20,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1, shadowRadius: 10, elevation: 4,
   },
@@ -777,12 +838,11 @@ const s = StyleSheet.create({
   emptyTitle: { fontSize: 15, fontWeight: '700', color: colors.slate[900] },
   emptySub:   { fontSize: 12, color: colors.slate[400] },
 
-  // ── Critical banner ──
   critBanner: {
     position: 'absolute',
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: colors.severity.critical,
-    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20,
     shadowColor: colors.severity.critical, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4, shadowRadius: 10, elevation: 8,
   },
@@ -792,4 +852,19 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   critBannerText: { flex: 1, fontSize: 12, fontWeight: '700', color: '#fff' },
+
+  legendFloat: {
+    position: 'absolute',
+    bottom: 290,
+    left: 12,
+    zIndex: 20,
+  },
+
+  timeScrubber: {
+    position: 'absolute',
+    bottom: 170,
+    left: 12,
+    right: 68,
+    zIndex: 20,
+  },
 });

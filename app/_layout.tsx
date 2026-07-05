@@ -9,10 +9,6 @@ import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { AlertProvider } from '@/context/AlertContext';
 import { initNotifications, onNotificationResponse } from '@/services/notifications';
 
-// ─── Auth guard ───────────────────────────────────────────────────────────────
-// Runs on every navigation event. Redirects unauthenticated users to login and
-// authenticated users away from auth screens.
-
 function AuthGuard() {
   const { user, isLoading } = useAuth();
   const segments = useSegments();
@@ -35,9 +31,8 @@ function AuthGuard() {
     }
   }, [user, isLoading, segments]);
 
-  // Handle notification taps — navigate to the relevant screen
   useEffect(() => {
-    if (listenerRef.current) return; // only register once
+    if (listenerRef.current) return;
     listenerRef.current = onNotificationResponse((response) => {
       const data = response.notification.request.content.data;
       if (!user) return;
@@ -45,7 +40,6 @@ function AuthGuard() {
       if (data?.type === 'incident_assigned' && data.reportId) {
         router.push(`/responder/incident/${data.reportId}` as never);
       } else if (data?.type === 'incident_message' && data.reportId) {
-        // Navigate to the chat screen based on user role
         if (user.role === 'Responder') {
           router.push(`/responder/incident/${data.reportId}/chat` as never);
         } else {
@@ -72,16 +66,12 @@ function AuthGuard() {
   return null;
 }
 
-// ─── Inner layout (needs access to useAuth) ───────────────────────────────────
-
 function RootLayoutInner() {
   const colorScheme  = useColorScheme();
   const { isLoading } = useAuth();
 
-  // Initialize push notifications (safe in Expo Go — wrapped in try/catch)
   useEffect(() => { initNotifications(); }, []);
 
-  // Keep the app blank (Expo splash is still showing) while the session restores
   if (isLoading) return null;
 
   return (
@@ -98,8 +88,6 @@ function RootLayoutInner() {
     </ThemeProvider>
   );
 }
-
-// ─── Root layout ──────────────────────────────────────────────────────────────
 
 export const unstable_settings = {
   anchor: 'login',

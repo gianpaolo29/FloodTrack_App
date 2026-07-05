@@ -1,7 +1,3 @@
-/**
- * Lightweight network connectivity hook.
- * Returns true when the device appears to be online.
- */
 import { useEffect, useState } from 'react';
 
 const PING_INTERVAL = 15_000;

@@ -1,14 +1,7 @@
-/**
- * ETA calculation hook — FloodTrack
- *
- * Calculates estimated time of arrival using straight-line distance
- * and an average speed assumption. For production, integrate Google
- * Directions API for traffic-aware routing.
- */
 import { useEffect, useState } from 'react';
 import * as Location from 'expo-location';
 
-const AVG_SPEED_KMH = 30; // Average urban response speed
+const AVG_SPEED_KMH = 30;
 
 function getDistanceKm(
   lat1: number, lon1: number,
@@ -55,7 +48,6 @@ export function useETA(destLat: number, destLng: number, active: boolean) {
         if (!mounted) return;
         setDistanceKm(Math.round(dist * 10) / 10);
 
-        // Road distance is roughly 1.3x straight-line distance
         const roadDist = dist * 1.3;
         const minutes = Math.round((roadDist / AVG_SPEED_KMH) * 60);
 
@@ -74,7 +66,7 @@ export function useETA(destLat: number, destLng: number, active: boolean) {
     }
 
     calculate();
-    const interval = setInterval(calculate, 30_000); // Update every 30s
+    const interval = setInterval(calculate, 30_000);
 
     return () => {
       mounted = false;

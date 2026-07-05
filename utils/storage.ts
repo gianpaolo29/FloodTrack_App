@@ -1,10 +1,5 @@
 import { Platform } from 'react-native';
 
-/**
- * Cross-platform key-value storage.
- * Uses SecureStore on native and localStorage on web.
- */
-
 function getSecureStore() {
   return require('expo-secure-store') as typeof import('expo-secure-store');
 }

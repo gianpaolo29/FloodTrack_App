@@ -1,10 +1,3 @@
-/**
- * Hazard-specific response protocols + safety reminders
- * Expandable accordion cards per hazard type with step-by-step procedures
- *
- * Premium redesign — curved header, animated accordion, card accents,
- * progress lines, richer safety tips, step-count badges.
- */
 import { useRef, useState } from 'react';
 import {
   Animated,
@@ -24,12 +17,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-// Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
-
-// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface Protocol {
   id: string;
@@ -39,8 +29,6 @@ interface Protocol {
   safetyTip: string;
   steps: string[];
 }
-
-// ─── Data ───────────────────────────────────────────────────────────────────
 
 const PROTOCOLS: Protocol[] = [
   {
@@ -132,16 +120,12 @@ const PROTOCOLS: Protocol[] = [
   },
 ];
 
-// ─── Training data ──────────────────────────────────────────────────────────
-
 const TRAINING_RESOURCES = [
   { label: 'NDRRMC Incident Command System (ICS) Manual', icon: 'document-text-outline' as const },
   { label: 'Basic Life Support & First Aid Guidelines', icon: 'heart-outline' as const },
   { label: 'Flood Rescue Operations Standard Procedures', icon: 'boat-outline' as const },
   { label: 'Radio Communication Protocols', icon: 'radio-outline' as const },
 ];
-
-// ─── Accordion card ─────────────────────────────────────────────────────────
 
 function ProtocolCard({
   proto,
@@ -175,7 +159,6 @@ function ProtocolCard({
 
   return (
     <View style={[s.card, { backgroundColor: cardBg }]}>
-      {/* Left accent bar */}
       <View style={[s.cardAccent, { backgroundColor: proto.color }]} />
 
       <View style={s.cardInner}>
@@ -193,7 +176,6 @@ function ProtocolCard({
             <Text style={[s.cardTitle, isDark && { color: colors.white }]}>
               {proto.hazard}
             </Text>
-            {/* Step count badge */}
             <View style={[s.stepBadge, { backgroundColor: proto.color + '14' }]}>
               <Ionicons name="list-outline" size={10} color={proto.color} />
               <Text style={[s.stepBadgeText, { color: proto.color }]}>
@@ -208,7 +190,6 @@ function ProtocolCard({
 
         {isOpen && (
           <View style={s.cardContent}>
-            {/* Safety tip — prominent */}
             <View
               style={[
                 s.safetyTip,
@@ -229,16 +210,14 @@ function ProtocolCard({
               </View>
             </View>
 
-            {/* Steps with progress line */}
             <View style={s.stepsContainer}>
               {proto.steps.map((step, idx) => (
                 <View key={idx} style={s.stepWrapper}>
-                  {/* Vertical progress line */}
                   {idx < proto.steps.length - 1 && (
                     <View
                       style={[
                         s.progressLine,
-                        { backgroundColor: proto.color + '4D' }, // 30% opacity
+                        { backgroundColor: proto.color + '4D' },
                       ]}
                     />
                   )}
@@ -260,8 +239,6 @@ function ProtocolCard({
   );
 }
 
-// ─── Main screen ────────────────────────────────────────────────────────────
-
 export default function ProtocolsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -274,7 +251,6 @@ export default function ProtocolsScreen() {
 
   return (
     <View style={[s.root, { backgroundColor: screenBg }]}>
-      {/* ── Curved header ── */}
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
         <View
           style={[
@@ -308,7 +284,6 @@ export default function ProtocolsScreen() {
         contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 40 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Protocol cards */}
         {PROTOCOLS.map((proto) => (
           <ProtocolCard
             key={proto.id}
@@ -320,7 +295,6 @@ export default function ProtocolsScreen() {
           />
         ))}
 
-        {/* ── Training resources ── */}
         <View style={[s.card, { backgroundColor: cardBg }]}>
           <View style={[s.cardAccent, { backgroundColor: colors.brand[500] }]} />
           <View style={s.cardInner}>
@@ -359,12 +333,9 @@ export default function ProtocolsScreen() {
   );
 }
 
-// ─── Styles ─────────────────────────────────────────────────────────────────
-
 const s = StyleSheet.create({
   root: { flex: 1 },
 
-  // ── Header ──
   header: { position: 'relative', zIndex: 10 },
   headerBg: {
     ...StyleSheet.absoluteFillObject,
@@ -399,10 +370,8 @@ const s = StyleSheet.create({
   },
   headerBadgeText: { fontSize: 12, fontWeight: '700', color: colors.white },
 
-  // ── Scroll ──
   scroll: { padding: 16, gap: 14 },
 
-  // ── Card ──
   card: {
     borderRadius: 18,
     overflow: 'hidden',
@@ -449,7 +418,6 @@ const s = StyleSheet.create({
   stepBadgeText: { fontSize: 10, fontWeight: '700' },
   cardContent: { paddingHorizontal: 16, paddingBottom: 16, gap: 14 },
 
-  // ── Safety tip ──
   safetyTip: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -483,13 +451,12 @@ const s = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // ── Steps ──
   stepsContainer: { gap: 0 },
   stepWrapper: { position: 'relative' },
   progressLine: {
     position: 'absolute',
-    left: 12,     // center of 26px stepNum
-    top: 28,      // below the step number circle
+    left: 12,
+    top: 28,
     width: 2,
     bottom: 0,
     borderRadius: 1,
@@ -510,7 +477,6 @@ const s = StyleSheet.create({
   stepNumText: { fontSize: 11, fontWeight: '800' },
   stepText: { flex: 1, fontSize: 13, color: colors.slate[600], lineHeight: 20, paddingTop: 3 },
 
-  // ── Training ──
   trainingItem: {
     flexDirection: 'row',
     alignItems: 'center',

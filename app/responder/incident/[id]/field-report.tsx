@@ -1,7 +1,3 @@
-/**
- * Field Report — structured incident action log
- * Hazard-specific checklists · damage assessment · resource tracking
- */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -23,8 +19,6 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { getFieldReport, saveFieldReport, getIncidentDetail } from '@/services/api';
 import type { FieldReportData } from '@/types';
-
-// ─── Hazard-specific checklists ──────────────────────────────────────────────
 
 const CHECKLISTS: Record<string, string[]> = {
   Flood: [
@@ -65,8 +59,6 @@ const CHECKLISTS: Record<string, string[]> = {
   ],
 };
 
-// ─── Card accent colors ─────────────────────────────────────────────────────
-
 const CARD_ACCENTS = {
   checklist: colors.accent[500],
   actions: colors.brand[500],
@@ -75,8 +67,6 @@ const CARD_ACCENTS = {
   damage: colors.severity.critical,
 };
 
-// ─── Circular progress ring (SVG-free) ──────────────────────────────────────
-
 function ProgressRing({ progress, size = 32 }: { progress: number; size?: number }) {
   const strokeWidth = 3;
   const radius = (size - strokeWidth) / 2;
@@ -84,7 +74,6 @@ function ProgressRing({ progress, size = 32 }: { progress: number; size?: number
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      {/* Track */}
       <View
         style={{
           position: 'absolute',
@@ -95,7 +84,6 @@ function ProgressRing({ progress, size = 32 }: { progress: number; size?: number
           borderColor: colors.slate[200],
         }}
       />
-      {/* Fill — we approximate using four quarter arcs via borderColor */}
       <View
         style={{
           position: 'absolute',
@@ -117,8 +105,6 @@ function ProgressRing({ progress, size = 32 }: { progress: number; size?: number
     </View>
   );
 }
-
-// ─── Animated checkbox item ─────────────────────────────────────────────────
 
 function ChecklistRow({
   item,
@@ -182,8 +168,6 @@ function ChecklistRow({
   );
 }
 
-// ─── Focusable TextInput wrapper ────────────────────────────────────────────
-
 function FocusableInput({
   isDark,
   style,
@@ -203,8 +187,6 @@ function FocusableInput({
     />
   );
 }
-
-// ─── Main Screen ────────────────────────────────────────────────────────────
 
 export default function FieldReportScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -232,16 +214,13 @@ export default function FieldReportScreen() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      // Load incident detail to get hazard type
       const incident = await getIncidentDetail(id, token!);
       setHazardType(incident.type || 'Other');
 
-      // Initialize checklist from hazard type
       const items = CHECKLISTS[incident.type] ?? CHECKLISTS['Other'];
       const defaultChecklist: Record<string, boolean> = {};
       items.forEach(item => { defaultChecklist[item] = false; });
 
-      // Load existing field report if any
       const existing = await getFieldReport(id, token!);
       if (existing) {
         setActionsTaken(existing.actionsTaken);
@@ -253,7 +232,6 @@ export default function FieldReportScreen() {
         setChecklist(defaultChecklist);
       }
     } catch {
-      // Use defaults
     } finally {
       setLoading(false);
     }
@@ -261,7 +239,6 @@ export default function FieldReportScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Animate progress bar whenever checklist changes
   const checklistItems = CHECKLISTS[hazardType] ?? CHECKLISTS['Other'];
   const completedCount = Object.values(checklist).filter(Boolean).length;
   const progressRatio = checklistItems.length > 0 ? completedCount / checklistItems.length : 0;
@@ -326,7 +303,6 @@ export default function FieldReportScreen() {
 
   return (
     <View style={[s.root, { backgroundColor: screenBg }]}>
-      {/* ── Curved Header ── */}
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
         <View
           style={[
@@ -345,7 +321,6 @@ export default function FieldReportScreen() {
         </View>
       </View>
 
-      {/* ── Progress bar ── */}
       <View style={s.progressBarContainer}>
         <View style={[s.progressBarTrack, isDark && { backgroundColor: colors.dark.border }]}>
           <Animated.View
@@ -358,7 +333,6 @@ export default function FieldReportScreen() {
       </View>
 
       <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 100 }]} showsVerticalScrollIndicator={false}>
-        {/* ── Checklist card ── */}
         <View style={[s.card, { backgroundColor: cardBg }]}>
           <View style={[s.cardAccentBar, { backgroundColor: CARD_ACCENTS.checklist }]} />
           <View style={s.cardInner}>
@@ -383,7 +357,6 @@ export default function FieldReportScreen() {
           </View>
         </View>
 
-        {/* ── Actions taken ── */}
         <View style={[s.card, { backgroundColor: cardBg }]}>
           <View style={[s.cardAccentBar, { backgroundColor: CARD_ACCENTS.actions }]} />
           <View style={s.cardInner}>
@@ -404,7 +377,6 @@ export default function FieldReportScreen() {
           </View>
         </View>
 
-        {/* ── Resources used ── */}
         <View style={[s.card, { backgroundColor: cardBg }]}>
           <View style={[s.cardAccentBar, { backgroundColor: CARD_ACCENTS.resources }]} />
           <View style={s.cardInner}>
@@ -425,7 +397,6 @@ export default function FieldReportScreen() {
           </View>
         </View>
 
-        {/* ── People assisted ── */}
         <View style={[s.card, { backgroundColor: cardBg }]}>
           <View style={[s.cardAccentBar, { backgroundColor: CARD_ACCENTS.people }]} />
           <View style={s.cardInner}>
@@ -458,7 +429,6 @@ export default function FieldReportScreen() {
           </View>
         </View>
 
-        {/* ── Damage assessment ── */}
         <View style={[s.card, { backgroundColor: cardBg }]}>
           <View style={[s.cardAccentBar, { backgroundColor: CARD_ACCENTS.damage }]} />
           <View style={s.cardInner}>
@@ -480,7 +450,6 @@ export default function FieldReportScreen() {
         </View>
       </ScrollView>
 
-      {/* ── Save button ── */}
       <View
         style={[
           s.bottomBar,
@@ -499,7 +468,6 @@ export default function FieldReportScreen() {
             pressed && { transform: [{ scale: 0.97 }] },
           ]}
         >
-          {/* Top highlight strip for gradient-like visual */}
           <View style={s.saveBtnHighlight} />
           {saving ? (
             <ActivityIndicator size="small" color={colors.white} />
@@ -519,7 +487,6 @@ const s = StyleSheet.create({
   root: { flex: 1 },
   centered: { alignItems: 'center', justifyContent: 'center' },
 
-  // ── Curved header ──
   header: { position: 'relative', zIndex: 10 },
   headerBg: {
     ...StyleSheet.absoluteFillObject,
@@ -541,7 +508,6 @@ const s = StyleSheet.create({
   headerTitle: { fontSize: 17, fontWeight: '800', color: colors.white },
   headerSub: { fontSize: 12, color: 'rgba(255,255,255,0.6)' },
 
-  // ── Progress bar ──
   progressBarContainer: {
     paddingHorizontal: 20,
     paddingTop: 14,
@@ -559,10 +525,8 @@ const s = StyleSheet.create({
     backgroundColor: colors.accent[500],
   },
 
-  // ── Scroll ──
   scroll: { padding: 16, gap: 14 },
 
-  // ── Cards ──
   card: {
     borderRadius: 18,
     flexDirection: 'row',
@@ -586,7 +550,6 @@ const s = StyleSheet.create({
   cardIcon: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   cardTitle: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.slate[900] },
 
-  // ── Checklist ──
   checkRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.slate[100],
@@ -597,14 +560,12 @@ const s = StyleSheet.create({
   },
   checkLabel: { flex: 1, fontSize: 14, color: colors.slate[700] },
 
-  // ── Inputs ──
   textArea: {
     borderWidth: 1.5, borderColor: colors.slate[200], borderRadius: 18,
     padding: 14, fontSize: 14, color: colors.slate[900], minHeight: 80,
     backgroundColor: colors.slate[50],
   },
 
-  // ── People assisted ──
   peopleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -630,7 +591,6 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // ── Bottom bar ──
   bottomBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     paddingHorizontal: 16, paddingTop: 14,

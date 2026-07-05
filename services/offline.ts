@@ -1,16 +1,8 @@
-/**
- * Offline cache & sync service — FloodTrack
- *
- * Caches assigned incidents locally for offline access.
- * Queues status updates when offline, syncs when back online.
- */
 import * as Storage from '@/utils/storage';
 import type { Incident, StatusUpdatePayload } from '@/types';
 
 const CACHE_KEY = 'floodtrack_offline_incidents';
 const QUEUE_KEY = 'floodtrack_offline_queue';
-
-// ─── Incident cache ─────────────────────────────────────────────────────────
 
 export async function cacheIncidents(incidents: Incident[]): Promise<void> {
   await Storage.setItem(CACHE_KEY, JSON.stringify(incidents));
@@ -30,8 +22,6 @@ export async function clearCache(): Promise<void> {
   await Storage.deleteItem(CACHE_KEY);
   await Storage.deleteItem(QUEUE_KEY);
 }
-
-// ─── Offline update queue ───────────────────────────────────────────────────
 
 export interface QueuedUpdate {
   id: string;
