@@ -1195,6 +1195,18 @@ export default function MapScreen() {
           <Pressable
             style={({ pressed }) => [
               s.ctrlBtn,
+              { bottom: tabClear + 122, right: 12, backgroundColor: ctrlBg },
+              isDark && { borderColor: colors.slate[800] },
+              pressed && { opacity: 0.8 },
+            ]}
+            onPress={() => router.push('/resident/family')}
+            accessibilityLabel="Family safety check-in"
+          >
+            <Ionicons name="people" size={20} color={colors.brand[500]} />
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              s.ctrlBtn,
               { bottom: tabClear + 68, right: 12, backgroundColor: ctrlBg },
               isDark && { borderColor: colors.slate[800] },
               pressed && { opacity: 0.8 },

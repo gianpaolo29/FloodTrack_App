@@ -2,6 +2,9 @@ import { Platform } from 'react-native';
 import type {
   AlertItem,
   ChangePasswordPayload,
+  CheckInStatus,
+  FamilyGroup,
+  FamilyMember,
   FieldReportData,
   Incident,
   IncidentDetail,
@@ -337,6 +340,22 @@ async function formPatch<T>(path: string, formData: FormData, token: string): Pr
     throw new ApiError(res.status, err.message ?? `PATCH ${path} → ${res.status}`);
   }
   return res.json();
+}
+
+async function del<T>(path: string, token: string): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, err.message ?? `DELETE ${path} → ${res.status}`);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : ({} as T);
 }
 
 export async function apiLogin(
@@ -686,15 +705,83 @@ export async function getWeather(lat: number, lon: number, token: string): Promi
 }
 
 export async function withdrawReport(id: string, token: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/reports/${id}`, {
-    method: 'DELETE',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/json',
-    },
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, err.message ?? `DELETE /reports/${id} → ${res.status}`);
+  await del('/reports/' + id, token);
+}
+
+interface RawFamilyMember {
+  id: number;
+  name: string;
+  email: string;
+  check_in_status: 'safe' | 'need_help' | 'unknown';
+  checked_in_at: string | null;
+  is_creator: boolean;
+}
+
+interface RawFamilyGroup {
+  id: number;
+  name: string;
+  invite_code: string;
+  members: RawFamilyMember[];
+  created_at: string;
+}
+
+function adaptFamilyMember(raw: RawFamilyMember): FamilyMember {
+  const parts     = raw.name.trim().split(' ');
+  const lastName  = parts.length > 1 ? parts[parts.length - 1] : '';
+  const firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : parts[0] ?? '';
+  return {
+    id:            String(raw.id),
+    firstName,
+    lastName,
+    email:         raw.email,
+    checkInStatus: raw.check_in_status,
+    checkedInAt:   raw.checked_in_at,
+    isCreator:     raw.is_creator,
+  };
+}
+
+function adaptFamilyGroup(raw: RawFamilyGroup): FamilyGroup {
+  return {
+    id:         String(raw.id),
+    name:       raw.name,
+    inviteCode: raw.invite_code,
+    members:    raw.members.map(adaptFamilyMember),
+    createdAt:  raw.created_at,
+  };
+}
+
+export async function getFamily(token: string): Promise<FamilyGroup | null> {
+  try {
+    const raw = await get<RawFamilyGroup>('/family', token);
+    return adaptFamilyGroup(raw);
+  } catch (e: any) {
+    if (e?.status === 404) return null;
+    throw e;
   }
+}
+
+export async function createFamily(name: string, token: string): Promise<FamilyGroup> {
+  const raw = await post<RawFamilyGroup>('/family', { name }, token);
+  return adaptFamilyGroup(raw);
+}
+
+export async function inviteFamilyMember(email: string, token: string): Promise<void> {
+  await post('/family/invite', { email }, token);
+}
+
+export async function joinFamily(code: string, token: string): Promise<FamilyGroup> {
+  const raw = await post<RawFamilyGroup>(`/family/join/${code}`, {}, token);
+  return adaptFamilyGroup(raw);
+}
+
+export async function familyCheckIn(status: CheckInStatus, token: string): Promise<void> {
+  await post('/family/check-in', { status }, token);
+}
+
+export async function leaveFamily(token: string): Promise<void> {
+  await del('/family/leave', token);
+}
+
+export async function removeFamilyMember(memberId: string, token: string): Promise<void> {
+  await del(`/family/members/${memberId}`, token);
 }

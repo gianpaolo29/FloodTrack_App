@@ -18,6 +18,7 @@ import * as Storage from '@/utils/storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -289,6 +290,7 @@ function GlassInput({
 }
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
@@ -573,7 +575,15 @@ export default function ProfileScreen() {
               onPress={openChangePwd}
               isDark={isDark}
             />
-            <SettingRow icon="call-outline" label="Mobile number" description={user?.contact ?? '—'} isDark={isDark} isLast />
+            <SettingRow icon="call-outline" label="Mobile number" description={user?.contact ?? '—'} isDark={isDark} />
+            <SettingRow
+              icon="people-outline"
+              label="Family safety group"
+              description="Check-in & see family status"
+              onPress={() => router.push('/resident/family')}
+              isDark={isDark}
+              isLast
+            />
           </View>
 
           <SectionLabel title="Notifications" isDark={isDark} />

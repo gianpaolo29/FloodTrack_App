@@ -157,3 +157,23 @@ export interface ResponderStats {
   activeCount: number;
   avgResponseMinutes: number;
 }
+
+export type CheckInStatus = 'safe' | 'need_help' | 'unknown';
+
+export interface FamilyMember {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  checkInStatus: CheckInStatus;
+  checkedInAt: string | null;
+  isCreator: boolean;
+}
+
+export interface FamilyGroup {
+  id: string;
+  name: string;
+  inviteCode: string;
+  members: FamilyMember[];
+  createdAt: string;
+}
