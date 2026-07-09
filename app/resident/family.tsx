@@ -18,7 +18,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import * as Location from 'expo-location';
+import MapView, { Marker, PROVIDER_GOOGLE } from '@/components/MapView';
 
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -77,37 +80,6 @@ function timeAgo(iso: string | null): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function PulseRing({ color, size = 48 }: { color: string; size?: number }) {
-  const scale   = useRef(new Animated.Value(1)).current;
-  const opacity = useRef(new Animated.Value(0.6)).current;
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(scale,   { toValue: 1.6, duration: 1200, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-          Animated.timing(scale,   { toValue: 1,   duration: 1200, useNativeDriver: true }),
-        ]),
-        Animated.sequence([
-          Animated.timing(opacity, { toValue: 0,   duration: 1200, useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 0.6, duration: 1200, useNativeDriver: true }),
-        ]),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [scale, opacity]);
-
-  return (
-    <Animated.View style={{
-      position: 'absolute',
-      width: size, height: size, borderRadius: size / 2,
-      borderWidth: 2.5, borderColor: color,
-      opacity, transform: [{ scale }],
-    }} />
-  );
-}
-
 function StatusSummaryBar({ members, isDark }: { members: FamilyMember[]; isDark: boolean }) {
   const safe   = members.filter(m => m.checkInStatus === 'safe').length;
   const help   = members.filter(m => m.checkInStatus === 'need_help').length;
@@ -126,7 +98,6 @@ function StatusSummaryBar({ members, isDark }: { members: FamilyMember[]; isDark
       )}
       {help > 0 && (
         <View style={[sum.segment, { flex: help, backgroundColor: colors.severity.critical + '20' }]}>
-          <PulseRing color={colors.severity.critical} size={18} />
           <View style={[sum.dot, { backgroundColor: colors.severity.critical }]} />
           <Text style={[sum.segText, { color: colors.severity.critical }]}>{help} Help</Text>
         </View>
@@ -198,7 +169,6 @@ function CheckInButton({
             end={{ x: 1, y: 1 }}
             style={ci.gradient}
           >
-            {status === 'need_help' && <PulseRing color="rgba(255,255,255,0.4)" size={40} />}
             <Ionicons name={icon} size={28} color={colors.white} />
             <Text style={ci.labelActive}>{label}</Text>
             <View style={ci.activeBadge}>
@@ -217,17 +187,19 @@ function CheckInButton({
   );
 }
 
+const CI_HEIGHT = 120;
+
 const ci = StyleSheet.create({
-  btn: { borderRadius: 20, overflow: 'hidden' },
+  btn: { borderRadius: 20, overflow: 'hidden', height: CI_HEIGHT },
   gradient: {
     alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 24, borderRadius: 20,
+    height: CI_HEIGHT, borderRadius: 20,
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2, shadowRadius: 12, elevation: 8,
   },
   inactive: {
     alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 24, borderRadius: 20,
+    height: CI_HEIGHT, borderRadius: 20,
     borderWidth: 1.5, borderStyle: 'dashed',
   },
   labelActive: { fontSize: 16, fontWeight: '900', color: colors.white, letterSpacing: -0.2 },
@@ -287,7 +259,6 @@ function MemberCard({
       {isHelp && <View style={mc.urgentStripe} />}
       <View style={mc.row}>
         <View style={[mc.avatar, { backgroundColor: config.color + '18' }]}>
-          {isHelp && <PulseRing color={config.color} size={48} />}
           <Text style={[mc.avatarText, { color: config.color }]}>
             {getInitials(member.firstName, member.lastName)}
           </Text>
@@ -569,6 +540,10 @@ export default function FamilyScreen() {
   const [showJoin, setShowJoin]         = useState(false);
   const [showInvite, setShowInvite]     = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
+  const [showCodeModal, setShowCodeModal] = useState(false);
+  const [createdCode, setCreatedCode]     = useState('');
+  const [codeCopied, setCodeCopied]       = useState(false);
+  const [showMap, setShowMap]             = useState(false);
 
   const headerFade  = useRef(new Animated.Value(0)).current;
   const contentFade = useRef(new Animated.Value(0)).current;
@@ -611,18 +586,29 @@ export default function FamilyScreen() {
   async function handleCheckIn(status: CheckInStatus) {
     if (!token || checkingIn) return;
     setCheckingIn(true);
+
+    // Get current location
+    let loc: { latitude: number; longitude: number } | undefined;
+    try {
+      const { status: perm } = await Location.requestForegroundPermissionsAsync();
+      if (perm === 'granted') {
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        loc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      }
+    } catch {}
+
     if (family && user) {
       setFamily({
         ...family,
         members: family.members.map(m =>
           m.id === user.id
-            ? { ...m, checkInStatus: status, checkedInAt: new Date().toISOString() }
+            ? { ...m, checkInStatus: status, checkedInAt: new Date().toISOString(), latitude: loc?.latitude ?? m.latitude, longitude: loc?.longitude ?? m.longitude }
             : m,
         ),
       });
     }
     try {
-      await familyCheckIn(status, token);
+      await familyCheckIn(status, token, loc);
       await load();
     } catch {
       showAlert({ type: 'error', title: 'Check-in failed', message: 'Please try again.' });
@@ -640,12 +626,31 @@ export default function FamilyScreen() {
       setFamily(created);
       setShowCreate(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showAlert({ type: 'success', title: 'Family created!', message: `Share code "${created.inviteCode}" with your family.` });
+      setCreatedCode(created.inviteCode);
+      setCodeCopied(false);
+      setShowCodeModal(true);
     } catch (e: any) {
       showAlert({ type: 'error', title: 'Error', message: e?.message ?? 'Could not create family group.' });
     } finally {
       setModalLoading(false);
     }
+  }
+
+  async function handleCopyCode(code: string) {
+    await Clipboard.setStringAsync(code);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2500);
+  }
+
+  async function handleShareAndClose() {
+    if (!family) return;
+    setShowCodeModal(false);
+    try {
+      await Share.share({
+        message: `Join my family safety group "${family.name}" on FloodTrack!\n\nInvite code: ${family.inviteCode}`,
+      });
+    } catch {}
   }
 
   async function handleJoin(code: string) {
@@ -778,7 +783,6 @@ export default function FamilyScreen() {
             </View>
             {helpCount > 0 && (
               <View style={s.urgentBadge}>
-                <PulseRing color={colors.severity.critical} size={36} />
                 <Ionicons name="alert-circle" size={14} color={colors.white} />
                 <Text style={s.urgentBadgeText}>{helpCount}</Text>
               </View>
@@ -863,6 +867,38 @@ export default function FamilyScreen() {
             showsVerticalScrollIndicator={false}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand[500]} />}
           >
+            {/* ── Hero banner ── */}
+            <View style={[s.heroBanner, { overflow: 'hidden' }]}>
+              <LinearGradient
+                colors={isDark ? ['#1E3A5F', '#0F2942'] : ['#4A6CF7', '#7C3AED']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={s.heroBannerGrad}
+              >
+                <View style={s.heroOrb1} />
+                <View style={s.heroOrb2} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                  <View style={s.heroIconWrap}>
+                    <Ionicons name="people" size={22} color={colors.white} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.heroFamilyName}>{family.name}</Text>
+                    <Text style={s.heroFamilySub}>
+                      {family.members.length} member{family.members.length !== 1 ? 's' : ''} in group
+                    </Text>
+                  </View>
+                  {helpCount > 0 && (
+                    <View style={s.heroAlertPill}>
+                      <Ionicons name="alert-circle" size={13} color={colors.white} />
+                      <Text style={s.heroAlertText}>{helpCount}</Text>
+                    </View>
+                  )}
+                </View>
+                <StatusSummaryBar members={family.members} isDark />
+              </LinearGradient>
+            </View>
+
+            {/* ── Check-in ── */}
             <View style={[s.card, { backgroundColor: cardBg, borderColor: border }]}>
               <View style={s.cardHeader}>
                 <View style={[s.cardIcon, { backgroundColor: colors.brand[500] + '14' }]}>
@@ -877,85 +913,125 @@ export default function FamilyScreen() {
               </View>
             </View>
 
+            {/* ── Invite code card ── */}
             <View style={[s.card, { backgroundColor: cardBg, borderColor: border }]}>
               <View style={s.cardHeader}>
-                <View style={[s.cardIcon, { backgroundColor: colors.accent[500] + '14' }]}>
-                  <Ionicons name="people" size={16} color={colors.accent[500]} />
+                <View style={[s.cardIcon, { backgroundColor: '#A855F7' + '14' }]}>
+                  <Ionicons name="key" size={16} color="#A855F7" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[s.cardTitle, { color: textMain }]}>{family.name}</Text>
-                  <Text style={[s.cardSub, { color: textSub }]}>
-                    {family.members.length} member{family.members.length !== 1 ? 's' : ''}
-                  </Text>
+                  <Text style={[s.cardTitle, { color: textMain }]}>Invite Code</Text>
+                  <Text style={[s.cardSub, { color: textSub }]}>Tap to copy, hold to share</Text>
                 </View>
+              </View>
+              <Pressable
+                onPress={() => handleCopyCode(family.inviteCode)}
+                onLongPress={handleShareCode}
+                style={({ pressed }) => [
+                  s.inviteCodeBox,
+                  {
+                    backgroundColor: isDark ? colors.dark.elevated : '#F5F3FF',
+                    borderColor: codeCopied ? colors.severity.low + '50' : '#A855F7' + '25',
+                  },
+                  pressed && { transform: [{ scale: 0.98 }] },
+                ]}
+              >
+                <Text style={[s.inviteCodeValue, { color: codeCopied ? colors.severity.low : (isDark ? colors.white : colors.slate[900]) }]}>
+                  {family.inviteCode}
+                </Text>
+                <View style={[s.inviteCodeCopyPill, { backgroundColor: codeCopied ? colors.severity.low : '#A855F7' }]}>
+                  <Ionicons name={codeCopied ? 'checkmark' : 'copy-outline'} size={14} color={colors.white} />
+                  <Text style={s.inviteCodeCopyText}>{codeCopied ? 'Copied!' : 'Copy'}</Text>
+                </View>
+              </Pressable>
+              <View style={s.inviteCodeActions}>
                 <Pressable
                   onPress={handleShareCode}
                   style={({ pressed }) => [
-                    s.codePill,
-                    { backgroundColor: colors.accent[500] + '10', borderColor: colors.accent[500] + '25' },
+                    s.inviteCodeShareBtn,
+                    { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50], borderColor: border },
                     pressed && { opacity: 0.7 },
                   ]}
                 >
-                  <Ionicons name="key" size={11} color={colors.accent[500]} />
-                  <Text style={[s.codeText, { color: colors.accent[500] }]}>{family.inviteCode}</Text>
-                  <Ionicons name="share-outline" size={13} color={colors.accent[500]} />
+                  <Ionicons name="share-social-outline" size={16} color={colors.brand[500]} />
+                  <Text style={[s.inviteCodeShareText, { color: colors.brand[500] }]}>Share</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowInvite(true); }}
+                  style={({ pressed }) => [
+                    s.inviteCodeShareBtn,
+                    { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50], borderColor: border },
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <Ionicons name="person-add-outline" size={16} color={colors.brand[500]} />
+                  <Text style={[s.inviteCodeShareText, { color: colors.brand[500] }]}>Invite by Email</Text>
                 </Pressable>
               </View>
-
-              <StatusSummaryBar members={family.members} isDark={isDark} />
-
-              {family.members.map((member, i) => (
-                <MemberCard
-                  key={member.id}
-                  member={member}
-                  currentUserId={user?.id ?? ''}
-                  isGroupCreator={isCreator}
-                  onRemove={() => handleRemoveMember(member)}
-                  isDark={isDark}
-                  index={i}
-                />
-              ))}
             </View>
 
-            <View style={[s.card, { backgroundColor: cardBg, borderColor: border, padding: 0, overflow: 'hidden' }]}>
-              <Pressable
-                style={({ pressed }) => [
-                  s.actionRow,
-                  { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border },
-                  pressed && { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50] },
-                ]}
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowInvite(true); }}
+            {/* ── View Map ── */}
+            <Pressable
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowMap(true); }}
+              style={({ pressed }) => [
+                s.mapBtn,
+                { backgroundColor: cardBg, borderColor: border },
+                pressed && { transform: [{ scale: 0.98 }] },
+              ]}
+            >
+              <LinearGradient
+                colors={isDark ? ['#1E3A5F', '#0F2942'] : ['#4A6CF7', '#6366F1']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={s.mapBtnIcon}
               >
-                <View style={[s.actionIcon, { backgroundColor: colors.brand[500] + '14' }]}>
-                  <Ionicons name="person-add" size={18} color={colors.brand[500]} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.actionLabel, { color: textMain }]}>Invite member</Text>
-                  <Text style={[s.actionDesc, { color: textSub }]}>Send an email invitation</Text>
-                </View>
-                <View style={[s.actionArrow, { backgroundColor: isDark ? colors.dark.elevated : colors.slate[100] }]}>
-                  <Ionicons name="chevron-forward" size={14} color={colors.slate[400]} />
-                </View>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  s.actionRow,
-                  pressed && { backgroundColor: colors.severity.critical + '08' },
-                ]}
-                onPress={handleLeave}
-              >
-                <View style={[s.actionIcon, { backgroundColor: colors.severity.critical + '10' }]}>
-                  <Ionicons name="exit-outline" size={18} color={colors.severity.critical} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.actionLabel, { color: colors.severity.critical }]}>Leave family group</Text>
-                  <Text style={[s.actionDesc, { color: textSub }]}>You can rejoin with a code</Text>
-                </View>
-                <View style={[s.actionArrow, { backgroundColor: colors.severity.critical + '10' }]}>
-                  <Ionicons name="chevron-forward" size={14} color={colors.severity.critical} />
-                </View>
-              </Pressable>
+                <Ionicons name="map" size={18} color={colors.white} />
+              </LinearGradient>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.mapBtnTitle, { color: textMain }]}>View Family Map</Text>
+                <Text style={[s.mapBtnSub, { color: textSub }]}>See where everyone checked in</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.slate[400]} />
+            </Pressable>
+
+            {/* ── Members ── */}
+            <View style={s.sectionHeader}>
+              <Text style={[s.sectionLabel, { color: textSub }]}>MEMBERS</Text>
+              <View style={[s.sectionCount, { backgroundColor: colors.brand[500] + '14' }]}>
+                <Text style={[s.sectionCountText, { color: colors.brand[500] }]}>{family.members.length}</Text>
+              </View>
             </View>
+
+            {family.members.map((member, i) => (
+              <MemberCard
+                key={member.id}
+                member={member}
+                currentUserId={user?.id ?? ''}
+                isGroupCreator={isCreator}
+                onRemove={() => handleRemoveMember(member)}
+                isDark={isDark}
+                index={i}
+              />
+            ))}
+
+            {/* ── Leave ── */}
+            <Pressable
+              style={({ pressed }) => [
+                s.leaveBtn,
+                {
+                  backgroundColor: isDark ? colors.severity.critical + '0C' : colors.severity.critical + '08',
+                  borderColor: isDark ? colors.severity.critical + '25' : colors.severity.critical + '18',
+                },
+                pressed && { opacity: 0.7 },
+              ]}
+              onPress={handleLeave}
+            >
+              <View style={[s.actionIcon, { backgroundColor: colors.severity.critical + '14' }]}>
+                <Ionicons name="exit-outline" size={17} color={colors.severity.critical} />
+              </View>
+              <Text style={[s.leaveText, { color: colors.severity.critical }]}>Leave Family Group</Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.severity.critical + '80'} />
+            </Pressable>
           </ScrollView>
         </Animated.View>
       )}
@@ -1000,9 +1076,235 @@ export default function FamilyScreen() {
         keyboardType="email-address"
         accentColor={colors.brand[500]}
       />
+
+      {/* ── Invite Code Success Modal ── */}
+      <Modal transparent visible={showCodeModal} animationType="fade" onRequestClose={() => setShowCodeModal(false)}>
+        <View style={ic.backdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowCodeModal(false)} />
+          <View style={[ic.card, { backgroundColor: isDark ? colors.dark.elevated : colors.white }]}>
+            {/* Success header */}
+            <LinearGradient
+              colors={isDark ? ['#4A6CF7', '#5B21B6'] : [colors.brand[500], '#7C3AED']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={ic.header}
+            >
+              <View style={ic.checkCircle}>
+                <Ionicons name="checkmark" size={32} color={colors.white} />
+              </View>
+              <Text style={ic.headerTitle}>Family Group Created!</Text>
+              <Text style={ic.headerSub}>Share this code with your family members so they can join</Text>
+            </LinearGradient>
+
+            <View style={[ic.body, { backgroundColor: cardBg }]}>
+              {/* Code box */}
+              <Text style={[ic.label, { color: textSub }]}>INVITE CODE</Text>
+              <Pressable
+                onPress={() => handleCopyCode(createdCode)}
+                style={({ pressed }) => [
+                  ic.codeBox,
+                  {
+                    backgroundColor: isDark ? colors.dark.elevated : '#F0F4FF',
+                    borderColor: codeCopied ? colors.severity.low : colors.brand[500] + '30',
+                  },
+                  pressed && { transform: [{ scale: 0.98 }] },
+                ]}
+              >
+                <Text style={[ic.codeValue, { color: isDark ? colors.white : colors.slate[900] }]}>{createdCode}</Text>
+                <View style={[ic.copyBtn, { backgroundColor: codeCopied ? colors.severity.low : colors.brand[500] }]}>
+                  <Ionicons name={codeCopied ? 'checkmark' : 'copy-outline'} size={16} color={colors.white} />
+                  <Text style={ic.copyText}>{codeCopied ? 'Copied!' : 'Copy'}</Text>
+                </View>
+              </Pressable>
+
+              {/* Actions */}
+              <View style={ic.actions}>
+                <Pressable
+                  onPress={handleShareAndClose}
+                  style={({ pressed }) => [ic.shareBtn, pressed && { opacity: 0.85 }]}
+                >
+                  <LinearGradient
+                    colors={[colors.brand[500], '#7C3AED']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={ic.shareBtnGrad}
+                  >
+                    <Ionicons name="share-social" size={18} color={colors.white} />
+                    <Text style={ic.shareBtnText}>Share with Family</Text>
+                  </LinearGradient>
+                </Pressable>
+                <Pressable
+                  onPress={() => setShowCodeModal(false)}
+                  style={({ pressed }) => [
+                    ic.doneBtn,
+                    { borderColor: isDark ? colors.dark.border : colors.slate[200] },
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <Text style={[ic.doneBtnText, { color: isDark ? colors.slate[300] : colors.slate[600] }]}>Done</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Family Map Modal ── */}
+      <Modal visible={showMap} animationType="slide" onRequestClose={() => setShowMap(false)}>
+        <View style={[mp.root, { backgroundColor: bg }]}>
+          <View style={[mp.header, { paddingTop: insets.top, backgroundColor: cardBg, borderBottomColor: border }]}>
+            <Pressable
+              onPress={() => setShowMap(false)}
+              style={({ pressed }) => [mp.closeBtn, { backgroundColor: isDark ? colors.dark.elevated : colors.slate[100] }, pressed && { opacity: 0.6 }]}
+              hitSlop={8}
+            >
+              <Ionicons name="chevron-back" size={20} color={isDark ? colors.slate[300] : colors.slate[700]} />
+            </Pressable>
+            <View style={{ flex: 1 }}>
+              <Text style={[mp.headerTitle, { color: textMain }]}>Family Map</Text>
+              <Text style={[mp.headerSub, { color: textSub }]}>
+                {family?.members.filter(m => m.latitude && m.longitude).length ?? 0} of {family?.members.length ?? 0} locations shared
+              </Text>
+            </View>
+            <View style={[mp.headerIcon, { backgroundColor: colors.brand[500] + '14' }]}>
+              <Ionicons name="map" size={18} color={colors.brand[500]} />
+            </View>
+          </View>
+
+          <View style={{ flex: 1 }}>
+            {family && (() => {
+              const membersWithLoc = family.members.filter(m => m.latitude != null && m.longitude != null);
+              if (membersWithLoc.length === 0) {
+                return (
+                  <View style={mp.emptyWrap}>
+                    <View style={[mp.emptyIcon, { backgroundColor: isDark ? colors.dark.elevated : colors.slate[100] }]}>
+                      <Ionicons name="location-outline" size={40} color={colors.slate[400]} />
+                    </View>
+                    <Text style={[mp.emptyTitle, { color: textMain }]}>No locations yet</Text>
+                    <Text style={[mp.emptySub, { color: textSub }]}>
+                      Locations are shared when members check in. Ask your family to tap "I'm Safe" or "Need Help".
+                    </Text>
+                  </View>
+                );
+              }
+              const avgLat = membersWithLoc.reduce((s, m) => s + m.latitude!, 0) / membersWithLoc.length;
+              const avgLng = membersWithLoc.reduce((s, m) => s + m.longitude!, 0) / membersWithLoc.length;
+              return (
+                <MapView
+                  provider={PROVIDER_GOOGLE}
+                  style={StyleSheet.absoluteFillObject}
+                  initialRegion={{
+                    latitude: avgLat,
+                    longitude: avgLng,
+                    latitudeDelta: 0.05,
+                    longitudeDelta: 0.05,
+                  }}
+                  showsUserLocation
+                  showsMyLocationButton
+                >
+                  {membersWithLoc.map(member => {
+                    const cfg = STATUS_CONFIG[member.checkInStatus];
+                    return (
+                      <Marker
+                        key={member.id}
+                        coordinate={{ latitude: member.latitude!, longitude: member.longitude! }}
+                        title={`${member.firstName} ${member.lastName}`}
+                        description={`${cfg.label} - ${timeAgo(member.checkedInAt)}`}
+                      >
+                        <View style={mp.markerWrap}>
+                          <View style={[mp.markerDot, { backgroundColor: cfg.color }]}>
+                            <Text style={mp.markerInitials}>
+                              {getInitials(member.firstName, member.lastName)}
+                            </Text>
+                          </View>
+                          <View style={[mp.markerArrow, { borderTopColor: cfg.color }]} />
+                        </View>
+                      </Marker>
+                    );
+                  })}
+                </MapView>
+              );
+            })()}
+          </View>
+
+          {/* Legend bar */}
+          {family && family.members.filter(m => m.latitude != null).length > 0 && (
+            <View style={[mp.legend, { backgroundColor: cardBg, borderTopColor: border, paddingBottom: insets.bottom + 12 }]}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={mp.legendScroll}>
+                {family.members.filter(m => m.latitude != null && m.longitude != null).map(member => {
+                  const cfg = STATUS_CONFIG[member.checkInStatus];
+                  return (
+                    <View key={member.id} style={[mp.legendItem, { backgroundColor: cfg.color + '10', borderColor: cfg.color + '25' }]}>
+                      <View style={[mp.legendDot, { backgroundColor: cfg.color }]} />
+                      <Text style={[mp.legendName, { color: isDark ? colors.white : colors.slate[900] }]}>
+                        {member.firstName}
+                      </Text>
+                      <Text style={[mp.legendStatus, { color: cfg.color }]}>{cfg.label}</Text>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
+
+const mp = StyleSheet.create({
+  root: { flex: 1 },
+  header: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingBottom: 14, paddingTop: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  closeBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  headerTitle: { fontSize: 20, fontWeight: '900', letterSpacing: -0.3 },
+  headerSub: { fontSize: 11, marginTop: 1 },
+  headerIcon: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  emptyWrap: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 40, gap: 12,
+  },
+  emptyIcon: {
+    width: 80, height: 80, borderRadius: 24,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+  },
+  emptyTitle: { fontSize: 18, fontWeight: '800', textAlign: 'center' },
+  emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 19 },
+  markerWrap: { alignItems: 'center' },
+  markerDot: {
+    width: 38, height: 38, borderRadius: 19,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 3, borderColor: colors.white,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25, shadowRadius: 4, elevation: 5,
+  },
+  markerInitials: { fontSize: 12, fontWeight: '900', color: colors.white },
+  markerArrow: {
+    width: 0, height: 0, marginTop: -2,
+    borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8,
+    borderLeftColor: 'transparent', borderRightColor: 'transparent',
+  },
+  legend: {
+    borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12,
+  },
+  legendScroll: { paddingHorizontal: 16, gap: 8 },
+  legendItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1,
+  },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendName: { fontSize: 13, fontWeight: '700' },
+  legendStatus: { fontSize: 11, fontWeight: '600' },
+});
 
 const s = StyleSheet.create({
   root: { flex: 1 },
@@ -1085,7 +1387,38 @@ const s = StyleSheet.create({
   },
   emptyFeatureText: { fontSize: 13, fontWeight: '600' },
 
-  scroll: { padding: 16, gap: 16, paddingTop: 20 },
+  scroll: { padding: 16, gap: 14, paddingTop: 16 },
+
+  heroBanner: { borderRadius: 22, overflow: 'hidden' },
+  heroBannerGrad: {
+    padding: 20, gap: 14, position: 'relative',
+  },
+  heroOrb1: {
+    position: 'absolute', width: 120, height: 120, borderRadius: 60,
+    backgroundColor: 'rgba(255,255,255,0.08)', top: -30, right: -20,
+  },
+  heroOrb2: {
+    position: 'absolute', width: 80, height: 80, borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.06)', bottom: -20, left: 20,
+  },
+  heroIconWrap: {
+    width: 48, height: 48, borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  heroFamilyName: {
+    fontSize: 20, fontWeight: '900', color: colors.white, letterSpacing: -0.3,
+  },
+  heroFamilySub: {
+    fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 2,
+  },
+  heroAlertPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: colors.severity.critical,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20,
+    overflow: 'visible',
+  },
+  heroAlertText: { fontSize: 13, fontWeight: '900', color: colors.white },
 
   card: {
     borderRadius: 22, borderWidth: 1, padding: 18,
@@ -1104,25 +1437,181 @@ const s = StyleSheet.create({
 
   checkInRow: { flexDirection: 'row', gap: 12 },
 
-  codePill: {
+  inviteCodeBox: {
+    borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed',
+    paddingVertical: 18, paddingHorizontal: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 14, marginBottom: 12,
+  },
+  inviteCodeValue: {
+    fontSize: 24, fontWeight: '900', letterSpacing: 5, flex: 1, textAlign: 'center',
+  },
+  inviteCodeCopyPill: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 12, paddingVertical: 7,
-    borderRadius: 20, borderWidth: 1,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
   },
-  codeText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.8 },
+  inviteCodeCopyText: { fontSize: 12, fontWeight: '700', color: colors.white },
+  inviteCodeActions: { flexDirection: 'row', gap: 8 },
+  inviteCodeShareBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 11, borderRadius: 14, borderWidth: 1,
+  },
+  inviteCodeShareText: { fontSize: 13, fontWeight: '700' },
 
-  actionRow: {
+  mapBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    paddingVertical: 16, paddingHorizontal: 18,
+    padding: 16, borderRadius: 22, borderWidth: 1,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06, shadowRadius: 12, elevation: 3,
   },
+  mapBtnIcon: {
+    width: 42, height: 42, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  mapBtnTitle: { fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
+  mapBtnSub: { fontSize: 11, marginTop: 2 },
+
+  sectionHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 4, marginTop: 4,
+  },
+  sectionLabel: {
+    fontSize: 11, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase',
+  },
+  sectionCount: {
+    minWidth: 22, height: 20, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6,
+  },
+  sectionCountText: { fontSize: 11, fontWeight: '800' },
+
+  leaveBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 14, paddingHorizontal: 16,
+    borderRadius: 18, borderWidth: 1, marginTop: 4,
+  },
+  leaveText: { flex: 1, fontSize: 14, fontWeight: '700' },
+
   actionIcon: {
-    width: 40, height: 40, borderRadius: 13,
+    width: 38, height: 38, borderRadius: 12,
     alignItems: 'center', justifyContent: 'center',
   },
-  actionLabel: { fontSize: 15, fontWeight: '700', letterSpacing: -0.1 },
-  actionDesc: { fontSize: 11, marginTop: 1 },
-  actionArrow: {
-    width: 28, height: 28, borderRadius: 8,
-    alignItems: 'center', justifyContent: 'center',
+});
+
+const ic = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 28,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 28,
+    elevation: 24,
+  },
+  header: {
+    alignItems: 'center',
+    paddingTop: 32,
+    paddingBottom: 28,
+    paddingHorizontal: 24,
+    gap: 10,
+  },
+  checkCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  headerTitle: {
+    fontSize: 21,
+    fontWeight: '900',
+    color: colors.white,
+    textAlign: 'center',
+    letterSpacing: -0.3,
+  },
+  headerSub: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.75)',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  body: {
+    padding: 22,
+    paddingBottom: 28,
+    gap: 16,
+  },
+  label: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    textAlign: 'center',
+  },
+  codeBox: {
+    borderRadius: 18,
+    borderWidth: 1.5,
+    padding: 18,
+    gap: 14,
+    alignItems: 'center',
+  },
+  codeValue: {
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: 6,
+    textAlign: 'center',
+  },
+  copyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  copyText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  actions: {
+    gap: 10,
+    marginTop: 4,
+  },
+  shareBtn: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  shareBtnGrad: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 15,
+  },
+  shareBtnText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.white,
+  },
+  doneBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+  },
+  doneBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

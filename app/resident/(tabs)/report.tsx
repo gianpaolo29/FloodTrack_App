@@ -16,7 +16,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
-import * as Storage from '@/utils/storage';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   type SharedValue,
@@ -43,7 +42,6 @@ import { useAlert } from '@/context/AlertContext';
 import type { AlertConfig } from '@/components/AppAlert';
 import { getAllReports, submitReport } from '@/services/api';
 
-const DRAFT_KEY = 'ft_report_draft';
 
 function isVideoUri(uri: string): boolean {
   const ext = uri.split('.').pop()?.toLowerCase();
@@ -57,16 +55,7 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * 2 * Math.asin(Math.sqrt(a));
 }
 
-const HAZARD_TYPES = [
-  { key: 'flood',    label: 'Flood',         icon: 'water'            as const },
-  { key: 'road',     label: 'Road damage',   icon: 'construct'        as const },
-  { key: 'debris',   label: 'Debris',        icon: 'layers'           as const },
-  { key: 'drainage', label: 'Drainage',      icon: 'git-merge'        as const },
-  { key: 'landslide',label: 'Landslide',     icon: 'triangle'         as const },
-  { key: 'other',    label: 'Other',         icon: 'ellipsis-horizontal' as const },
-];
-
-type HazardKey = typeof HAZARD_TYPES[number]['key'];
+const HAZARD_TYPE = 'flood';
 
 interface SeverityOption {
   level: Severity;
@@ -152,61 +141,6 @@ function LocationBanner({
   );
 }
 
-function HazardTypeStep({
-  selected,
-  onSelect,
-  isDark,
-}: {
-  selected: HazardKey | null;
-  onSelect: (k: HazardKey) => void;
-  isDark: boolean;
-}) {
-  return (
-    <View style={styles.stepBody}>
-      <Text style={[styles.stepTitle, isDark && { color: colors.white }]}>
-        What type of hazard?
-      </Text>
-      <Text style={[styles.stepSubtitle, isDark && { color: colors.slate[400] }]}>
-        Select the category that best describes the situation.
-      </Text>
-
-      <View style={styles.hazardGrid}>
-        {HAZARD_TYPES.map(h => {
-          const active = selected === h.key;
-          return (
-            <Pressable
-              key={h.key}
-              onPress={() => onSelect(h.key as HazardKey)}
-              style={[
-                styles.hazardCard,
-                isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[200] + '44' },
-                active && { borderColor: colors.brand[500], backgroundColor: colors.brand[50] },
-              ]}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: active }}
-              accessibilityLabel={h.label}
-            >
-              <Ionicons
-                name={h.icon}
-                size={22}
-                color={active ? colors.brand[500] : isDark ? colors.slate[400] : colors.slate[600]}
-              />
-              <Text
-                style={[
-                  styles.hazardLabel,
-                  isDark && { color: colors.slate[400] },
-                  active && { color: colors.brand[500], fontWeight: '600' },
-                ]}
-              >
-                {h.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
 
 function SeverityStep({
   selected,
@@ -365,22 +299,22 @@ function FloodDepthPicker({
           waterFrac.value,
           [0, 0.15, 0.35, 0.55, 0.78],
           [
-            'rgba(59,130,246,0.25)',
-            'rgba(34,197,94,0.38)',
-            'rgba(250,204,21,0.40)',
-            'rgba(249,115,22,0.42)',
-            'rgba(239,68,68,0.45)',
+            'rgba(59,150,255,0.30)',
+            'rgba(34,197,94,0.35)',
+            'rgba(250,190,21,0.40)',
+            'rgba(249,115,22,0.45)',
+            'rgba(239,68,68,0.50)',
           ],
         )
       : interpolateColor(
           waterFrac.value,
           [0, 0.15, 0.35, 0.55, 0.78],
           [
-            'rgba(59,130,246,0.15)',
+            'rgba(59,150,255,0.22)',
             'rgba(34,197,94,0.28)',
-            'rgba(250,204,21,0.30)',
-            'rgba(249,115,22,0.32)',
-            'rgba(239,68,68,0.35)',
+            'rgba(250,190,21,0.32)',
+            'rgba(249,115,22,0.35)',
+            'rgba(239,68,68,0.40)',
           ],
         );
     return { backgroundColor: c };
@@ -397,13 +331,16 @@ function FloodDepthPicker({
 
   const textColor  = isDark ? colors.white : colors.slate[900];
   const subColor   = isDark ? colors.slate[400] : colors.slate[500];
-  const bg         = isDark ? '#0C1420' : '#EAF2FB';
-  const border     = isDark ? 'rgba(100,160,230,0.15)' : 'rgba(30,100,180,0.12)';
-  const skinColor  = isDark ? '#8BA0B5' : '#B8CDE0';
-  const skinDark   = isDark ? '#6B8199' : '#96B0C8';
-  const hairColor  = isDark ? '#3A4A5C' : '#4A3728';
-  const groundDark = isDark ? '#1A2636' : '#D4DDE8';
-  const groundMid  = isDark ? '#15202E' : '#C8D5E2';
+  const bg         = isDark ? '#080F1A' : '#E8F0FB';
+  const border     = isDark ? 'rgba(80,140,220,0.18)' : 'rgba(30,100,180,0.15)';
+  const skinColor  = isDark ? '#A0B8CC' : '#D4A574';
+  const skinDark   = isDark ? '#7A96AB' : '#B8895C';
+  const hairColor  = isDark ? '#2C3A4C' : '#2C1810';
+  const shirtColor = isDark ? '#3B6B9E' : '#4A8EC9';
+  const shirtDark  = isDark ? '#2E5580' : '#3A7AB5';
+  const pantsColor = isDark ? '#2A3A50' : '#3D5A80';
+  const groundDark = isDark ? '#0E1A28' : '#C4D4E4';
+  const groundMid  = isDark ? '#12202F' : '#B8CAD8';
 
   const glowPulse = useSharedValue(0);
   useEffect(() => {
@@ -449,8 +386,14 @@ function FloodDepthPicker({
         <GestureDetector gesture={pan}>
           <Animated.View style={[fdp.card, { backgroundColor: bg, borderColor: border }]}>
 
+            {/* Sky gradient overlay */}
+            <View style={StyleSheet.absoluteFill} pointerEvents="none">
+              <View style={[fdp.skyTop, { backgroundColor: isDark ? 'rgba(15,25,40,0.6)' : 'rgba(180,210,245,0.25)' }]} />
+            </View>
+
             <View style={[fdp.ground, { backgroundColor: groundDark }]} pointerEvents="none">
               <View style={[fdp.groundTopStripe, { backgroundColor: groundMid }]} />
+              <View style={[fdp.groundGrass, { backgroundColor: isDark ? '#152218' : '#8CAA7C' }]} />
             </View>
 
             <View style={fdp.scaleCol} pointerEvents="none">
@@ -467,21 +410,23 @@ function FloodDepthPicker({
                 <Animated.View style={[fdp.waves, waveStyle]}>
                   {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => (
                     <View key={i} style={[fdp.wave, {
-                      backgroundColor: isDark ? 'rgba(59,130,246,0.20)' : 'rgba(59,130,246,0.12)',
+                      backgroundColor: isDark ? 'rgba(100,180,255,0.25)' : 'rgba(59,130,246,0.18)',
                     }]} />
                   ))}
                 </Animated.View>
                 <Animated.View style={[fdp.waves, { top: 3 }, waveStyle]}>
                   {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => (
                     <View key={i} style={[fdp.wave, { width: 20, height: 7, marginLeft: -2,
-                      backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.08)',
+                      backgroundColor: isDark ? 'rgba(100,180,255,0.15)' : 'rgba(59,130,246,0.10)',
                     }]} />
                   ))}
                 </Animated.View>
               </Animated.View>
 
               <View style={fdp.human} pointerEvents="none">
+                {/* Hair */}
                 <View style={[fdp.hair, { backgroundColor: hairColor }]} />
+                {/* Head */}
                 <View style={[fdp.head, { backgroundColor: skinColor }]}>
                   <View style={fdp.faceRow}>
                     <View style={[fdp.eye, { backgroundColor: hairColor }]} />
@@ -490,45 +435,49 @@ function FloodDepthPicker({
                   <View style={[fdp.mouth, { backgroundColor: skinDark }]} />
                 </View>
                 <View style={[fdp.neck, { backgroundColor: skinColor }]} />
+                {/* Shirt with collar */}
                 <View style={fdp.shoulderWrap}>
-                  <View style={[fdp.shoulder, { backgroundColor: skinColor }]} />
+                  <View style={[fdp.shoulder, { backgroundColor: shirtColor }]}>
+                    <View style={[fdp.collar, { borderBottomColor: shirtDark }]} />
+                  </View>
                 </View>
                 <View style={fdp.torsoWrap}>
+                  {/* Left sleeve + arm */}
                   <View style={fdp.armCol}>
-                    <View style={[fdp.upperArm, { backgroundColor: skinColor }]} />
+                    <View style={[fdp.upperArm, { backgroundColor: shirtColor }]} />
                     <View style={[fdp.forearm, { backgroundColor: skinColor }]} />
                     <View style={[fdp.hand, { backgroundColor: skinColor }]} />
                   </View>
-                  <View style={[fdp.torso, { backgroundColor: skinColor }]}>
-                    <View style={[fdp.shirtLine, { backgroundColor: skinDark }]} />
-                    <View style={[fdp.beltLine, { backgroundColor: skinDark }]} />
+                  {/* Torso (shirt) */}
+                  <View style={[fdp.torso, { backgroundColor: shirtColor }]}>
+                    <View style={[fdp.shirtLine, { backgroundColor: shirtDark }]} />
+                    <View style={[fdp.beltLine, { backgroundColor: pantsColor }]} />
                   </View>
+                  {/* Right sleeve + arm */}
                   <View style={fdp.armCol}>
-                    <View style={[fdp.upperArm, { backgroundColor: skinColor }]} />
+                    <View style={[fdp.upperArm, { backgroundColor: shirtColor }]} />
                     <View style={[fdp.forearm, { backgroundColor: skinColor }]} />
                     <View style={[fdp.hand, { backgroundColor: skinColor }]} />
                   </View>
                 </View>
-                <View style={[fdp.hips, { backgroundColor: skinDark }]} />
+                {/* Pants */}
+                <View style={[fdp.hips, { backgroundColor: pantsColor }]} />
                 <View style={fdp.legsWrap}>
                   <View style={fdp.legCol}>
-                    <View style={[fdp.thigh, { backgroundColor: skinColor }]} />
-                    <View style={[fdp.shin, { backgroundColor: skinColor }]} />
-                    <View style={[fdp.ankle, { backgroundColor: skinColor }]} />
+                    <View style={[fdp.thigh, { backgroundColor: pantsColor }]} />
+                    <View style={[fdp.shin, { backgroundColor: pantsColor }]} />
+                    <View style={[fdp.ankle, { backgroundColor: pantsColor }]} />
                   </View>
                   <View style={fdp.legCol}>
-                    <View style={[fdp.thigh, { backgroundColor: skinColor }]} />
-                    <View style={[fdp.shin, { backgroundColor: skinColor }]} />
-                    <View style={[fdp.ankle, { backgroundColor: skinColor }]} />
+                    <View style={[fdp.thigh, { backgroundColor: pantsColor }]} />
+                    <View style={[fdp.shin, { backgroundColor: pantsColor }]} />
+                    <View style={[fdp.ankle, { backgroundColor: pantsColor }]} />
                   </View>
                 </View>
+                {/* Shoes */}
                 <View style={fdp.feetWrap}>
-                  <View style={[fdp.foot, { backgroundColor: skinDark }]}>
-                    <View style={[fdp.toes, { backgroundColor: skinColor }]} />
-                  </View>
-                  <View style={[fdp.foot, { backgroundColor: skinDark }]}>
-                    <View style={[fdp.toes, { backgroundColor: skinColor }]} />
-                  </View>
+                  <View style={[fdp.foot, { backgroundColor: isDark ? '#1A2535' : '#2C2C2C' }]} />
+                  <View style={[fdp.foot, { backgroundColor: isDark ? '#1A2535' : '#2C2C2C' }]} />
                 </View>
               </View>
 
@@ -545,9 +494,10 @@ function FloodDepthPicker({
 
               {!selected && (
                 <View style={fdp.dragHint} pointerEvents="none">
-                  <Ionicons name="chevron-up" size={20} color={colors.brand[500]} />
-                  <Text style={[fdp.dragHintText, { color: colors.brand[500] }]}>Drag</Text>
-                  <Ionicons name="chevron-down" size={20} color={colors.brand[500]} />
+                  <View style={[fdp.dragHintBg, { backgroundColor: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.10)' }]}>
+                    <Ionicons name="swap-vertical" size={18} color={colors.brand[500]} />
+                    <Text style={[fdp.dragHintText, { color: colors.brand[500] }]}>Drag to set level</Text>
+                  </View>
                 </View>
               )}
             </View>
@@ -567,19 +517,21 @@ function FloodDepthPicker({
                     accessibilityState={{ checked: active }}
                   >
                     {active ? (
-                      <Animated.View style={[fdp.labelDotOuter, { borderColor: c + '50' }, glowStyle]}>
+                      <Animated.View style={[fdp.labelDotOuter, { borderColor: c + '50', backgroundColor: c + '15' }, glowStyle]}>
                         <View style={[fdp.labelDotInner, { backgroundColor: c }]} />
                       </Animated.View>
                     ) : (
-                      <View style={[fdp.labelDot, { backgroundColor: c + '60', borderColor: c + '30' }]} />
+                      <View style={[fdp.labelDot, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', borderColor: c + '40' }]} />
                     )}
-                    <Text style={[
-                      fdp.labelText,
-                      { color: active ? c : subColor },
-                      active && fdp.labelTextActive,
-                    ]}>
-                      {level.label}
-                    </Text>
+                    <View style={active ? [fdp.labelPill, { backgroundColor: c + '18', borderColor: c + '30' }] : undefined}>
+                      <Text style={[
+                        fdp.labelText,
+                        { color: active ? c : subColor },
+                        active && fdp.labelTextActive,
+                      ]}>
+                        {level.label}
+                      </Text>
+                    </View>
                   </Pressable>
                 );
               })}
@@ -634,15 +586,19 @@ const fdp = StyleSheet.create({
 
   card: {
     flexDirection: 'row',
-    borderRadius: 24,
-    borderWidth: 1,
+    borderRadius: 28,
+    borderWidth: 1.5,
     height: PICKER_H,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 24,
-    elevation: 12,
+    shadowColor: '#1A3A5C',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 28,
+    elevation: 14,
+  },
+
+  skyTop: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: '40%',
   },
 
   ground: {
@@ -652,6 +608,10 @@ const fdp = StyleSheet.create({
   groundTopStripe: {
     position: 'absolute', top: 0, left: 0, right: 0,
     height: 3, opacity: 0.5,
+  },
+  groundGrass: {
+    position: 'absolute', top: 0, left: 0, right: 0,
+    height: 2, opacity: 0.4,
   },
 
   scaleCol: { width: s(52), position: 'relative', zIndex: 2 },
@@ -701,6 +661,14 @@ const fdp = StyleSheet.create({
   shoulderWrap: { zIndex: 1, marginTop: s(-2) },
   shoulder: {
     width: s(62), height: s(16), borderTopLeftRadius: s(12), borderTopRightRadius: s(12),
+    alignItems: 'center', overflow: 'hidden',
+  },
+  collar: {
+    width: s(14), height: 0,
+    borderBottomWidth: s(6),
+    borderLeftWidth: s(8), borderRightWidth: s(8),
+    borderLeftColor: 'transparent', borderRightColor: 'transparent',
+    marginTop: s(-1),
   },
   torsoWrap: {
     flexDirection: 'row', alignItems: 'flex-start',
@@ -734,11 +702,7 @@ const fdp = StyleSheet.create({
   feetWrap: { flexDirection: 'row', gap: s(12), marginTop: s(-2) },
   foot: {
     width: s(28), height: s(16), borderRadius: s(5),
-    flexDirection: 'row', alignItems: 'center',
-    paddingLeft: 1,
-  },
-  toes: {
-    width: s(7), height: s(5), borderRadius: s(2.5),
+    borderTopLeftRadius: s(3), borderTopRightRadius: s(3),
   },
 
   handleRow: {
@@ -746,25 +710,29 @@ const fdp = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     marginBottom: -12, zIndex: 10,
   },
-  handleLine: { flex: 1, height: 1.5, borderRadius: 1 },
+  handleLine: { flex: 1, height: 2, borderRadius: 1 },
   pill: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: colors.brand[500],
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4, shadowRadius: 10, elevation: 8,
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.18)',
+    shadowOpacity: 0.45, shadowRadius: 12, elevation: 10,
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
   },
-  pillText: { color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
+  pillText: { color: '#fff', fontSize: 13, fontWeight: '900', letterSpacing: 0.5 },
 
   dragHint: {
     position: 'absolute', alignSelf: 'center',
-    top: '35%', alignItems: 'center', opacity: 0.6, zIndex: 5,
+    top: '30%', alignItems: 'center', zIndex: 5,
   },
-  dragHintText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
+  dragHintBg: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+  },
+  dragHintText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
 
   labelCol: {
-    width: SCREEN_W < 360 ? 74 : 86,
+    width: SCREEN_W < 360 ? 80 : 96,
     position: 'relative', zIndex: 3,
   },
   labelItem: {
@@ -784,7 +752,10 @@ const fdp = StyleSheet.create({
   labelDotInner: {
     width: 7, height: 7, borderRadius: 3.5,
   },
-  labelText: { fontSize: SCREEN_W < 360 ? 10 : 11, fontWeight: '500' },
+  labelPill: {
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1,
+  },
+  labelText: { fontSize: SCREEN_W < 360 ? 9 : 10, fontWeight: '500' },
   labelTextActive: { fontWeight: '800', letterSpacing: 0.2 },
 
   banner: {
@@ -806,130 +777,6 @@ const fdp = StyleSheet.create({
   bannerBadgeText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
 });
 
-const ROAD_DAMAGE_LEVELS = [
-  { key: 'pothole',  label: 'Pothole',          icon: 'ellipse'    as const, severity: 'low'      as Severity, desc: 'Small hole — passable with caution' },
-  { key: 'crack',    label: 'Large crack',      icon: 'git-branch' as const, severity: 'moderate' as Severity, desc: 'Cracking across lane — vehicles slow down' },
-  { key: 'partial',  label: 'Partial collapse',  icon: 'warning'    as const, severity: 'high'     as Severity, desc: 'Section collapsed — lane blocked' },
-  { key: 'collapse', label: 'Full collapse',     icon: 'alert'      as const, severity: 'critical' as Severity, desc: 'Road impassable — responder needed' },
-] as const;
-
-type RoadDamageKey = typeof ROAD_DAMAGE_LEVELS[number]['key'];
-
-function RoadDamagePicker({
-  selected,
-  onSelect,
-  isDark,
-}: {
-  selected: RoadDamageKey | null;
-  onSelect: (key: RoadDamageKey, severity: Severity) => void;
-  isDark: boolean;
-}) {
-  const textColor = isDark ? colors.white : colors.slate[900];
-  const subColor  = isDark ? colors.slate[400] : colors.slate[500];
-
-  function handleSelect(level: typeof ROAD_DAMAGE_LEVELS[number]) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onSelect(level.key, level.severity);
-  }
-
-  return (
-    <View style={rdp.stepBody}>
-      <Text style={[rdp.title, { color: textColor }]}>What type of road damage?</Text>
-      <Text style={[rdp.subtitle, { color: subColor }]}>
-        Select the option that best matches what you see.
-      </Text>
-
-      <View style={rdp.list}>
-        {ROAD_DAMAGE_LEVELS.map(level => {
-          const c = colors.severity[level.severity];
-          const active = selected === level.key;
-          return (
-            <Pressable
-              key={level.key}
-              onPress={() => handleSelect(level)}
-              style={[
-                rdp.card,
-                isDark && { backgroundColor: colors.dark.surface, borderColor: colors.slate[800] },
-                active && { borderColor: c, backgroundColor: isDark ? c + '18' : c + '0C' },
-              ]}
-              accessibilityRole="radio"
-              accessibilityLabel={`${level.label}: ${level.desc}`}
-              accessibilityState={{ checked: active }}
-            >
-              <View style={[rdp.iconWrap, { backgroundColor: c + '18', borderColor: c + '30' }]}>
-                <Ionicons name={level.icon} size={20} color={c} />
-              </View>
-              <View style={{ flex: 1, gap: 3 }}>
-                <Text style={[rdp.cardTitle, { color: active ? c : textColor }]}>
-                  {level.label}
-                </Text>
-                <Text style={[rdp.cardDesc, { color: subColor }]}>
-                  {level.desc}
-                </Text>
-              </View>
-              {active && (
-                <Ionicons name="checkmark-circle" size={22} color={c} />
-              )}
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {selected && (() => {
-        const l = ROAD_DAMAGE_LEVELS.find(d => d.key === selected)!;
-        const c = colors.severity[l.severity];
-        return (
-          <View style={[rdp.notice, { backgroundColor: c + '10', borderColor: c + '25' }]}>
-            <Ionicons name="information-circle" size={16} color={c} />
-            <Text style={[rdp.noticeText, { color: isDark ? colors.slate[300] : colors.slate[600] }]}>
-              Severity auto-set to <Text style={{ fontWeight: '700', color: c }}>
-                {l.severity.charAt(0).toUpperCase() + l.severity.slice(1)}
-              </Text>{l.severity === 'critical' ? ' — responder will be notified' : ''}
-            </Text>
-          </View>
-        );
-      })()}
-    </View>
-  );
-}
-
-const rdp = StyleSheet.create({
-  stepBody: { padding: 24, gap: 18 },
-  title:    { fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
-  subtitle: { fontSize: 14, lineHeight: 20, letterSpacing: 0.1 },
-  list:     { gap: 10 },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: colors.slate[200],
-    backgroundColor: colors.white,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  iconWrap: {
-    width: 44, height: 44, borderRadius: 14,
-    borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  cardTitle: { fontSize: 15, fontWeight: '700' },
-  cardDesc:  { fontSize: 12, lineHeight: 17 },
-  notice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  noticeText: { flex: 1, fontSize: 12, lineHeight: 17 },
-});
 
 function EvidenceStep({
   isDark,
@@ -1168,16 +1015,13 @@ export default function ReportScreen() {
   const [step, setStep]                   = useState(0);
   const [location, setLocation]           = useState<LocationData | null>(null);
   const [locDetecting, setLocDetecting]   = useState(false);
-  const [hazardType, setHazardType]       = useState<HazardKey | null>(null);
   const [severity, setSeverity]           = useState<Severity | null>(null);
   const [floodDepth, setFloodDepth]       = useState<DepthKey | null>(null);
-  const [roadDamage, setRoadDamage]       = useState<RoadDamageKey | null>(null);
   const [photos, setPhotos]               = useState<string[]>([]);
   const [description, setDescription]     = useState('');
   const [submitted, setSubmitted]         = useState(false);
   const [submittedRef, setSubmittedRef]   = useState('');
   const [loading, setLoading]             = useState(false);
-  const [draftRestored, setDraftRestored] = useState(false);
   const [checkingDups, setCheckingDups]   = useState(false);
 
   const stepOpacity = useSharedValue(1);
@@ -1214,11 +1058,7 @@ export default function ReportScreen() {
     );
   }
 
-  const isFlood    = hazardType === 'flood';
-  const isRoad     = hazardType === 'road';
-  const isLandslide = hazardType === 'landslide';
-  const hasExtraStep = isFlood || isRoad;
-  const TOTAL_STEPS  = hasExtraStep ? 5 : 4;
+  const TOTAL_STEPS = 4;
   async function detectLocation() {
     setLocDetecting(true);
     try {
@@ -1239,9 +1079,10 @@ export default function ReportScreen() {
         latitude:  pos.coords.latitude,
         longitude: pos.coords.longitude,
       });
-      const parts = [geo?.street, geo?.district, geo?.city, geo?.region].filter(Boolean);
-      const address = parts.length
-        ? parts.join(', ')
+      const parts = [geo?.name, geo?.street, geo?.subregion, geo?.district, geo?.city, geo?.region].filter(Boolean);
+      const unique = parts.filter((p, i) => i === 0 || p !== parts[i - 1]);
+      const address = unique.length
+        ? unique.join(', ')
         : `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
       setLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, address });
     } catch {
@@ -1253,43 +1094,10 @@ export default function ReportScreen() {
 
   useEffect(() => { if (!location) detectLocation(); }, []);
 
-  useEffect(() => {
-    if (isLandslide && (!severity || severity === 'low')) {
-      setSeverity('moderate');
-    }
-  }, [hazardType]);
-
-  useEffect(() => {
-    Storage.getItem(DRAFT_KEY).then(json => {
-      if (!json) return;
-      try {
-        const d = JSON.parse(json);
-        if (d.location)    setLocation(d.location);
-        if (d.hazardType)  setHazardType(d.hazardType);
-        if (d.severity)    setSeverity(d.severity);
-        if (d.floodDepth)  setFloodDepth(d.floodDepth);
-        if (d.roadDamage)  setRoadDamage(d.roadDamage);
-        if (d.description) setDescription(d.description);
-        setDraftRestored(true);
-      } catch {}
-    }).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (submitted) return;
-    Storage.setItem(DRAFT_KEY, JSON.stringify({
-      location, hazardType, severity, floodDepth, roadDamage, description,
-    })).catch(() => {});
-  }, [location, hazardType, severity, floodDepth, roadDamage, description, submitted]);
-
-  function discardDraft() {
-    Storage.deleteItem(DRAFT_KEY).catch(() => {});
-    setDraftRestored(false);
+  function resetForm() {
     setLocation(null);
-    setHazardType(null);
     setSeverity(null);
     setFloodDepth(null);
-    setRoadDamage(null);
     setDescription('');
     setStep(0);
   }
@@ -1297,17 +1105,11 @@ export default function ReportScreen() {
   const screenBg = isDark ? colors.dark.bg      : colors.slate[50];
   const cardBg   = isDark ? colors.dark.surface  : colors.white;
 
-  const STEP_TITLES = hasExtraStep
-    ? ['Hazard type', 'Severity', isFlood ? 'Flood depth' : 'Damage type', 'Evidence', 'Description']
-    : ['Hazard type', 'Severity', 'Evidence', 'Description'];
+  const STEP_TITLES = ['Severity', 'Flood depth', 'Evidence', 'Description'];
 
   function canAdvance() {
-    if (step === 0 && !hazardType)  return false;
-    if (step === 1 && !severity)    return false;
-    if (hasExtraStep && step === 2) {
-      if (isFlood && !floodDepth)   return false;
-      if (isRoad && !roadDamage)    return false;
-    }
+    if (step === 0 && !severity)    return false;
+    if (step === 1 && !floodDepth)  return false;
     return true;
   }
 
@@ -1317,7 +1119,7 @@ export default function ReportScreen() {
       return;
     }
     if (step < TOTAL_STEPS - 1) {
-      if (step === 0 && location && hazardType && token) {
+      if (step === 0 && location && token) {
         setCheckingDups(true);
         try {
           const all = await getAllReports(token);
@@ -1351,7 +1153,7 @@ export default function ReportScreen() {
           latitude:   location!.latitude,
           longitude:  location!.longitude,
           address:    location!.address,
-          hazardType: hazardType!,
+          hazardType: HAZARD_TYPE,
           severity:   severity!,
           description,
           photos,
@@ -1359,7 +1161,6 @@ export default function ReportScreen() {
         token!,
       );
       setSubmittedRef(result.reference ?? '');
-      Storage.deleteItem(DRAFT_KEY).catch(() => {});
       setSubmitted(true);
     } catch {
       showAlert({
@@ -1382,10 +1183,8 @@ export default function ReportScreen() {
           setSubmitted(false);
           setStep(0);
           setLocation(null);
-          setHazardType(null);
           setSeverity(null);
           setFloodDepth(null);
-          setRoadDamage(null);
           setPhotos([]);
           setDescription('');
           router.replace('/resident');
@@ -1408,7 +1207,7 @@ export default function ReportScreen() {
         </Pressable>
 
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={styles.headerTitle}>Report hazard</Text>
+          <Text style={styles.headerTitle}>Flood Report</Text>
           <Text style={styles.headerStep}>
             Step {step + 1} of {TOTAL_STEPS} — {STEP_TITLES[step]}
           </Text>
@@ -1419,67 +1218,29 @@ export default function ReportScreen() {
 
       <ScrollView
         style={[styles.scroll, { backgroundColor: cardBg }]}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 160 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        scrollEnabled={!(hasExtraStep && step === 2)}
+        scrollEnabled={step !== 1}
       >
-        <LocationBanner
-          isDark={isDark}
-          location={location}
-          detecting={locDetecting}
-          onRefresh={detectLocation}
-        />
-
-        {draftRestored && (
-          <View style={[styles.draftBanner, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}>
-            <Ionicons name="document-text" size={14} color={colors.brand[500]} />
-            <Text style={[styles.draftBannerText, isDark && { color: colors.slate[300] }]}>
-              Draft restored — tap × to discard
-            </Text>
-            <Pressable onPress={discardDraft} hitSlop={8}>
-              <Ionicons name="close" size={14} color={colors.slate[400]} />
-            </Pressable>
-          </View>
+        {step === 0 && (
+          <LocationBanner
+            isDark={isDark}
+            location={location}
+            detecting={locDetecting}
+            onRefresh={detectLocation}
+          />
         )}
 
         <Animated.View style={stepAnimStyle}>
         {step === 0 && (
-          <HazardTypeStep
-            selected={hazardType}
-            onSelect={setHazardType}
+          <SeverityStep
+            selected={severity}
+            onSelect={setSeverity}
             isDark={isDark}
           />
         )}
         {step === 1 && (
-          <>
-            {isLandslide && (
-              <View style={[styles.dispatchBanner, isDark && { backgroundColor: '#2A1215', borderColor: '#5C2020' }]}>
-                <Ionicons name="alert-circle" size={18} color={colors.severity.critical} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.dispatchTitle, { color: colors.severity.critical }]}>
-                    Responder auto-dispatch
-                  </Text>
-                  <Text style={[styles.dispatchDesc, isDark && { color: colors.slate[400] }]}>
-                    Landslide reports are flagged for immediate responder notification. Minimum severity: Moderate.
-                  </Text>
-                </View>
-              </View>
-            )}
-            <SeverityStep
-              selected={severity}
-              onSelect={s => {
-                if (isLandslide && s === 'low') {
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                  return;
-                }
-                setSeverity(s);
-              }}
-              isDark={isDark}
-            />
-          </>
-        )}
-        {hasExtraStep && step === 2 && isFlood && (
           <FloodDepthPicker
             selected={floodDepth}
             onSelect={(key, sev) => {
@@ -1489,17 +1250,7 @@ export default function ReportScreen() {
             isDark={isDark}
           />
         )}
-        {hasExtraStep && step === 2 && isRoad && (
-          <RoadDamagePicker
-            selected={roadDamage}
-            onSelect={(key, sev) => {
-              setRoadDamage(key);
-              setSeverity(sev);
-            }}
-            isDark={isDark}
-          />
-        )}
-        {step === (hasExtraStep ? 3 : 2) && (
+        {step === 2 && (
           <EvidenceStep
             isDark={isDark}
             photos={photos}
@@ -1507,8 +1258,7 @@ export default function ReportScreen() {
             onShowAlert={showAlert}
           />
         )}
-        {/* Description step */}
-        {step === (hasExtraStep ? 4 : 3) && (
+        {step === 3 && (
           <DescriptionStep
             value={description}
             onChange={setDescription}
@@ -1523,44 +1273,24 @@ export default function ReportScreen() {
         style={[
           styles.actionBar,
           {
-            paddingBottom: insets.bottom + 12,
+            paddingBottom: insets.bottom + 70,
             backgroundColor: cardBg,
             borderTopColor: isDark ? colors.slate[900] : colors.slate[100],
           },
         ]}
       >
-        {/* Summary chips when type + severity are set */}
-        {(hazardType || severity) && (
+        {(severity || floodDepth) && (
           <View style={styles.summaryRow}>
-            {hazardType && (
-              <View style={[styles.summaryChip, isDark && { backgroundColor: colors.slate[900] }]}>
-                <Text style={[styles.summaryChipText, isDark && { color: colors.slate[400] }]}>
-                  {HAZARD_TYPES.find(h => h.key === hazardType)?.label}
-                </Text>
-              </View>
-            )}
+            <View style={[styles.summaryChip, isDark && { backgroundColor: colors.slate[900] }]}>
+              <Ionicons name="water" size={11} color={colors.brand[500]} />
+              <Text style={[styles.summaryChipText, isDark && { color: colors.slate[400] }]}>Flood</Text>
+            </View>
             {severity && <SeverityChip level={severity} size="sm" />}
             {floodDepth && (
               <View style={[styles.summaryChip, isDark && { backgroundColor: colors.slate[900] }]}>
                 <Ionicons name="water" size={11} color={colors.brand[500]} />
                 <Text style={[styles.summaryChipText, isDark && { color: colors.slate[400] }]}>
                   {DEPTH_LEVELS.find(d => d.key === floodDepth)?.label}
-                </Text>
-              </View>
-            )}
-            {roadDamage && (
-              <View style={[styles.summaryChip, isDark && { backgroundColor: colors.slate[900] }]}>
-                <Ionicons name="construct" size={11} color={colors.brand[500]} />
-                <Text style={[styles.summaryChipText, isDark && { color: colors.slate[400] }]}>
-                  {ROAD_DAMAGE_LEVELS.find(d => d.key === roadDamage)?.label}
-                </Text>
-              </View>
-            )}
-            {isLandslide && (
-              <View style={[styles.summaryChip, { backgroundColor: colors.severity.critical + '18' }]}>
-                <Ionicons name="alert-circle" size={11} color={colors.severity.critical} />
-                <Text style={[styles.summaryChipText, { color: colors.severity.critical }]}>
-                  Auto-dispatch
                 </Text>
               </View>
             )}
@@ -1627,42 +1357,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brand[50],
     alignItems: 'center', justifyContent: 'center',
   },
-
-  dispatchBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    marginHorizontal: 24,
-    marginTop: 4,
-    marginBottom: -8,
-    padding: 12,
-    backgroundColor: '#FEF2F2',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#FECACA',
-  },
-  dispatchTitle: { fontSize: 13, fontWeight: '700' },
-  dispatchDesc:  { fontSize: 12, lineHeight: 17, color: colors.slate[600], marginTop: 2 },
-
-  hazardGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  hazardCard: {
-    width: '30%',
-    flexGrow: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.slate[200],
-    backgroundColor: colors.white,
-    minHeight: 80,
-  },
-  hazardLabel: { fontSize: 12, color: colors.slate[600], textAlign: 'center' },
 
   severityCard: {
     flexDirection: 'row',
@@ -1775,14 +1469,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   summaryChipText: { fontSize: 12, color: colors.slate[600], fontWeight: '500' },
-
-  draftBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginHorizontal: 24, marginTop: 16,
-    backgroundColor: colors.brand[50], borderRadius: 10, padding: 12,
-    borderWidth: 1, borderColor: colors.brand[100],
-  },
-  draftBannerText: { flex: 1, fontSize: 13, color: colors.brand[700] },
 
   confirmRoot: {
     flex: 1,

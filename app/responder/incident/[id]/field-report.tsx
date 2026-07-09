@@ -29,34 +29,6 @@ const CHECKLISTS: Record<string, string[]> = {
     'Coordinated with rescue boats',
     'Documented damage to structures',
   ],
-  'Road damage': [
-    'Assessed road condition',
-    'Set up warning signs / barricades',
-    'Diverted traffic',
-    'Documented damage extent',
-    'Reported to public works',
-  ],
-  Debris: [
-    'Assessed debris type and volume',
-    'Checked for hazardous materials',
-    'Cleared critical pathways',
-    'Coordinated heavy equipment',
-    'Documented before/after state',
-  ],
-  Drainage: [
-    'Inspected drainage system',
-    'Identified blockage points',
-    'Cleared accessible blockages',
-    'Reported infrastructure damage',
-    'Set up temporary drainage',
-  ],
-  Other: [
-    'Assessed situation',
-    'Secured the area',
-    'Documented conditions',
-    'Coordinated with other agencies',
-    'Provided initial assistance',
-  ],
 };
 
 const CARD_ACCENTS = {
@@ -212,16 +184,17 @@ export default function FieldReportScreen() {
   const cardBg = isDark ? colors.dark.card : colors.white;
 
   const load = useCallback(async () => {
+    if (!token) return;
     try {
       setLoading(true);
-      const incident = await getIncidentDetail(id, token!);
+      const incident = await getIncidentDetail(id, token);
       setHazardType(incident.type || 'Other');
 
-      const items = CHECKLISTS[incident.type] ?? CHECKLISTS['Other'];
+      const items = CHECKLISTS[incident.type] ?? CHECKLISTS['Flood'];
       const defaultChecklist: Record<string, boolean> = {};
       items.forEach(item => { defaultChecklist[item] = false; });
 
-      const existing = await getFieldReport(id, token!);
+      const existing = await getFieldReport(id, token);
       if (existing) {
         setActionsTaken(existing.actionsTaken);
         setResourcesUsed(existing.resourcesUsed);
@@ -239,7 +212,7 @@ export default function FieldReportScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  const checklistItems = CHECKLISTS[hazardType] ?? CHECKLISTS['Other'];
+  const checklistItems = CHECKLISTS[hazardType] ?? CHECKLISTS['Flood'];
   const completedCount = Object.values(checklist).filter(Boolean).length;
   const progressRatio = checklistItems.length > 0 ? completedCount / checklistItems.length : 0;
 

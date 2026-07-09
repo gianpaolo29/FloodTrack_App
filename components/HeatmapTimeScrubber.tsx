@@ -3,6 +3,7 @@ import {
   Animated,
   Easing,
   PanResponder,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -27,13 +28,14 @@ export function HeatmapTimeScrubber({ onTimeChange, value, isDark, alwaysVisible
   const [expanded, setExpanded] = useState(alwaysVisible ?? false);
   const [trackWidth, setTrackWidth] = useState(0);
   const fadeAnim = useRef(new Animated.Value(alwaysVisible ? 1 : 0)).current;
+  const slideAnim = useRef(new Animated.Value(alwaysVisible ? 0 : 10)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.4, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1.5, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       ]),
     );
     loop.start();
@@ -41,12 +43,19 @@ export function HeatmapTimeScrubber({ onTimeChange, value, isDark, alwaysVisible
   }, [pulseAnim]);
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: expanded ? 1 : 0,
-      duration: 250,
-      useNativeDriver: true,
-    }).start();
-  }, [expanded, fadeAnim]);
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: expanded ? 1 : 0,
+        duration: 280,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: expanded ? 0 : 10,
+        duration: 280,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [expanded, fadeAnim, slideAnim]);
 
   function handleTrackLayout(e: LayoutChangeEvent) {
     setTrackWidth(e.nativeEvent.layout.width);
@@ -74,41 +83,58 @@ export function HeatmapTimeScrubber({ onTimeChange, value, isDark, alwaysVisible
 
   const thumbPosition = trackWidth > 0 ? (value / MAX_HOURS) * trackWidth : 0;
 
-  const bg      = isDark ? 'rgba(13,17,23,0.94)' : 'rgba(255,255,255,0.96)';
+  const bg      = isDark ? colors.overlay.heatmapCardDark : colors.overlay.heatmapCardLight;
   const trackBg = isDark ? colors.slate[800] : colors.slate[200];
   const text    = isDark ? colors.slate[400] : colors.slate[500];
   const accent  = colors.brand[500];
+  const border  = isDark ? colors.overlay.heatmapBorderDark : colors.overlay.heatmapBorderLight;
 
   const timeLabel = value === 0 ? 'Now' : value < 1 ? `${Math.round(value * 60)}m ago` : `${value}h ago`;
 
   if (!alwaysVisible && !expanded) {
     return (
       <Pressable
-        style={[s.toggleBtn, { backgroundColor: bg }]}
+        style={[s.toggleBtn, { backgroundColor: bg, borderColor: border }]}
         onPress={() => setExpanded(true)}
         accessibilityLabel="Show time scrubber"
       >
-        <Ionicons name="time-outline" size={16} color={accent} />
+        <View style={[s.toggleIconWrap, { backgroundColor: accent + '15' }]}>
+          <Ionicons name="time-outline" size={14} color={accent} />
+        </View>
         {value > 0 && <Text style={[s.toggleLabel, { color: accent }]}>{timeLabel}</Text>}
       </Pressable>
     );
   }
 
   return (
-    <Animated.View style={[s.container, { backgroundColor: bg, opacity: fadeAnim }]}>
+    <Animated.View
+      style={[
+        s.container,
+        {
+          backgroundColor: bg,
+          borderColor: border,
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+        },
+      ]}
+    >
       <View style={s.header}>
-        <Ionicons name="time-outline" size={13} color={accent} />
-        <Text style={[s.headerTitle, { color: isDark ? colors.white : colors.slate[800] }]}>
+        <View style={[s.headerIconWrap, { backgroundColor: accent + '15' }]}>
+          <Ionicons name="time-outline" size={12} color={accent} />
+        </View>
+        <Text style={[s.headerTitle, { color: isDark ? colors.slate[200] : colors.slate[700] }]}>
           Timeline
         </Text>
-        <Text style={[s.currentLabel, { color: accent }]}>{timeLabel}</Text>
+        <View style={[s.timeBadge, { backgroundColor: accent + '12' }]}>
+          <Text style={[s.currentLabel, { color: accent }]}>{timeLabel}</Text>
+        </View>
         {!alwaysVisible && (
           <Pressable
             onPress={() => { setExpanded(false); onTimeChange(0); }}
             style={[s.closeBtn, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]}
             hitSlop={8}
           >
-            <Ionicons name="close" size={12} color={isDark ? colors.slate[400] : colors.slate[600]} />
+            <Ionicons name="close" size={11} color={isDark ? colors.slate[400] : colors.slate[600]} />
           </Pressable>
         )}
       </View>
@@ -118,9 +144,9 @@ export function HeatmapTimeScrubber({ onTimeChange, value, isDark, alwaysVisible
         onLayout={handleTrackLayout}
         {...panResponder.panHandlers}
       >
-        <View style={[s.trackFill, { width: thumbPosition, backgroundColor: accent + '40' }]} />
+        <View style={[s.trackFill, { width: thumbPosition, backgroundColor: accent + '30' }]} />
 
-        {TICK_HOURS.map((h, i) => {
+        {TICK_HOURS.map((h) => {
           const x = (h / MAX_HOURS) * 100;
           return (
             <View key={h} style={[s.tick, { left: `${x}%` }]}>
@@ -129,8 +155,10 @@ export function HeatmapTimeScrubber({ onTimeChange, value, isDark, alwaysVisible
           );
         })}
 
-        <View style={[s.thumb, { left: thumbPosition - 8 }]}>
-          <View style={[s.thumbInner, { backgroundColor: accent }]} />
+        <View style={[s.thumb, { left: thumbPosition - 9 }]}>
+          <View style={[s.thumbOuter, { borderColor: accent + '30' }]}>
+            <View style={[s.thumbInner, { backgroundColor: accent }]} />
+          </View>
         </View>
       </View>
 
@@ -162,24 +190,45 @@ const s = StyleSheet.create({
     borderRadius: 14,
     padding: 12,
     gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    borderWidth: 1,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   toggleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
+    gap: 8,
+    paddingHorizontal: 10,
     paddingVertical: 8,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
+    borderRadius: 22,
+    borderWidth: 1,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  toggleIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   toggleLabel: {
     fontSize: 11,
@@ -190,31 +239,44 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  headerIconWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerTitle: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
-    letterSpacing: 0.2,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
     flex: 1,
+  },
+  timeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   currentLabel: {
     fontSize: 11,
     fontWeight: '700',
   },
   closeBtn: {
-    width: 22, height: 22, borderRadius: 7,
+    width: 22, height: 22, borderRadius: 11,
     alignItems: 'center', justifyContent: 'center',
-    marginLeft: 6,
+    marginLeft: 4,
   },
   track: {
-    height: 28,
-    borderRadius: 14,
+    height: 30,
+    borderRadius: 15,
     justifyContent: 'center',
     overflow: 'hidden',
   },
   trackFill: {
     position: 'absolute',
     left: 0, top: 0, bottom: 0,
-    borderRadius: 14,
+    borderRadius: 15,
   },
   tick: {
     position: 'absolute',
@@ -230,19 +292,31 @@ const s = StyleSheet.create({
   },
   thumb: {
     position: 'absolute',
-    top: 6,
-    width: 16, height: 16,
-    borderRadius: 8,
+    top: 3,
+    width: 24, height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbOuter: {
+    width: 20, height: 20,
+    borderRadius: 10,
+    borderWidth: 3,
     backgroundColor: colors.white,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.18,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   thumbInner: {
-    width: 10, height: 10, borderRadius: 5,
+    width: 8, height: 8, borderRadius: 4,
   },
   labelRow: {
     flexDirection: 'row',
@@ -251,7 +325,8 @@ const s = StyleSheet.create({
   },
   tickLabel: {
     fontSize: 9,
-    fontWeight: '500',
+    fontWeight: '600',
+    letterSpacing: 0.1,
   },
   nowDotWrap: {
     marginRight: 3,

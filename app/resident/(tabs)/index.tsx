@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  Easing,
   Image,
   Keyboard,
   Linking,
@@ -14,6 +15,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import MapView, {
   Circle,
@@ -31,13 +33,13 @@ import { SeverityChip, type Severity } from '@/components/SeverityChip';
 import { StatusBadge, type ReportStatus } from '@/components/StatusBadge';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getAllReports, getReportDetail } from '@/services/api';
+import { getAllReports, getReportDetail, getEvacuationCenters } from '@/services/api';
 import type { Report as ApiReport } from '@/types';
 import { HeatmapLegend } from '@/components/HeatmapLegend';
 import { HeatmapZoneSummary } from '@/components/HeatmapZoneSummary';
 import { HeatmapTimeScrubber } from '@/components/HeatmapTimeScrubber';
 
-type HazardType = 'all' | 'flood' | 'slippery' | 'landslide' | 'fallen_tree' | 'blocked_road' | 'debris';
+type HazardType = 'all' | 'flood';
 
 interface Report {
   id: string;
@@ -55,34 +57,19 @@ interface EvacCenter {
   id: string;
   name: string;
   address: string;
-  type: 'school' | 'gymnasium' | 'barangay_hall' | 'covered_court' | 'church';
+  type: string;
   capacity: number;
   latitude: number;
   longitude: number;
 }
 
-const HAZARD_META: Record<Exclude<HazardType, 'all'>, {
+const HAZARD_META: Record<string, {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
   color: string;
 }> = {
-  flood:        { label: 'Flood',        icon: 'water',         color: '#1F6FBF' },
-  slippery:     { label: 'Slippery',     icon: 'warning',       color: '#F59E0B' },
-  landslide:    { label: 'Landslide',    icon: 'earth',         color: '#EA6A0C' },
-  fallen_tree:  { label: 'Fallen Tree',  icon: 'leaf',          color: '#2E9E5B' },
-  blocked_road: { label: 'Blocked Road', icon: 'stop-circle',   color: '#D32F2F' },
-  debris:       { label: 'Debris',       icon: 'trash',         color: '#9AA6B2' },
+  flood: { label: 'Flood', icon: 'water', color: colors.brand[500] },
 };
-
-const HAZARD_FILTERS: { key: HazardType; label: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
-  { key: 'all',          label: 'All',          icon: 'grid',          color: colors.brand[500] },
-  { key: 'flood',        label: 'Flood',        icon: 'water',         color: '#1F6FBF' },
-  { key: 'slippery',     label: 'Slippery',     icon: 'warning',       color: '#F59E0B' },
-  { key: 'landslide',    label: 'Landslide',    icon: 'earth',         color: '#EA6A0C' },
-  { key: 'fallen_tree',  label: 'Fallen Tree',  icon: 'leaf',          color: '#2E9E5B' },
-  { key: 'blocked_road', label: 'Blocked Road', icon: 'stop-circle',   color: '#D32F2F' },
-  { key: 'debris',       label: 'Debris',       icon: 'trash',         color: '#9AA6B2' },
-];
 
 type MapTypeKey = MapType | 'flood';
 
@@ -99,10 +86,10 @@ const SEVERITY_WEIGHT: Record<Severity, number> = {
 };
 
 const FLOOD_DOT: Record<Severity, { fill: string; stroke: string; radius: number }> = {
-  low:      { fill: 'rgba(144,202,249,0.25)', stroke: 'rgba(144,202,249,0.6)',  radius: 10 },
-  moderate: { fill: 'rgba(66,165,245,0.30)',  stroke: 'rgba(66,165,245,0.65)', radius: 14 },
-  high:     { fill: 'rgba(21,101,192,0.35)',  stroke: 'rgba(21,101,192,0.7)',  radius: 18 },
-  critical: { fill: 'rgba(13,71,161,0.40)',   stroke: 'rgba(13,71,161,0.75)', radius: 22 },
+  low:      { ...colors.floodDepth.low,      radius: 10 },
+  moderate: { ...colors.floodDepth.moderate, radius: 14 },
+  high:     { ...colors.floodDepth.high,     radius: 18 },
+  critical: { ...colors.floodDepth.critical, radius: 22 },
 };
 
 const FLOOD_DEPTH: Record<Severity, string> = {
@@ -113,18 +100,14 @@ const FLOOD_DEPTH: Record<Severity, string> = {
 };
 
 const API_TYPE_TO_HAZARD: Record<string, Exclude<HazardType, 'all'>> = {
-  'Flood':       'flood',
-  'Road damage': 'blocked_road',
-  'Debris':      'debris',
-  'Drainage':    'debris',
-  'Other':       'debris',
+  'Flood': 'flood',
 };
 
 function fromApiReport(r: ApiReport): Report {
   return {
     id:         r.id,
     title:      r.title,
-    hazardType: API_TYPE_TO_HAZARD[r.type] ?? 'debris',
+    hazardType: API_TYPE_TO_HAZARD[r.type] ?? 'flood',
     severity:   r.severity,
     status:     r.status,
     address:    r.address,
@@ -139,15 +122,16 @@ const INITIAL_REGION: Region = {
   latitudeDelta: 0.06, longitudeDelta: 0.06,
 };
 
-const EVAC_TYPE_META: Record<EvacCenter['type'], { icon: keyof typeof Ionicons.glyphMap; label: string }> = {
-  school:        { icon: 'school',          label: 'School'         },
-  gymnasium:     { icon: 'fitness',         label: 'Gymnasium'      },
-  barangay_hall: { icon: 'business',        label: 'Barangay Hall'  },
-  covered_court: { icon: 'tennisball',      label: 'Covered Court'  },
-  church:        { icon: 'location',        label: 'Church'         },
+const EVAC_TYPE_META: Record<string, { icon: keyof typeof Ionicons.glyphMap; label: string }> = {
+  school:           { icon: 'school',          label: 'School'           },
+  gymnasium:        { icon: 'fitness',         label: 'Gymnasium'        },
+  barangay_hall:    { icon: 'business',        label: 'Barangay Hall'    },
+  covered_court:    { icon: 'tennisball',      label: 'Covered Court'    },
+  church:           { icon: 'location',        label: 'Church'           },
+  community_center: { icon: 'people',          label: 'Community Center' },
 };
 
-const EVAC_COLOR = '#0E9E6E';
+const EVAC_COLOR = colors.evac;
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -164,7 +148,7 @@ function fmtDist(km: number): string {
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
 }
 
-const EVACUATION_CENTERS: EvacCenter[] = [
+const FALLBACK_EVAC_CENTERS: EvacCenter[] = [
   {
     id: 'evac-1',
     name: 'Nasugbu Municipal Gymnasium',
@@ -363,7 +347,7 @@ function MapTypeModal({
   isDark: boolean;
 }) {
   const bg    = isDark ? colors.slate[900] : colors.white;
-  const bg2   = isDark ? '#0D1117'         : colors.slate[50];
+  const bg2   = isDark ? colors.dark.surface : colors.slate[50];
   const text  = isDark ? colors.white      : colors.slate[900];
   const text2 = isDark ? colors.slate[400] : colors.slate[500];
 
@@ -406,7 +390,7 @@ function MapTypeModal({
 }
 
 const mtm = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.overlay.modalLight },
   sheet: {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,
@@ -533,11 +517,11 @@ function ReportSheet({
       {report.hazardType === 'flood' && (
         <View style={[bs.depthRow, { borderColor: sepColor }]}>
           <View style={bs.depthIconWrap}>
-            <Ionicons name="water" size={14} color="#1F6FBF" />
+            <Ionicons name="water" size={14} color={colors.brand[500]} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[bs.depthLabel, { color: textSub }]}>Estimated flood depth</Text>
-            <Text style={[bs.depthValue, { color: '#1F6FBF' }]}>{FLOOD_DEPTH[report.severity]}</Text>
+            <Text style={[bs.depthValue, { color: colors.brand[500] }]}>{FLOOD_DEPTH[report.severity]}</Text>
           </View>
         </View>
       )}
@@ -627,11 +611,11 @@ const bs = StyleSheet.create({
     marginBottom: 4,
     borderWidth: 1, borderRadius: 10,
     marginHorizontal: 16,
-    backgroundColor: '#1F6FBF0D',
+    backgroundColor: colors.brand[500] + '0D',
   },
   depthIconWrap: {
     width: 28, height: 28, borderRadius: 8,
-    backgroundColor: '#1F6FBF1A',
+    backgroundColor: colors.brand[500] + '1A',
     alignItems: 'center', justifyContent: 'center',
   },
   depthLabel: { fontSize: 11, fontWeight: '500' },
@@ -657,7 +641,7 @@ function EvacSheet({
   const textMain = isDark ? colors.white      : colors.slate[900];
   const textSub  = isDark ? colors.slate[400] : colors.slate[500];
   const sepColor = isDark ? colors.slate[800] : colors.slate[100];
-  const meta     = EVAC_TYPE_META[center.type];
+  const meta     = EVAC_TYPE_META[center.type] ?? { icon: 'location' as const, label: center.type };
 
   return (
     <View style={[evs.sheet, { backgroundColor: bg, paddingBottom: bottomInset + 16 }]}>
@@ -783,7 +767,8 @@ export default function MapScreen() {
   const { token } = useAuth();
 
   const [reports,            setReports]            = useState<Report[]>([]);
-  const [filter,             setFilter]             = useState<HazardType>('all');
+  const [evacCenters,        setEvacCenters]        = useState<EvacCenter[]>(FALLBACK_EVAC_CENTERS);
+  const filter: HazardType = 'all';
   const [mapTypeKey,         setMapTypeKey]          = useState<MapTypeKey>('standard');
   const [selected,           setSelected]           = useState<Report | null>(null);
   const [selectedEvac,       setSelectedEvac]       = useState<EvacCenter | null>(null);
@@ -791,6 +776,7 @@ export default function MapScreen() {
   const [locating,           setLocating]           = useState(false);
   const [searchQuery,        setSearchQuery]        = useState('');
   const [searchFocused,      setSearchFocused]      = useState(false);
+  const [searchLoading,      setSearchLoading]      = useState(false);
   const [topCardHeight,      setTopCardHeight]      = useState(0);
   const [userLocation,       setUserLocation]       = useState<{ latitude: number; longitude: number } | null>(null);
   const [photoUrls,          setPhotoUrls]          = useState<string[]>([]);
@@ -799,6 +785,106 @@ export default function MapScreen() {
   const [timeScrubHours, setTimeScrubHours] = useState(0);
   const [zoneSummary, setZoneSummary] = useState<{ latitude: number; longitude: number } | null>(null);
   const heatmapOpacity = useRef(new Animated.Value(0)).current;
+
+  // ── Search animations ─────────────────────────────────────────
+  const searchFocusAnim   = useRef(new Animated.Value(0)).current;
+  const dropdownAnim      = useRef(new Animated.Value(0)).current;
+  const searchGlowAnim    = useRef(new Animated.Value(0)).current;
+  const shimmerAnim       = useRef(new Animated.Value(0)).current;
+  const searchInputRef    = useRef<TextInput>(null);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resultAnims       = useRef<Animated.Value[]>([]).current;
+
+  // shimmer loop for loading skeleton
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(shimmerAnim, {
+        toValue: 1,
+        duration: 1200,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [shimmerAnim]);
+
+  // glow pulse when focused
+  useEffect(() => {
+    if (searchFocused) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(searchGlowAnim, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(searchGlowAnim, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        ]),
+      );
+      pulse.start();
+      return () => pulse.stop();
+    } else {
+      searchGlowAnim.setValue(0);
+    }
+  }, [searchFocused, searchGlowAnim]);
+
+  function handleSearchFocus() {
+    setSearchFocused(true);
+    fetchUserLocation();
+    Animated.parallel([
+      Animated.spring(searchFocusAnim, { toValue: 1, tension: 80, friction: 12, useNativeDriver: false }),
+      Animated.timing(dropdownAnim, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+  }
+
+  function handleSearchBlur() {
+    Animated.parallel([
+      Animated.spring(searchFocusAnim, { toValue: 0, tension: 80, friction: 12, useNativeDriver: false }),
+      Animated.timing(dropdownAnim, { toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+    setTimeout(() => setSearchFocused(false), 220);
+  }
+
+  function handleSearchChange(text: string) {
+    setSearchQuery(text);
+    if (text.trim().length >= 2) {
+      setSearchLoading(true);
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = setTimeout(() => {
+        setSearchLoading(false);
+        animateResultItems();
+      }, 400);
+    } else {
+      setSearchLoading(false);
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    }
+  }
+
+  function animateResultItems() {
+    // reset & stagger-animate each result row
+    resultAnims.forEach(a => a.setValue(0));
+    const anims = resultAnims.slice(0, 8).map((a, i) =>
+      Animated.timing(a, {
+        toValue: 1,
+        duration: 260,
+        delay: i * 50,
+        easing: Easing.out(Easing.back(1.2)),
+        useNativeDriver: true,
+      }),
+    );
+    Animated.parallel(anims).start();
+  }
+
+  // ensure enough anim values for results
+  function getResultAnim(index: number): Animated.Value {
+    if (!resultAnims[index]) {
+      resultAnims[index] = new Animated.Value(0);
+    }
+    return resultAnims[index];
+  }
+
+  function handleClearSearch() {
+    setSearchQuery('');
+    setSearchLoading(false);
+    searchInputRef.current?.focus();
+  }
   const showFloodHeatmap = mapTypeKey === 'flood';
   const mapType: MapType = mapTypeKey === 'flood' ? 'standard' : mapTypeKey;
 
@@ -814,6 +900,11 @@ export default function MapScreen() {
     if (!token) return;
     getAllReports(token)
       .then(data => setReports(data.map(fromApiReport)))
+      .catch(() => {});
+    getEvacuationCenters(token)
+      .then(centers => {
+        if (centers.length > 0) setEvacCenters(centers);
+      })
       .catch(() => {});
   }, [token]);
 
@@ -879,10 +970,10 @@ export default function MapScreen() {
 
   const trimmed = searchQuery.trim().toLowerCase();
   const searchResults: EvacCenter[] = trimmed.length >= 2
-    ? EVACUATION_CENTERS.filter(c =>
+    ? evacCenters.filter(c =>
         c.name.toLowerCase().includes(trimmed) ||
         c.address.toLowerCase().includes(trimmed) ||
-        EVAC_TYPE_META[c.type].label.toLowerCase().includes(trimmed) ||
+        (EVAC_TYPE_META[c.type]?.label ?? c.type).toLowerCase().includes(trimmed) ||
         'evacuation'.includes(trimmed) ||
         'center'.includes(trimmed) ||
         'shelter'.includes(trimmed)
@@ -917,8 +1008,8 @@ export default function MapScreen() {
     });
   }
 
-  const cardBg   = isDark ? 'rgba(13,17,23,0.97)'    : '#FFFFFF';
-  const ctrlBg   = isDark ? 'rgba(13,17,23,0.95)'    : '#FFFFFF';
+  const cardBg   = isDark ? colors.overlay.darkDropdownBg   : '#FFFFFF';
+  const ctrlBg   = isDark ? colors.overlay.darkDropdownCtrl : '#FFFFFF';
   const textMain = isDark ? colors.white              : colors.slate[900];
   const textSub  = isDark ? colors.slate[400]         : colors.slate[500];
   const tabClear = insets.bottom + 80;
@@ -999,34 +1090,86 @@ export default function MapScreen() {
         onLayout={e => setTopCardHeight(e.nativeEvent.layout.height)}
       >
         <View style={s.searchRow}>
-          <View style={[
+          <Animated.View style={[
             s.searchBar,
             isDark && { backgroundColor: colors.slate[800], borderColor: colors.slate[700] },
             searchQuery.length > 0 && { borderColor: EVAC_COLOR },
+            {
+              borderColor: searchFocusAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [isDark ? colors.slate[700] : colors.slate[200], colors.brand[500]],
+              }),
+              shadowOpacity: searchFocusAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 0.18],
+              }),
+              shadowRadius: searchFocusAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 16],
+              }),
+              shadowColor: colors.brand[500],
+              shadowOffset: { width: 0, height: 0 },
+              elevation: searchFocused ? 6 : 0,
+            },
           ]}>
-            <Ionicons
-              name="search"
-              size={16}
-              color={searchQuery.length > 0 ? EVAC_COLOR : colors.slate[400]}
-            />
+            {/* Glow ring */}
+            {searchFocused && (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  StyleSheet.absoluteFill,
+                  {
+                    borderRadius: 14,
+                    borderWidth: 1.5,
+                    borderColor: colors.brand[500],
+                    opacity: searchGlowAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.15, 0.4],
+                    }),
+                  },
+                ]}
+              />
+            )}
+            <Animated.View style={{
+              transform: [{
+                scale: searchFocusAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [1, 1.15],
+                }),
+              }],
+            }}>
+              <Ionicons
+                name={searchFocused ? 'search' : 'search-outline'}
+                size={17}
+                color={searchQuery.length > 0 ? EVAC_COLOR : searchFocused ? colors.brand[500] : colors.slate[400]}
+              />
+            </Animated.View>
             <TextInput
+              ref={searchInputRef}
               style={[s.searchInput, { color: isDark ? colors.white : colors.slate[900] }]}
               placeholder="Search evacuation centers..."
               placeholderTextColor={textSub}
               value={searchQuery}
-              onChangeText={setSearchQuery}
-              onFocus={() => { setSearchFocused(true); fetchUserLocation(); }}
-              onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+              onChangeText={handleSearchChange}
+              onFocus={handleSearchFocus}
+              onBlur={handleSearchBlur}
               returnKeyType="search"
               clearButtonMode="never"
               autoCorrect={false}
             />
             {searchQuery.length > 0 && (
-              <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-                <Ionicons name="close-circle" size={18} color={colors.slate[400]} />
+              <Pressable onPress={handleClearSearch} hitSlop={8}>
+                <Animated.View style={{
+                  transform: [{ rotate: searchFocusAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '90deg'],
+                  }) }],
+                }}>
+                  <Ionicons name="close-circle" size={18} color={isDark ? colors.slate[400] : colors.slate[400]} />
+                </Animated.View>
               </Pressable>
             )}
-          </View>
+          </Animated.View>
 
           <View style={[s.countBadge, {
             backgroundColor: colors.severity.critical + '15',
@@ -1037,157 +1180,205 @@ export default function MapScreen() {
           </View>
         </View>
 
-        <View style={[s.chipDivider, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]} />
 
-        <View style={[s.chipRow, { backgroundColor: cardBg }]}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.chipScroll}
-          >
-            {HAZARD_FILTERS.map(f => {
-              const active = filter === f.key;
-              return (
-                <Pressable
-                  key={f.key}
-                  onPress={() => setFilter(f.key)}
-                  style={[
-                    s.chip,
-                    active
-                      ? { backgroundColor: f.color, borderColor: f.color }
-                      : {
-                          backgroundColor: isDark ? colors.slate[800] : colors.slate[100],
-                          borderColor:     isDark ? colors.slate[700] : colors.slate[200],
-                        },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Filter ${f.label}`}
-                >
-                  <Ionicons
-                    name={f.icon}
-                    size={13}
-                    color={active ? colors.white : f.color}
-                  />
-                  <Text style={[
-                    s.chipLabel,
-                    { color: active ? colors.white : isDark ? colors.slate[300] : colors.slate[700] },
-                    active && { fontWeight: '700' },
-                  ]}>
-                    {f.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        <View style={[s.legendDivider, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]} />
-        <View style={[s.legendRow, { backgroundColor: cardBg }]}>
-          <Text style={[s.legendTitle, { color: textSub }]}>LEGEND</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.legendScroll}
-          >
-            {Object.entries(HAZARD_META).map(([key, meta]) => (
-              <View key={key} style={s.legendPill}>
-                <Ionicons name={meta.icon} size={12} color={meta.color} />
-                <Text style={[s.legendLabel, { color: isDark ? colors.slate[300] : colors.slate[600] }]}>
-                  {meta.label}
-                </Text>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
       </View>
 
       {searchFocused && topCardHeight > 0 && (
-        <View style={[
+        <Animated.View style={[
           s.dropdown,
-          { top: topCardHeight, backgroundColor: isDark ? colors.dark.surface : colors.white },
+          {
+            top: topCardHeight,
+            backgroundColor: isDark ? colors.dark.surface : colors.white,
+            opacity: dropdownAnim,
+            transform: [{
+              translateY: dropdownAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-10, 0],
+              }),
+            }],
+          },
         ]}>
+          {/* Top gradient accent line */}
+          <LinearGradient
+            colors={[colors.brand[500], EVAC_COLOR]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ height: 2 }}
+          />
+
           {trimmed.length < 2 ? (
             <>
               <View style={[s.dropdownSuggestHeader, { borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
-                <Ionicons name="sparkles" size={13} color={colors.brand[500]} />
+                <View style={s.dropdownSparkleWrap}>
+                  <Ionicons name="sparkles" size={12} color={colors.brand[500]} />
+                </View>
                 <Text style={[s.dropdownSuggestTitle, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
                   Quick search
                 </Text>
               </View>
               {[
-                { icon: 'shield-checkmark' as const, label: 'Evacuation centers near me', query: 'evacuation' },
-                { icon: 'school'           as const, label: 'Schools',                    query: 'school'     },
-                { icon: 'fitness'          as const, label: 'Gymnasium',                  query: 'gymnasium'  },
-                { icon: 'people'           as const, label: 'High-capacity shelters',     query: 'high'       },
+                { icon: 'shield-checkmark' as const, label: 'Evacuation centers near me', query: 'evacuation', gradient: [EVAC_COLOR, '#059669'] as [string, string] },
+                { icon: 'school'           as const, label: 'Schools',                    query: 'school',     gradient: [colors.brand[500], colors.iconAccents.indigo] as [string, string] },
+                { icon: 'fitness'          as const, label: 'Gymnasium',                  query: 'gymnasium',  gradient: [colors.iconAccents.amber, '#EA580C'] as [string, string] },
+                { icon: 'people'           as const, label: 'High-capacity shelters',     query: 'high',       gradient: [colors.iconAccents.purple, colors.gradients.cta[1]] as [string, string] },
               ].map((s2, idx, arr) => (
                 <Pressable
                   key={s2.query}
                   style={({ pressed }) => [
                     s.dropdownItem,
                     idx < arr.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] },
-                    pressed && { backgroundColor: isDark ? colors.dark.card : colors.slate[50] },
+                    pressed && { backgroundColor: isDark ? colors.dark.card : colors.brand[500] + '08', transform: [{ scale: 0.98 }] },
                   ]}
-                  onPress={() => setSearchQuery(s2.query)}
+                  onPress={() => handleSearchChange(s2.query)}
                 >
-                  <View style={[s.dropdownIcon, { backgroundColor: colors.brand[500] + '18' }]}>
-                    <Ionicons name={s2.icon} size={16} color={colors.brand[500]} />
-                  </View>
-                  <Text style={[s.dropdownName, { color: isDark ? colors.slate[300] : colors.slate[700], fontWeight: '500' }]}>
+                  <LinearGradient
+                    colors={s2.gradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={s.dropdownIconGradient}
+                  >
+                    <Ionicons name={s2.icon} size={15} color={colors.white} />
+                  </LinearGradient>
+                  <Text style={[s.dropdownName, { color: isDark ? colors.slate[300] : colors.slate[700], fontWeight: '500', flex: 1 }]}>
                     {s2.label}
                   </Text>
-                  <Ionicons name="arrow-forward" size={13} color={colors.slate[400]} />
+                  <View style={s.dropdownArrowWrap}>
+                    <Ionicons name="arrow-forward" size={12} color={colors.brand[500]} />
+                  </View>
                 </Pressable>
               ))}
             </>
-          ) : (
-            searchResults.length === 0 ? (
-              <View style={s.dropdownEmpty}>
-                <Ionicons name="search-outline" size={22} color={colors.slate[300]} />
-                <Text style={[s.dropdownEmptyText, { color: isDark ? colors.slate[500] : colors.slate[400] }]}>
-                  No results for "{searchQuery}"
+          ) : searchLoading ? (
+            /* ── Shimmer loading skeleton ── */
+            <View style={s.shimmerContainer}>
+              {[0, 1, 2].map(i => (
+                <View key={i} style={[s.shimmerRow, i < 2 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
+                  <Animated.View style={[
+                    s.shimmerIcon,
+                    {
+                      backgroundColor: isDark ? colors.slate[700] : colors.slate[200],
+                      opacity: shimmerAnim.interpolate({
+                        inputRange: [0, 0.5, 1],
+                        outputRange: [0.4, 1, 0.4],
+                      }),
+                    },
+                  ]} />
+                  <View style={{ flex: 1, gap: 8 }}>
+                    <Animated.View style={[
+                      s.shimmerLine,
+                      { width: `${70 - i * 12}%` as any, backgroundColor: isDark ? colors.slate[700] : colors.slate[200] },
+                      {
+                        opacity: shimmerAnim.interpolate({
+                          inputRange: [0, 0.5, 1],
+                          outputRange: [0.4, 1, 0.4],
+                        }),
+                      },
+                    ]} />
+                    <Animated.View style={[
+                      s.shimmerLine,
+                      { width: `${90 - i * 8}%` as any, height: 8, backgroundColor: isDark ? colors.slate[700] : colors.slate[200] },
+                      {
+                        opacity: shimmerAnim.interpolate({
+                          inputRange: [0, 0.5, 1],
+                          outputRange: [0.3, 0.8, 0.3],
+                        }),
+                      },
+                    ]} />
+                  </View>
+                </View>
+              ))}
+              <View style={s.shimmerFooter}>
+                <ActivityIndicator size="small" color={colors.brand[500]} />
+                <Text style={[s.shimmerFooterText, { color: isDark ? colors.slate[500] : colors.slate[400] }]}>
+                  Searching...
                 </Text>
               </View>
-            ) : (
-              searchResults.map((center, idx) => {
+            </View>
+          ) : searchResults.length === 0 ? (
+            /* ── Empty state ── */
+            <View style={s.dropdownEmpty}>
+              <View style={s.emptyIconWrap}>
+                <Ionicons name="search-outline" size={28} color={isDark ? colors.slate[600] : colors.slate[300]} />
+              </View>
+              <Text style={[s.dropdownEmptyTitle, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
+                No results found
+              </Text>
+              <Text style={[s.dropdownEmptyText, { color: isDark ? colors.slate[600] : colors.slate[400] }]}>
+                Try searching for "evacuation" or "school"
+              </Text>
+            </View>
+          ) : (
+            /* ── Animated results ── */
+            <>
+              <View style={[s.resultCountHeader, { borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
+                <View style={s.resultCountBadge}>
+                  <Text style={s.resultCountText}>{searchResults.length}</Text>
+                </View>
+                <Text style={[s.resultCountLabel, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
+                  {searchResults.length === 1 ? 'center found' : 'centers found'}
+                </Text>
+              </View>
+              {searchResults.map((center, idx) => {
                 const distKm = userLocation
                   ? haversineKm(userLocation.latitude, userLocation.longitude, center.latitude, center.longitude)
                   : null;
                 const isLast = idx === searchResults.length - 1;
+                const anim = getResultAnim(idx);
                 return (
-                  <Pressable
+                  <Animated.View
                     key={center.id}
-                    style={({ pressed }) => [
-                      s.dropdownItem,
-                      !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] },
-                      pressed && { backgroundColor: isDark ? colors.dark.card : colors.slate[50] },
-                    ]}
-                    onPress={() => handleEvacResultPress(center)}
-                    accessibilityLabel={center.name}
+                    style={{
+                      opacity: anim,
+                      transform: [{
+                        translateX: anim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [-20, 0],
+                        }),
+                      }],
+                    }}
                   >
-                    <View style={s.dropdownIcon}>
-                      <Ionicons name="shield-checkmark" size={16} color={colors.white} />
-                    </View>
-                    <View style={s.dropdownText}>
-                      <Text style={[s.dropdownName, { color: isDark ? colors.white : colors.slate[900] }]} numberOfLines={1}>
-                        {center.name}
-                      </Text>
-                      <Text style={[s.dropdownAddr, { color: isDark ? colors.slate[400] : colors.slate[500] }]} numberOfLines={1}>
-                        {center.address}
-                      </Text>
-                    </View>
-                    {distKm !== null && (
-                      <View style={s.dropdownDist}>
-                        <Ionicons name="walk-outline" size={12} color={EVAC_COLOR} />
-                        <Text style={s.dropdownDistText}>{fmtDist(distKm)}</Text>
+                    <Pressable
+                      style={({ pressed }) => [
+                        s.dropdownItem,
+                        !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] },
+                        pressed && { backgroundColor: isDark ? colors.dark.card : EVAC_COLOR + '08', transform: [{ scale: 0.98 }] },
+                      ]}
+                      onPress={() => handleEvacResultPress(center)}
+                      accessibilityLabel={center.name}
+                    >
+                      <LinearGradient
+                        colors={[EVAC_COLOR, '#059669']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={s.dropdownIconGradient}
+                      >
+                        <Ionicons name="shield-checkmark" size={15} color={colors.white} />
+                      </LinearGradient>
+                      <View style={s.dropdownText}>
+                        <Text style={[s.dropdownName, { color: isDark ? colors.white : colors.slate[900] }]} numberOfLines={1}>
+                          {center.name}
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Ionicons name="location-outline" size={10} color={isDark ? colors.slate[500] : colors.slate[400]} />
+                          <Text style={[s.dropdownAddr, { color: isDark ? colors.slate[400] : colors.slate[500] }]} numberOfLines={1}>
+                            {center.address}
+                          </Text>
+                        </View>
                       </View>
-                    )}
-                    <Ionicons name="chevron-forward" size={14} color={colors.slate[400]} />
-                  </Pressable>
+                      {distKm !== null && (
+                        <View style={s.dropdownDistPill}>
+                          <Ionicons name="walk-outline" size={11} color={EVAC_COLOR} />
+                          <Text style={s.dropdownDistText}>{fmtDist(distKm)}</Text>
+                        </View>
+                      )}
+                      <Ionicons name="chevron-forward" size={14} color={isDark ? colors.slate[600] : colors.slate[300]} />
+                    </Pressable>
+                  </Animated.View>
                 );
-              })
-            )
+              })}
+            </>
           )}
-        </View>
+        </Animated.View>
       )}
 
       {!selected && !selectedEvac && (
@@ -1283,13 +1474,13 @@ export default function MapScreen() {
       })()}
 
       {showFloodHeatmap && !selected && !selectedEvac && !zoneSummary && (
-        <View style={s.legendFloat}>
+        <View style={[s.legendFloat, { bottom: tabClear + 186 }]}>
           <HeatmapLegend mode="floodDepth" isDark={isDark} />
         </View>
       )}
 
       {showFloodHeatmap && !selected && !selectedEvac && !zoneSummary && (
-        <View style={s.timeScrubber}>
+        <View style={[s.timeScrubber, { bottom: tabClear + 14 }]}>
           <HeatmapTimeScrubber
             value={timeScrubHours}
             onTimeChange={setTimeScrubHours}
@@ -1343,8 +1534,10 @@ const s = StyleSheet.create({
   searchBar: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: colors.slate[50],
-    borderWidth: 1, borderColor: colors.slate[200],
-    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
+    borderWidth: 1.5, borderColor: colors.slate[200],
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10,
+    position: 'relative',
+    overflow: 'hidden',
   },
   searchPlaceholder: { fontSize: 14, flex: 1 },
   searchInput: { flex: 1, fontSize: 14, paddingVertical: 0 },
@@ -1376,57 +1569,99 @@ const s = StyleSheet.create({
     shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
   },
 
-  legendDivider: { height: StyleSheet.hairlineWidth },
-  legendRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 8, gap: 8,
-  },
-  legendTitle: {
-    fontSize: 9, fontWeight: '800', letterSpacing: 0.8,
-    textTransform: 'uppercase', flexShrink: 0,
-  },
-  legendScroll: { gap: 12, paddingRight: 4 },
 
   dropdown: {
     position: 'absolute', left: 0, right: 0,
     zIndex: 99,
-    borderBottomLeftRadius: 16, borderBottomRightRadius: 16,
+    borderBottomLeftRadius: 20, borderBottomRightRadius: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.14, shadowRadius: 12, elevation: 12,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18, shadowRadius: 20, elevation: 16,
     overflow: 'hidden',
   },
   dropdownItem: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, paddingVertical: 12, gap: 10,
+    paddingHorizontal: 16, paddingVertical: 13, gap: 12,
   },
   dropdownIcon: {
-    width: 34, height: 34, borderRadius: 10,
+    width: 36, height: 36, borderRadius: 11,
     backgroundColor: EVAC_COLOR,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  dropdownText: { flex: 1, gap: 2 },
+  dropdownIconGradient: {
+    width: 36, height: 36, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  dropdownText: { flex: 1, gap: 3 },
   dropdownName: { fontSize: 14, fontWeight: '600' },
-  dropdownAddr: { fontSize: 12 },
-  dropdownDist: { flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 0 },
-  dropdownDistText: { fontSize: 12, fontWeight: '600', color: EVAC_COLOR },
+  dropdownAddr: { fontSize: 11.5, lineHeight: 15 },
+  dropdownDistPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 0,
+    backgroundColor: EVAC_COLOR + '14',
+    paddingHorizontal: 8, paddingVertical: 4,
+    borderRadius: 20,
+  },
+  dropdownDistText: { fontSize: 11, fontWeight: '700', color: EVAC_COLOR },
+  dropdownArrowWrap: {
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: colors.brand[500] + '14',
+    alignItems: 'center', justifyContent: 'center',
+  },
   dropdownSuggestHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 14, paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 16, paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  dropdownSparkleWrap: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: colors.brand[500] + '14',
+    alignItems: 'center', justifyContent: 'center',
+  },
   dropdownSuggestTitle: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  dropdownEmpty: { alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 24 },
-  dropdownEmptyText: { fontSize: 13 },
+  dropdownEmpty: { alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 32 },
+  emptyIconWrap: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: colors.slate[100],
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 4,
+  },
+  dropdownEmptyTitle: { fontSize: 15, fontWeight: '700' },
+  dropdownEmptyText: { fontSize: 12.5 },
+  resultCountHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 16, paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  resultCountBadge: {
+    minWidth: 22, height: 22, borderRadius: 11,
+    backgroundColor: EVAC_COLOR,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  resultCountText: { fontSize: 11, fontWeight: '800', color: colors.white },
+  resultCountLabel: { fontSize: 12, fontWeight: '600' },
+  shimmerContainer: {},
+  shimmerRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingVertical: 14,
+  },
+  shimmerIcon: {
+    width: 36, height: 36, borderRadius: 11,
+  },
+  shimmerLine: {
+    height: 11, borderRadius: 6,
+  },
+  shimmerFooter: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 12,
+  },
+  shimmerFooterText: { fontSize: 12, fontWeight: '600' },
 
-  legendPill:      { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendPillEvac:  { borderLeftWidth: 1, borderLeftColor: colors.slate[200], paddingLeft: 12 },
-  legendLabel:     { fontSize: 11, fontWeight: '500' },
 
   advisoryBanner: {
     position: 'absolute', left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#D97706',
+    backgroundColor: colors.feedback.advisory,
     paddingHorizontal: 14, paddingVertical: 8,
     zIndex: 50,
   },
@@ -1434,16 +1669,14 @@ const s = StyleSheet.create({
 
   legendFloat: {
     position: 'absolute',
-    bottom: 240,
     left: 12,
     zIndex: 20,
   },
 
   timeScrubber: {
     position: 'absolute',
-    bottom: 170,
     left: 12,
-    right: 12,
+    right: 66,
     zIndex: 20,
   },
 });

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -12,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,7 +22,7 @@ import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
-import { updateProfile, changePassword, updateDutyStatus } from '@/services/api';
+import { updateProfile, changePassword, updateDutyStatus, uploadAvatar, getCurrentUser } from '@/services/api';
 
 interface PwdCheck {
   label: string;
@@ -291,6 +293,8 @@ export default function ProfileScreen() {
   const { user, token, logout, updateUser } = useAuth();
   const { showAlert } = useAlert();
 
+  const [avatarUploading, setAvatarUploading] = useState(false);
+
   const [isOnDuty, setIsOnDuty] = useState(false);
   const [dutyLoading, setDutyLoading] = useState(false);
 
@@ -319,6 +323,13 @@ export default function ProfileScreen() {
   const contentAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (!token) return;
+    getCurrentUser(token).then(data => {
+      setIsOnDuty(data.isOnDuty ?? false);
+    }).catch(() => {});
+  }, [token]);
+
+  useEffect(() => {
     Animated.stagger(80, [
       Animated.timing(heroAnim, {
         toValue: 1, duration: 520, easing: Easing.out(Easing.cubic), useNativeDriver: true,
@@ -337,6 +348,37 @@ export default function ProfileScreen() {
       }),
     ]).start();
   }, []);
+
+  async function handlePickAvatar() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      showAlert({ type: 'error', title: 'Permission needed', message: 'Please allow photo access to change your profile picture.' });
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const localUri = result.assets[0].uri;
+    // Show picked image immediately (optimistic update)
+    const previousUser = user;
+    await updateUser({ ...user!, avatarUrl: localUri });
+    setAvatarUploading(true);
+    try {
+      const updated = await uploadAvatar(localUri, token!);
+      await updateUser(updated);
+      showAlert({ type: 'success', title: 'Updated', message: 'Profile picture updated.' });
+    } catch (e: any) {
+      // Revert to previous avatar on failure
+      if (previousUser) await updateUser(previousUser);
+      showAlert({ type: 'error', title: 'Failed', message: e?.message ?? 'Could not upload profile picture.' });
+    } finally {
+      setAvatarUploading(false);
+    }
+  }
 
   async function toggleDuty(value: boolean) {
     setDutyLoading(true);
@@ -465,16 +507,32 @@ export default function ProfileScreen() {
               <Ionicons name="pencil" size={15} color="rgba(255,255,255,0.92)" />
             </Pressable>
 
-            <View style={styles.avatarRing}>
+            <Pressable onPress={handlePickAvatar} style={styles.avatarRing} disabled={avatarUploading}>
               <View style={[styles.avatarRingInner, { borderColor: roleColor }]}>
-                <LinearGradient
-                  colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.10)']}
-                  style={styles.avatar}
-                >
-                  <Text style={styles.avatarText}>{initials}</Text>
-                </LinearGradient>
+                {user?.avatarUrl ? (
+                  <Image
+                    key={user.avatarUrl}
+                    source={{ uri: user.avatarUrl, cache: 'reload' }}
+                    style={styles.avatar}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <LinearGradient
+                    colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.10)']}
+                    style={styles.avatar}
+                  >
+                    <Text style={styles.avatarText}>{initials}</Text>
+                  </LinearGradient>
+                )}
               </View>
-            </View>
+              <View style={styles.avatarCameraBtn}>
+                {avatarUploading ? (
+                  <ActivityIndicator size={12} color={colors.white} />
+                ) : (
+                  <Ionicons name="camera" size={13} color={colors.white} />
+                )}
+              </View>
+            </Pressable>
 
             <Text style={styles.heroName}>{fullName}</Text>
             <Text style={styles.heroEmail}>{user?.email ?? '—'}</Text>
@@ -981,6 +1039,20 @@ const styles = StyleSheet.create({
     borderRadius: 42,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarCameraBtn: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.white,
   },
   avatarText: { fontSize: 30, fontWeight: '800', color: colors.white },
   heroName:   { fontSize: 22, fontWeight: '800', color: colors.white, letterSpacing: -0.3 },

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/theme/colors';
 
 export type LegendMode = 'severity' | 'floodDepth' | 'density';
@@ -18,13 +19,13 @@ const DEPTH_LABELS    = ['Ankle', 'Knee', 'Waist', '> 4 ft'];
 const DENSITY_LABELS  = ['Sparse', '', '', 'Hotspot'];
 
 const SEVERITY_COLORS = [colors.severity.low, colors.severity.moderate, colors.severity.high, colors.severity.critical];
-const DEPTH_COLORS    = ['#90CAF9', '#42A5F5', '#1565C0', '#0D47A1'];
-const DENSITY_COLORS  = ['#3B82C4', '#F4B400', '#EA6A0C', '#D32F2F'];
+const DEPTH_COLORS    = colors.floodDepth.gradient.slice(1);
+const DENSITY_COLORS  = [colors.heatmap[0], colors.heatmap[2], colors.heatmap[3], colors.heatmap[4]];
 
 function getConfig(mode: LegendMode) {
   switch (mode) {
     case 'floodDepth':
-      return { title: 'Flood Depth', icon: 'water' as const, colors: DEPTH_COLORS, labels: DEPTH_LABELS };
+      return { title: 'Flood Depth', icon: 'water' as const, colors: [...DEPTH_COLORS], labels: DEPTH_LABELS };
     case 'density':
       return { title: 'Incident Density', icon: 'flame' as const, colors: DENSITY_COLORS, labels: DENSITY_LABELS };
     case 'severity':
@@ -34,32 +35,56 @@ function getConfig(mode: LegendMode) {
 }
 
 export function HeatmapLegend({ mode, isDark, lastUpdated, detailed, counts }: Props) {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(12)).current;
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  }, [fadeAnim]);
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fadeAnim, slideAnim]);
 
   const config = getConfig(mode);
-  const bg     = isDark ? 'rgba(13,17,23,0.92)' : 'rgba(255,255,255,0.94)';
-  const text   = isDark ? colors.slate[300] : colors.slate[600];
-  const title  = isDark ? colors.white : colors.slate[800];
+  const bg     = isDark ? colors.overlay.heatmapCardDark : colors.overlay.heatmapCardLight;
+  const text   = isDark ? colors.slate[400] : colors.slate[500];
+  const title  = isDark ? colors.slate[200] : colors.slate[700];
+  const border = isDark ? colors.overlay.heatmapBorderDark : colors.overlay.heatmapBorderLight;
 
   return (
-    <Animated.View style={[s.card, { backgroundColor: bg, opacity: fadeAnim }]}>
+    <Animated.View
+      style={[
+        s.card,
+        {
+          backgroundColor: bg,
+          borderColor: border,
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+        },
+      ]}
+    >
       <View style={s.header}>
-        <Ionicons name={config.icon} size={12} color={config.colors[2]} />
+        <View style={[s.iconWrap, { backgroundColor: config.colors[2] + '18' }]}>
+          <Ionicons name={config.icon} size={11} color={config.colors[2]} />
+        </View>
         <Text style={[s.title, { color: title }]}>{config.title}</Text>
       </View>
 
-      <View style={s.gradientRow}>
-        {config.colors.map((c, i) => (
-          <View key={i} style={[s.gradientSegment, { backgroundColor: c }]} />
-        ))}
+      <View style={s.gradientWrap}>
+        <LinearGradient
+          colors={config.colors as [string, string, ...string[]]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={s.gradient}
+        />
       </View>
 
       <View style={s.labelRow}>
@@ -91,43 +116,59 @@ export function HeatmapLegend({ mode, isDark, lastUpdated, detailed, counts }: P
 
 const s = StyleSheet.create({
   card: {
-    borderRadius: 12,
-    padding: 10,
-    gap: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 4,
-    minWidth: 160,
+    borderRadius: 14,
+    padding: 12,
+    gap: 7,
+    borderWidth: 1,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.12,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
+    minWidth: 180,
+    maxWidth: 220,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
+  },
+  iconWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
-  gradientRow: {
-    flexDirection: 'row',
-    height: 8,
-    borderRadius: 4,
+  gradientWrap: {
+    borderRadius: 5,
     overflow: 'hidden',
+    marginTop: 2,
   },
-  gradientSegment: {
-    flex: 1,
+  gradient: {
+    height: 10,
+    borderRadius: 5,
   },
   labelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   label: {
-    fontSize: 9,
-    fontWeight: '500',
+    fontSize: 9.5,
+    fontWeight: '600',
+    letterSpacing: 0.1,
   },
   countsRow: {
     flexDirection: 'row',

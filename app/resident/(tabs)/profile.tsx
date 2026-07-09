@@ -3,9 +3,8 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
-  Linking,
+  Image,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import * as Storage from '@/utils/storage';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,7 +24,7 @@ import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
-import { updateProfile, changePassword } from '@/services/api';
+import { updateProfile, changePassword, uploadAvatar } from '@/services/api';
 
 interface PwdCheck {
   label: string;
@@ -46,7 +46,7 @@ function getStrengthLevel(checks: PwdCheck[]): { score: number; label: string; c
   if (met <= 1) return { score: met, label: 'Very Weak', color: colors.severity.critical };
   if (met === 2) return { score: met, label: 'Weak', color: colors.severity.high };
   if (met === 3) return { score: met, label: 'Fair', color: colors.severity.moderate };
-  if (met === 4) return { score: met, label: 'Strong', color: '#66BB6A' };
+  if (met === 4) return { score: met, label: 'Strong', color: colors.feedback.strongPassword };
   return { score: met, label: 'Very Strong', color: colors.severity.low };
 }
 
@@ -121,15 +121,14 @@ function PasswordStrengthBar({
 }
 
 const ICON_COLORS: Record<string, string> = {
-  'person-outline':             '#4F8EF7',
-  'lock-closed-outline':        '#A855F7',
-  'call-outline':               '#10B981',
-  'call':                       '#10B981',
+  'person-outline':             colors.iconAccents.blue,
+  'lock-closed-outline':        colors.iconAccents.purple,
+  'call-outline':               colors.iconAccents.green,
   'alert-circle-outline':       colors.severity.critical,
-  'information-circle-outline': '#F59E0B',
+  'information-circle-outline': colors.iconAccents.amber,
   'document-text-outline':      colors.brand[500],
-  'shield-outline':             '#6366F1',
-  'help-circle-outline':        '#0EA5E9',
+  'shield-outline':             colors.iconAccents.indigo,
+  'help-circle-outline':        colors.iconAccents.sky,
   'information-outline':        colors.slate[400],
   'log-out-outline':            colors.severity.critical,
 };
@@ -169,7 +168,7 @@ function SettingRow({
           styles.row,
           isDark && { backgroundColor: colors.dark.card },
           pressed && onPress && {
-            backgroundColor: isDark ? colors.dark.elevated : '#F0F4FF',
+            backgroundColor: isDark ? colors.dark.elevated : colors.brand[50],
           },
         ]}
         accessibilityRole={onPress ? 'button' : 'none'}
@@ -276,13 +275,13 @@ function GlassInput({
       style={[
         styles.glassField,
         isDark
-          ? { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.12)' }
-          : { backgroundColor: 'rgba(255,255,255,0.85)', borderColor: 'rgba(79,142,247,0.18)' },
+          ? { backgroundColor: colors.overlay.whiteThin, borderColor: colors.overlay.whiteMedium }
+          : { backgroundColor: colors.overlay.whiteCard, borderColor: colors.overlay.brandGlass },
         style,
       ]}
     >
       {icon && (
-        <Ionicons name={icon} size={16} color={isDark ? 'rgba(255,255,255,0.45)' : colors.slate[400]} style={{ marginRight: 2 }} />
+        <Ionicons name={icon} size={16} color={isDark ? colors.overlay.whiteBold : colors.slate[400]} style={{ marginRight: 2 }} />
       )}
       {children}
     </View>
@@ -300,17 +299,14 @@ export default function ProfileScreen() {
   const [notifCritical,    setNotifCritical]    = useState(true);
   const [notifAdvisory,    setNotifAdvisory]    = useState(true);
   const [notifMyReports,   setNotifMyReports]   = useState(true);
-  const [emergencyName,    setEmergencyName]    = useState('');
-  const [emergencyPhone,   setEmergencyPhone]   = useState('');
-  const [editingEmergency, setEditingEmergency] = useState(false);
-  const [tempName,         setTempName]         = useState('');
-  const [tempPhone,        setTempPhone]        = useState('');
 
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editFirstName, setEditFirstName]     = useState('');
   const [editLastName, setEditLastName]       = useState('');
   const [editContact, setEditContact]         = useState('');
   const [editSaving, setEditSaving]           = useState(false);
+
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   const [showChangePwd, setShowChangePwd]         = useState(false);
   const [currentPwd, setCurrentPwd]               = useState('');
@@ -345,6 +341,37 @@ export default function ProfileScreen() {
       }),
     ]).start();
   }, []);
+
+  async function handlePickAvatar() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      showAlert({ type: 'error', title: 'Permission needed', message: 'Please allow photo access to change your profile picture.' });
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const localUri = result.assets[0].uri;
+    // Show picked image immediately (optimistic update)
+    const previousUser = user;
+    await updateUser({ ...user!, avatarUrl: localUri });
+    setAvatarUploading(true);
+    try {
+      const updated = await uploadAvatar(localUri, token!);
+      await updateUser(updated);
+      showAlert({ type: 'success', title: 'Updated', message: 'Profile picture updated.' });
+    } catch (e: any) {
+      // Revert to previous avatar on failure
+      if (previousUser) await updateUser(previousUser);
+      showAlert({ type: 'error', title: 'Failed', message: e?.message ?? 'Could not upload profile picture.' });
+    } finally {
+      setAvatarUploading(false);
+    }
+  }
 
   function openEditProfile() {
     setEditFirstName(user?.firstName ?? '');
@@ -418,14 +445,10 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     Promise.all([
-      Storage.getItem('ft_emergency_name'),
-      Storage.getItem('ft_emergency_phone'),
       Storage.getItem('ft_notif_critical'),
       Storage.getItem('ft_notif_advisory'),
       Storage.getItem('ft_notif_reports'),
-    ]).then(([name, phone, nc, na, nr]) => {
-      if (name)  setEmergencyName(name);
-      if (phone) setEmergencyPhone(phone);
+    ]).then(([nc, na, nr]) => {
       if (nc !== null) setNotifCritical(nc !== 'false');
       if (na !== null) setNotifAdvisory(na !== 'false');
       if (nr !== null) setNotifMyReports(nr !== 'false');
@@ -436,18 +459,8 @@ export default function ProfileScreen() {
   useEffect(() => { Storage.setItem('ft_notif_advisory', String(notifAdvisory)); }, [notifAdvisory]);
   useEffect(() => { Storage.setItem('ft_notif_reports',  String(notifMyReports)); }, [notifMyReports]);
 
-  function saveEmergencyContact() {
-    Promise.all([
-      Storage.setItem('ft_emergency_name',  tempName),
-      Storage.setItem('ft_emergency_phone', tempPhone),
-    ]).catch(() => {});
-    setEmergencyName(tempName);
-    setEmergencyPhone(tempPhone);
-    setEditingEmergency(false);
-  }
-
-  const screenBg    = isDark ? colors.dark.bg : '#F0F4FA';
-  const roleColor   = user?.role === 'Responder' ? colors.accent[500] : '#A5C8FF';
+  const screenBg    = isDark ? colors.dark.bg : colors.slate[50];
+  const roleColor   = user?.role === 'Responder' ? colors.accent[500] : colors.brand[200];
   const accentBrand = user?.role === 'Responder' ? colors.accent[500] : colors.brand[500];
 
   const fullName   = user ? `${user.firstName} ${user.lastName}` : '—';
@@ -476,7 +489,7 @@ export default function ProfileScreen() {
           }}
         >
           <LinearGradient
-            colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+            colors={colors.gradients.hero}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={[styles.hero, { paddingTop: insets.top + 20 }]}
@@ -486,24 +499,40 @@ export default function ProfileScreen() {
             <View style={styles.orb3} />
 
             <Pressable style={styles.editBtn} onPress={openEditProfile} accessibilityRole="button" accessibilityLabel="Edit profile">
-              <Ionicons name="pencil" size={15} color="rgba(255,255,255,0.92)" />
+              <Ionicons name="pencil" size={15} color={colors.overlay.whiteFull} />
             </Pressable>
 
-            <View style={styles.avatarRing}>
+            <Pressable onPress={handlePickAvatar} style={styles.avatarRing} disabled={avatarUploading}>
               <View style={[styles.avatarRingInner, { borderColor: roleColor }]}>
-                <LinearGradient
-                  colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.10)']}
-                  style={styles.avatar}
-                >
-                  <Text style={styles.avatarText}>{initials}</Text>
-                </LinearGradient>
+                {user?.avatarUrl ? (
+                  <Image
+                    key={user.avatarUrl}
+                    source={{ uri: user.avatarUrl, cache: 'reload' }}
+                    style={styles.avatar}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <LinearGradient
+                    colors={[colors.overlay.whiteBright, colors.overlay.whiteLight]}
+                    style={styles.avatar}
+                  >
+                    <Text style={styles.avatarText}>{initials}</Text>
+                  </LinearGradient>
+                )}
               </View>
-            </View>
+              <View style={styles.avatarCameraBtn}>
+                {avatarUploading ? (
+                  <ActivityIndicator size={12} color={colors.white} />
+                ) : (
+                  <Ionicons name="camera" size={13} color={colors.white} />
+                )}
+              </View>
+            </Pressable>
 
             <Text style={styles.heroName}>{fullName}</Text>
             <Text style={styles.heroEmail}>{user?.email ?? '—'}</Text>
 
-            <View style={[styles.roleBadge, { backgroundColor: 'rgba(255,255,255,0.18)', borderColor: 'rgba(255,255,255,0.35)' }]}>
+            <View style={[styles.roleBadge, { backgroundColor: colors.overlay.whiteRegular, borderColor: colors.overlay.whiteStrong }]}>
               <Ionicons
                 name={user?.role === 'Responder' ? 'shield-checkmark' : 'person-circle'}
                 size={11}
@@ -534,7 +563,7 @@ export default function ProfileScreen() {
             value={user?.contact ?? '—'}
             label="Mobile"
             icon="call-outline"
-            color="#10B981"
+            color={colors.iconAccents.green}
             isDark={isDark}
             animValue={stat1Anim}
           />
@@ -542,7 +571,7 @@ export default function ProfileScreen() {
             value={joinedYear}
             label="Member since"
             icon="calendar-outline"
-            color="#A855F7"
+            color={colors.iconAccents.purple}
             isDark={isDark}
             animValue={stat2Anim}
           />
@@ -639,81 +668,6 @@ export default function ProfileScreen() {
             />
           </View>
 
-          <SectionLabel title="Emergency Contact" isDark={isDark} />
-          <View style={[styles.card, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
-            {editingEmergency ? (
-              <>
-                <View style={[styles.emergencyInputRow, isDark && { backgroundColor: colors.dark.card }]}>
-                  <Ionicons name="person-outline" size={16} color={colors.slate[400]} />
-                  <TextInput
-                    style={[styles.emergencyInput, isDark && { color: colors.white }]}
-                    value={tempName}
-                    onChangeText={setTempName}
-                    placeholder="Contact name"
-                    placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
-                    autoFocus
-                  />
-                </View>
-                <View style={[styles.sep, isDark && { backgroundColor: colors.slate[800] }]} />
-                <View style={[styles.emergencyInputRow, isDark && { backgroundColor: colors.dark.card }]}>
-                  <Ionicons name="call-outline" size={16} color={colors.slate[400]} />
-                  <TextInput
-                    style={[styles.emergencyInput, isDark && { color: colors.white }]}
-                    value={tempPhone}
-                    onChangeText={setTempPhone}
-                    placeholder="Phone number"
-                    placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
-                    keyboardType="phone-pad"
-                  />
-                </View>
-                <View style={[styles.sep, isDark && { backgroundColor: colors.slate[800] }]} />
-                <View style={styles.emergencyActions}>
-                  <Pressable
-                    style={[styles.emergencyCancelBtn, isDark && { borderColor: colors.slate[700] }]}
-                    onPress={() => setEditingEmergency(false)}
-                  >
-                    <Text style={[styles.emergencyCancelText, isDark && { color: colors.slate[400] }]}>Cancel</Text>
-                  </Pressable>
-                  <Pressable style={styles.emergencySaveBtn} onPress={saveEmergencyContact}>
-                    <LinearGradient
-                      colors={['#4A6CF7', '#7C3AED']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.emergencySaveBtnGrad}
-                    >
-                      <Text style={styles.emergencySaveText}>Save</Text>
-                    </LinearGradient>
-                  </Pressable>
-                </View>
-              </>
-            ) : (
-              <>
-                <SettingRow
-                  icon="call-outline"
-                  label={emergencyName || 'Set emergency contact'}
-                  description={emergencyPhone || 'Tap to add someone to call in emergencies'}
-                  onPress={() => {
-                    setTempName(emergencyName);
-                    setTempPhone(emergencyPhone);
-                    setEditingEmergency(true);
-                  }}
-                  isDark={isDark}
-                  isLast={!emergencyPhone}
-                />
-                {!!emergencyPhone && (
-                  <SettingRow
-                    icon="call"
-                    label="Call now"
-                    description={emergencyPhone}
-                    onPress={() => Linking.openURL(`tel:${emergencyPhone}`)}
-                    isDark={isDark}
-                    isLast
-                  />
-                )}
-              </>
-            )}
-          </View>
-
           <SectionLabel title="About" isDark={isDark} />
           <View style={[styles.card, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
             <SettingRow
@@ -762,7 +716,7 @@ export default function ProfileScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }]}>
             <LinearGradient
-              colors={['#4A6CF7', '#7C3AED']}
+              colors={colors.gradients.cta}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.modalGradHeader}
@@ -785,7 +739,7 @@ export default function ProfileScreen() {
                       value={editFirstName}
                       onChangeText={setEditFirstName}
                       placeholder="First name"
-                      placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                      placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                       autoCapitalize="words"
                     />
                   </GlassInput>
@@ -795,7 +749,7 @@ export default function ProfileScreen() {
                       value={editLastName}
                       onChangeText={setEditLastName}
                       placeholder="Last name"
-                      placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                      placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                       autoCapitalize="words"
                     />
                   </GlassInput>
@@ -806,7 +760,7 @@ export default function ProfileScreen() {
                     value={editContact}
                     onChangeText={setEditContact}
                     placeholder="Contact number"
-                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                    placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                     keyboardType="phone-pad"
                   />
                 </GlassInput>
@@ -821,7 +775,7 @@ export default function ProfileScreen() {
                 </Pressable>
                 <Pressable style={styles.modalSaveBtn} onPress={handleSaveProfile} disabled={editSaving}>
                   <LinearGradient
-                    colors={['#4A6CF7', '#7C3AED']}
+                    colors={colors.gradients.cta}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={styles.modalSaveBtnGrad}
@@ -842,7 +796,7 @@ export default function ProfileScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }]}>
             <LinearGradient
-              colors={['#A855F7', '#6366F1']}
+              colors={colors.gradients.password}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.modalGradHeader}
@@ -865,14 +819,14 @@ export default function ProfileScreen() {
                     value={currentPwd}
                     onChangeText={setCurrentPwd}
                     placeholder="Current password"
-                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                    placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                     secureTextEntry={!showCurrentPwd}
                   />
                   <Pressable onPress={() => setShowCurrentPwd(v => !v)} hitSlop={8}>
                     <Ionicons
                       name={showCurrentPwd ? 'eye-off-outline' : 'eye-outline'}
                       size={18}
-                      color={isDark ? 'rgba(255,255,255,0.45)' : colors.slate[400]}
+                      color={isDark ? colors.overlay.whiteBold : colors.slate[400]}
                     />
                   </Pressable>
                 </GlassInput>
@@ -887,14 +841,14 @@ export default function ProfileScreen() {
                     value={newPwd}
                     onChangeText={setNewPwd}
                     placeholder="New password"
-                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                    placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                     secureTextEntry={!showNewPwd}
                   />
                   <Pressable onPress={() => setShowNewPwd(v => !v)} hitSlop={8}>
                     <Ionicons
                       name={showNewPwd ? 'eye-off-outline' : 'eye-outline'}
                       size={18}
-                      color={isDark ? 'rgba(255,255,255,0.45)' : colors.slate[400]}
+                      color={isDark ? colors.overlay.whiteBold : colors.slate[400]}
                     />
                   </Pressable>
                 </GlassInput>
@@ -911,7 +865,7 @@ export default function ProfileScreen() {
                     value={confirmPwd}
                     onChangeText={setConfirmPwd}
                     placeholder="Confirm new password"
-                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                    placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                     secureTextEntry={!showNewPwd}
                   />
                 </GlassInput>
@@ -947,7 +901,7 @@ export default function ProfileScreen() {
                   disabled={pwdSaving || !allChecksMet || !passwordsMatch || !currentPwd}
                 >
                   <LinearGradient
-                    colors={['#A855F7', '#6366F1']}
+                    colors={colors.gradients.password}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={styles.modalSaveBtnGrad}
@@ -983,7 +937,7 @@ const styles = StyleSheet.create({
     width: 180,
     height: 180,
     borderRadius: 90,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: colors.overlay.whiteLight,
     top: -50,
     left: -40,
   },
@@ -992,7 +946,7 @@ const styles = StyleSheet.create({
     width: 130,
     height: 130,
     borderRadius: 65,
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: colors.overlay.whiteGhost,
     top: 20,
     right: -30,
   },
@@ -1001,7 +955,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.overlay.whiteDim,
     bottom: 40,
     left: 30,
   },
@@ -1013,16 +967,16 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.20)',
+    backgroundColor: colors.overlay.whiteAccent,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.30)',
+    borderColor: colors.overlay.whiteFirm,
   },
   avatarRing: {
     padding: 4,
     borderRadius: 56,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: colors.overlay.whiteRegular,
     marginBottom: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
@@ -1041,10 +995,24 @@ const styles = StyleSheet.create({
     borderRadius: 42,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarCameraBtn: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.overlay.modalDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.white,
   },
   avatarText: { fontSize: 30, fontWeight: '800', color: colors.white },
   heroName:   { fontSize: 22, fontWeight: '800', color: colors.white, letterSpacing: -0.3 },
-  heroEmail:  { fontSize: 13, color: 'rgba(255,255,255,0.70)', marginTop: -2 },
+  heroEmail:  { fontSize: 13, color: colors.overlay.whiteHigh, marginTop: -2 },
   roleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1097,14 +1065,14 @@ const styles = StyleSheet.create({
     padding: 14,
     alignItems: 'center',
     gap: 6,
-    shadowColor: '#4A6CF7',
+    shadowColor: colors.gradients.cta[0],
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.10,
     shadowRadius: 12,
     elevation: 4,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(74,108,247,0.10)',
+    borderColor: colors.overlay.ctaShadow,
   },
   statIcon: {
     width: 34,
@@ -1144,7 +1112,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 3,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.04)',
+    borderColor: colors.overlay.scrim,
   },
 
   row: {
@@ -1171,36 +1139,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.slate[100],
     marginLeft: 66,
   },
-
-  emergencyInputRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 16, paddingVertical: 13,
-    backgroundColor: colors.white,
-  },
-  emergencyInput: {
-    flex: 1, fontSize: 15, color: colors.slate[900], paddingVertical: 0,
-  },
-  emergencyActions: {
-    flexDirection: 'row', gap: 10,
-    paddingHorizontal: 16, paddingVertical: 12,
-  },
-  emergencyCancelBtn: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 11, borderRadius: 12,
-    borderWidth: 1, borderColor: colors.slate[200],
-  },
-  emergencyCancelText: { fontSize: 14, fontWeight: '500', color: colors.slate[600] },
-  emergencySaveBtn: {
-    flex: 1,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  emergencySaveBtnGrad: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 11,
-  },
-  emergencySaveText: { fontSize: 14, fontWeight: '700', color: colors.white },
 
   logoutBtn: {
     flexDirection: 'row',
@@ -1231,7 +1169,7 @@ const styles = StyleSheet.create({
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: colors.overlay.modalDark,
     justifyContent: 'flex-end',
   },
   modalSheet: {
@@ -1254,7 +1192,7 @@ const styles = StyleSheet.create({
   },
   modalHandle: {
     width: 36, height: 4, borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.45)',
+    backgroundColor: colors.overlay.whiteBold,
     alignSelf: 'center', marginBottom: 16,
   },
   modalHeaderRow: {
@@ -1266,7 +1204,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: colors.overlay.whiteGlow,
     alignItems: 'center',
     justifyContent: 'center',
   },

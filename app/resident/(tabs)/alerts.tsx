@@ -24,7 +24,7 @@ import { useRouter } from 'expo-router';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
-const GRAD: [string, string, string] = ['#00D2FF', '#4A6CF7', '#7C3AED'];
+const GRAD = colors.gradients.hero as [string, string, string];
 
 function PulseDot({ color }: { color: string }) {
   const scale   = useRef(new Animated.Value(1)).current;
@@ -64,7 +64,7 @@ function PulseDot({ color }: { color: string }) {
 }
 
 function HeaderOrb({ style }: { style: object }) {
-  return <View style={[{ position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.06)' }, style]} />;
+  return <View style={[{ position: 'absolute', borderRadius: 999, backgroundColor: colors.overlay.whiteThin }, style]} />;
 }
 
 function AlertCard({
@@ -85,7 +85,7 @@ function AlertCard({
     ? colors.severity.critical
     : isStatusUpdate
     ? colors.severity.low
-    : '#4A6CF7';
+    : colors.gradients.cta[0];
 
   const iconName: keyof typeof Ionicons.glyphMap = isCritical
     ? 'alert-circle'
@@ -95,7 +95,7 @@ function AlertCard({
 
   const cardBg = isDark
     ? isCritical ? '#1A0808' : colors.dark.elevated
-    : isCritical ? '#FFF5F5' : colors.white;
+    : isCritical ? colors.feedback.errorBg : colors.white;
 
   const translateX = animValue.interpolate({
     inputRange: [0, 1],
@@ -264,10 +264,11 @@ export default function AlertsScreen() {
   }, [heroOpacity, heroTransY, listOpacity, cardAnims]);
 
   const load = useCallback(async (isRefresh = false) => {
+    if (!token) return;
     try {
       if (!isRefresh) setLoading(true);
       setError(null);
-      const data = await getAlertsWithReadState(token!);
+      const data = await getAlertsWithReadState(token);
       setAlerts(data);
       if (!isRefresh) {
         setTimeout(() => runEntranceAnims(data.length), 50);
@@ -328,8 +329,8 @@ export default function AlertsScreen() {
           style={[styles.headerGradient, { paddingTop: insets.top + 10 }]}
         >
           <HeaderOrb style={{ width: 180, height: 180, top: -60, right: -50 }} />
-          <HeaderOrb style={{ width: 100, height: 100, top: 30, left: -30, backgroundColor: 'rgba(255,255,255,0.04)' }} />
-          <HeaderOrb style={{ width: 60,  height: 60,  bottom: 10, left: SCREEN_W * 0.5, backgroundColor: 'rgba(255,255,255,0.05)' }} />
+          <HeaderOrb style={{ width: 100, height: 100, top: 30, left: -30, backgroundColor: colors.overlay.whiteSubtle }} />
+          <HeaderOrb style={{ width: 60,  height: 60,  bottom: 10, left: SCREEN_W * 0.5, backgroundColor: colors.overlay.whiteFaint }} />
 
           <View style={styles.headerTop}>
             <View style={styles.headerLeft}>
@@ -376,7 +377,7 @@ export default function AlertsScreen() {
 
         <View style={styles.waveWrap}>
           <LinearGradient
-            colors={['#6B52F5', '#7C3AED']}
+            colors={colors.gradients.wave}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={StyleSheet.absoluteFillObject}
@@ -388,10 +389,10 @@ export default function AlertsScreen() {
       {loading && (
         <View style={styles.centered}>
           <LinearGradient
-            colors={['#4A6CF720', '#7C3AED20']}
+            colors={[colors.gradients.cta[0] + '20', colors.gradients.cta[1] + '20']}
             style={styles.loadingIconWrap}
           >
-            <ActivityIndicator size="large" color="#4A6CF7" />
+            <ActivityIndicator size="large" color={colors.gradients.cta[0]} />
           </LinearGradient>
           <Text style={[styles.loadingText, isDark && { color: colors.slate[400] }]}>
             Fetching alerts…
@@ -402,10 +403,10 @@ export default function AlertsScreen() {
       {!loading && error && (
         <View style={styles.centered}>
           <LinearGradient
-            colors={['#4A6CF720', '#7C3AED20']}
+            colors={[colors.gradients.cta[0] + '20', colors.gradients.cta[1] + '20']}
             style={styles.emptyIconWrap}
           >
-            <Ionicons name="cloud-offline-outline" size={40} color="#4A6CF7" />
+            <Ionicons name="cloud-offline-outline" size={40} color={colors.gradients.cta[0]} />
           </LinearGradient>
           <Text style={[styles.emptyTitle, isDark && { color: colors.white }]}>
             Connection issue
@@ -419,7 +420,7 @@ export default function AlertsScreen() {
             accessibilityRole="button"
           >
             <LinearGradient
-              colors={['#4A6CF7', '#7C3AED']}
+              colors={colors.gradients.cta}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.retryBtnGrad}
@@ -443,8 +444,8 @@ export default function AlertsScreen() {
               <RefreshControl
                 refreshing={refreshing}
                 onRefresh={() => { setRefreshing(true); load(true); }}
-                tintColor="#4A6CF7"
-                colors={['#4A6CF7']}
+                tintColor={colors.gradients.cta[0]}
+                colors={[colors.gradients.cta[0]]}
               />
             }
             showsVerticalScrollIndicator={false}
@@ -480,7 +481,7 @@ export default function AlertsScreen() {
                   icon="notifications-outline"
                   label="Advisories & Updates"
                   count={nonCriticals.length}
-                  color={isDark ? '#4A6CF7' : colors.slate[600]}
+                  color={isDark ? colors.gradients.cta[0] : colors.slate[600]}
                   isDark={isDark}
                 />
                 {nonCriticals.map(a => {
@@ -501,10 +502,10 @@ export default function AlertsScreen() {
             {alerts.length === 0 && (
               <View style={styles.emptyState}>
                 <LinearGradient
-                  colors={['#4A6CF720', '#7C3AED20']}
+                  colors={[colors.gradients.cta[0] + '20', colors.gradients.cta[1] + '20']}
                   style={styles.emptyIconWrap}
                 >
-                  <Ionicons name="notifications-off-outline" size={44} color="#4A6CF7" />
+                  <Ionicons name="notifications-off-outline" size={44} color={colors.gradients.cta[0]} />
                 </LinearGradient>
                 <Text style={[styles.emptyTitle, isDark && { color: colors.white }]}>
                   All quiet
@@ -518,7 +519,7 @@ export default function AlertsScreen() {
                   accessibilityRole="button"
                 >
                   <LinearGradient
-                    colors={['#4A6CF7', '#7C3AED']}
+                    colors={colors.gradients.cta}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={styles.retryBtnGrad}
@@ -586,7 +587,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 3,
     borderWidth: 1.5,
-    borderColor: '#7C3AED',
+    borderColor: colors.gradients.cta[1],
   },
   headerBadgeText: { fontSize: 9, fontWeight: '900', color: colors.white },
   headerTitle: {
@@ -773,7 +774,7 @@ const styles = StyleSheet.create({
     gap: 7,
     paddingHorizontal: 24,
     paddingVertical: 13,
-    shadowColor: '#4A6CF7',
+    shadowColor: colors.gradients.cta[0],
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.28,
     shadowRadius: 14,

@@ -262,10 +262,11 @@ export default function ReportDetailScreen() {
   }
 
   const load = useCallback(async () => {
+    if (!token) return;
     try {
       setLoading(true);
       setError(null);
-      const data = await getReportDetail(id, token!);
+      const data = await getReportDetail(id, token);
       setReport(data);
     } catch {
       setError('Could not load report details.');

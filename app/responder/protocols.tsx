@@ -1,9 +1,11 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   LayoutAnimation,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,6 +18,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAuth } from '@/context/AuthContext';
+import { getProtocols } from '@/services/api';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -30,7 +34,7 @@ interface Protocol {
   steps: string[];
 }
 
-const PROTOCOLS: Protocol[] = [
+const FALLBACK_PROTOCOLS: Protocol[] = [
   {
     id: 'flood',
     hazard: 'Flood Response',
@@ -48,74 +52,6 @@ const PROTOCOLS: Protocol[] = [
       'Monitor weather updates for additional rainfall warnings',
       'Ensure electrical mains are disconnected in flooded areas',
       'Report structural damage to buildings coordination center',
-    ],
-  },
-  {
-    id: 'road_damage',
-    hazard: 'Road Damage',
-    icon: 'car',
-    color: '#F59E0B',
-    safetyTip: 'Watch for sinkholes and unstable road edges. Use reflective gear at all times.',
-    steps: [
-      'Assess road condition — identify cracks, sinkholes, collapse areas',
-      'Set up early warning signs and reflective cones/barriers',
-      'Divert traffic to alternate routes if road is impassable',
-      'Photograph and measure damage for public works reporting',
-      'Check for damaged utility lines (gas, water, power) along the road',
-      'Restrict pedestrian access near unstable areas',
-      'Report to DPWH or local engineering office',
-      'Monitor for further deterioration especially after rain',
-    ],
-  },
-  {
-    id: 'debris',
-    hazard: 'Debris / Fallen Trees',
-    icon: 'cube',
-    color: '#10B981',
-    safetyTip: 'Check for downed power lines before touching debris. Wear protective gloves.',
-    steps: [
-      'Survey the area for downed power lines — maintain 10m distance if found',
-      'Identify debris type (trees, construction, household) and volume',
-      'Check for hazardous materials (chemicals, sharp objects, glass)',
-      'Clear pathways for emergency vehicle access first',
-      'Use chainsaws/equipment for large trees — ensure operator safety',
-      'Coordinate heavy equipment for large-scale debris removal',
-      'Stack cleared debris at designated collection points',
-      'Document before and after conditions with photos',
-    ],
-  },
-  {
-    id: 'drainage',
-    hazard: 'Drainage Issues',
-    icon: 'git-merge',
-    color: '#8B5CF6',
-    safetyTip: 'Never enter drainage channels. Be aware of sudden water surges.',
-    steps: [
-      'Inspect drainage channels and culverts for blockages',
-      'Identify overflow points and affected areas',
-      'Clear accessible blockages (leaves, garbage, debris)',
-      'Set up temporary pumping if available',
-      'Report infrastructure damage to engineering department',
-      'Warn nearby residents of potential flooding from backup',
-      'Monitor water levels at key drainage points',
-      'Document condition for maintenance follow-up',
-    ],
-  },
-  {
-    id: 'landslide',
-    hazard: 'Landslide',
-    icon: 'triangle',
-    color: '#EF4444',
-    safetyTip: 'Stay clear of slide areas. Ground may shift again without warning.',
-    steps: [
-      'Evacuate all persons from the immediate slide zone and downslope areas',
-      'Establish a safety perimeter — minimum 50m from slide edges',
-      'Check for buried victims — coordinate with search and rescue',
-      'Monitor for secondary slides (ground cracking, leaning trees)',
-      'Assess damage to roads, utilities, and structures',
-      'Set up warning signs and barriers to prevent access',
-      'Report geohazard assessment to local DRRMO',
-      'Arrange temporary shelter for displaced families',
     ],
   },
 ];
@@ -244,10 +180,48 @@ export default function ProtocolsScreen() {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
+  const { token } = useAuth();
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [protocols, setProtocols] = useState<Protocol[]>(FALLBACK_PROTOCOLS);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await getProtocols(token!);
+      setProtocols(
+        data.map((item) => ({
+          ...item,
+          icon: item.icon as keyof typeof Ionicons.glyphMap,
+        }))
+      );
+    } catch {
+      setProtocols(FALLBACK_PROTOCOLS);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    load();
+  }, [load]);
 
   const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
   const cardBg = isDark ? colors.dark.card : colors.white;
+
+  if (loading) {
+    return (
+      <View style={[s.root, { backgroundColor: screenBg, alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.accent[700]} />
+      </View>
+    );
+  }
 
   return (
     <View style={[s.root, { backgroundColor: screenBg }]}>
@@ -275,7 +249,7 @@ export default function ProtocolsScreen() {
           </View>
           <View style={s.headerBadge}>
             <Ionicons name="shield-checkmark" size={14} color={colors.white} />
-            <Text style={s.headerBadgeText}>{PROTOCOLS.length}</Text>
+            <Text style={s.headerBadgeText}>{protocols.length}</Text>
           </View>
         </View>
       </View>
@@ -283,8 +257,11 @@ export default function ProtocolsScreen() {
       <ScrollView
         contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 40 }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent[700]} />
+        }
       >
-        {PROTOCOLS.map((proto) => (
+        {protocols.map((proto) => (
           <ProtocolCard
             key={proto.id}
             proto={proto}

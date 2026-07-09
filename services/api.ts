@@ -1,8 +1,10 @@
 import { Platform } from 'react-native';
 import type {
+  AdminStats,
   AlertItem,
   ChangePasswordPayload,
   CheckInStatus,
+  EvacuationCenter,
   FamilyGroup,
   FamilyMember,
   FieldReportData,
@@ -10,6 +12,7 @@ import type {
   IncidentDetail,
   IncidentMessage,
   LoginPayload,
+  ProtocolItem,
   RegisterPayload,
   Report,
   ReportDetail,
@@ -33,6 +36,7 @@ interface RawUser {
   email: string;
   role: 'resident' | 'responder' | 'admin';
   contact_number: string | null;
+  avatar_url: string | null;
   created_at: string;
 }
 
@@ -54,7 +58,7 @@ interface RawStatusUpdate {
 interface RawReport {
   id: number;
   reference_number: string;
-  hazard_type: 'flood' | 'road_damage' | 'debris' | 'drainage' | 'other';
+  hazard_type: 'flood';
   severity: 'low' | 'moderate' | 'high' | 'critical';
   status: 'pending' | 'verified' | 'assigned' | 'resolved' | 'rejected';
   description: string | null;
@@ -83,19 +87,11 @@ interface RawAlert {
 }
 
 const HAZARD_LABELS: Record<string, string> = {
-  flood:       'Flood incident',
-  road_damage: 'Road damage',
-  debris:      'Debris on road',
-  drainage:    'Drainage issue',
-  other:       'Hazard report',
+  flood: 'Flood incident',
 };
 
 const HAZARD_TYPE_DISPLAY: Record<string, string> = {
-  flood:       'Flood',
-  road_damage: 'Road damage',
-  debris:      'Debris',
-  drainage:    'Drainage',
-  other:       'Other',
+  flood: 'Flood',
 };
 
 const TIMELINE_STEPS: Array<{ status: string; label: string }> = [
@@ -133,6 +129,7 @@ function adaptUser(raw: RawUser): User {
     contact:   raw.contact_number ?? '',
     role:      roleMap[raw.role] ?? 'Resident',
     joinedAt:  raw.created_at,
+    avatarUrl: raw.avatar_url ?? null,
   };
 }
 
@@ -468,6 +465,21 @@ export async function changePassword(
   }
 }
 
+export async function uploadAvatar(
+  uri: string,
+  token: string,
+): Promise<User> {
+  const ext = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const form = new FormData();
+  form.append('avatar', {
+    uri,
+    name: `avatar.${ext}`,
+    type: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+  } as unknown as Blob);
+  const raw = await formPost<RawUser>('/user/avatar', form, token);
+  return adaptUser(raw);
+}
+
 export async function getAssignedIncidents(token: string): Promise<Incident[]> {
   const data = await get<{ data: RawReport[] }>('/reports?assigned=me', token);
   return data.data.map(adaptIncident);
@@ -715,6 +727,8 @@ interface RawFamilyMember {
   check_in_status: 'safe' | 'need_help' | 'unknown';
   checked_in_at: string | null;
   is_creator: boolean;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 interface RawFamilyGroup {
@@ -737,6 +751,8 @@ function adaptFamilyMember(raw: RawFamilyMember): FamilyMember {
     checkInStatus: raw.check_in_status,
     checkedInAt:   raw.checked_in_at,
     isCreator:     raw.is_creator,
+    latitude:      raw.latitude ?? null,
+    longitude:     raw.longitude ?? null,
   };
 }
 
@@ -774,8 +790,16 @@ export async function joinFamily(code: string, token: string): Promise<FamilyGro
   return adaptFamilyGroup(raw);
 }
 
-export async function familyCheckIn(status: CheckInStatus, token: string): Promise<void> {
-  await post('/family/check-in', { status }, token);
+export async function familyCheckIn(
+  status: CheckInStatus,
+  token: string,
+  location?: { latitude: number; longitude: number },
+): Promise<void> {
+  await post('/family/check-in', {
+    status,
+    latitude: location?.latitude,
+    longitude: location?.longitude,
+  }, token);
 }
 
 export async function leaveFamily(token: string): Promise<void> {
@@ -784,4 +808,56 @@ export async function leaveFamily(token: string): Promise<void> {
 
 export async function removeFamilyMember(memberId: string, token: string): Promise<void> {
   await del(`/family/members/${memberId}`, token);
+}
+
+export async function getEvacuationCenters(token: string): Promise<EvacuationCenter[]> {
+  const data = await get<Array<{
+    id: number;
+    name: string;
+    address: string;
+    type: string;
+    capacity: number;
+    latitude: number;
+    longitude: number;
+  }>>('/evacuation-centers', token);
+  return data.map(c => ({
+    id:        String(c.id),
+    name:      c.name,
+    address:   c.address,
+    type:      c.type,
+    capacity:  c.capacity,
+    latitude:  c.latitude,
+    longitude: c.longitude,
+  }));
+}
+
+export async function getProtocols(token: string): Promise<ProtocolItem[]> {
+  const data = await get<Array<{
+    id: string;
+    hazard: string;
+    icon: string;
+    color: string;
+    safety_tip: string;
+    steps: string[];
+  }>>('/protocols', token);
+  return data.map(p => ({
+    id:        p.id,
+    hazard:    p.hazard,
+    icon:      p.icon,
+    color:     p.color,
+    safetyTip: p.safety_tip,
+    steps:     p.steps,
+  }));
+}
+
+export async function getAdminStats(token: string): Promise<AdminStats> {
+  return get<AdminStats>('/admin/stats', token);
+}
+
+export async function getCurrentUser(token: string): Promise<User & { isOnDuty?: boolean }> {
+  const raw = await get<RawUser & { is_on_duty?: boolean }>('/me', token);
+  return {
+    ...adaptUser(raw),
+    isOnDuty: raw.is_on_duty ?? false,
+  };
 }

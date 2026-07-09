@@ -12,6 +12,7 @@ export interface User {
   contact: string;
   role: UserRole;
   joinedAt: string;
+  avatarUrl?: string | null;
 }
 
 export interface LoginPayload {
@@ -168,6 +169,8 @@ export interface FamilyMember {
   checkInStatus: CheckInStatus;
   checkedInAt: string | null;
   isCreator: boolean;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 export interface FamilyGroup {
@@ -176,4 +179,51 @@ export interface FamilyGroup {
   inviteCode: string;
   members: FamilyMember[];
   createdAt: string;
+}
+
+export interface EvacuationCenter {
+  id: string;
+  name: string;
+  address: string;
+  type: string;
+  capacity: number;
+  latitude: number;
+  longitude: number;
+}
+
+export interface ProtocolItem {
+  id: string;
+  hazard: string;
+  icon: string;
+  color: string;
+  safetyTip: string;
+  steps: string[];
+}
+
+export interface AdminStats {
+  stats: {
+    total_reports: number;
+    pending: number;
+    active: number;
+    resolved_today: number;
+    total_users: number;
+    total_responders: number;
+    active_alerts: number;
+  };
+  trends: {
+    reports: number;
+    resolved: number;
+  };
+  severity_breakdown: Record<string, number>;
+  status_breakdown: Record<string, number>;
+  recent_reports: Array<{
+    id: number;
+    reference_number: string;
+    hazard_type: string;
+    severity: string;
+    status: string;
+    address: string;
+    created_at: string;
+    user?: { id: number; name: string };
+  }>;
 }

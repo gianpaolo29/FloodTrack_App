@@ -197,10 +197,11 @@ export default function AlertsScreen() {
 
   const load = useCallback(
     async (isRefresh = false) => {
+      if (!token) return;
       try {
         if (!isRefresh) setLoading(true);
         setError(null);
-        const data = await getAlertsWithReadState(token!);
+        const data = await getAlertsWithReadState(token);
         setAlerts(data);
       } catch {
         setError('Could not load alerts. Pull down to retry.');

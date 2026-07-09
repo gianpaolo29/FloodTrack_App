@@ -254,10 +254,11 @@ export default function MyReportsScreen() {
   }, []);
 
   const load = useCallback(async (isRefresh = false) => {
+    if (!token) return;
     try {
       if (!isRefresh) setLoading(true);
       setError(null);
-      const data = await getMyReports(token!);
+      const data = await getMyReports(token);
       setReports(data);
     } catch {
       setError('Could not load reports. Pull down to retry.');
@@ -346,23 +347,6 @@ export default function MyReportsScreen() {
                 </View>
               )}
             </View>
-
-            <Pressable
-              onPress={() => router.push('/resident/report')}
-              accessibilityRole="button"
-              accessibilityLabel="Submit new report"
-              style={({ pressed }) => [pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] }]}
-            >
-              <LinearGradient
-                colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.12)']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
-                style={styles.newBtn}
-              >
-                <Ionicons name="add" size={18} color={colors.white} />
-                <Text style={styles.newBtnText}>New Report</Text>
-              </LinearGradient>
-            </Pressable>
           </View>
         </LinearGradient>
 
@@ -515,7 +499,7 @@ export default function MyReportsScreen() {
                   ? 'All your reports are resolved or awaiting submission.'
                   : tab === 'resolved'
                   ? "Reports that have been closed will appear here."
-                  : 'Tap "+ New Report" above to submit your first flood report.'}
+                  : 'Use the report button below to submit your first flood report.'}
               </Text>
               {tab === 'all' && (
                 <Pressable
@@ -593,22 +577,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: 'rgba(255,255,255,0.9)',
     letterSpacing: 0.3,
-  },
-  newBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  newBtnText: {
-    color: colors.white,
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.2,
   },
   orb: {
     position: 'absolute',

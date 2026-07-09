@@ -54,7 +54,7 @@ function ReportFABButton({
       style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-start' }}
       hitSlop={{ top: 36, left: 18, right: 18, bottom: 0 }}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? 'Submit new report'}
+      accessibilityLabel={accessibilityLabel ?? 'Flood Report'}
       accessibilityState={accessibilityState}
       testID={testID}
     >

@@ -117,10 +117,10 @@ export default function IncidentChatScreen() {
   const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
 
   useEffect(() => {
-    if (!isConnected) return;
+    if (!isConnected || !token) return;
     const interval = setInterval(async () => {
       try {
-        const users = await getTypingUsers(id, token!);
+        const users = await getTypingUsers(id, token);
         setTypingUsers(users);
       } catch {}
     }, 2000);
@@ -137,11 +137,12 @@ export default function IncidentChatScreen() {
   }
 
   const loadMessages = useCallback(async (silent = false) => {
+    if (!token) return;
     try {
       if (!silent) setLoading(true);
-      const data = await getIncidentMessages(id, token!);
+      const data = await getIncidentMessages(id, token);
       setMessages(data);
-      markMessagesRead(id, token!).catch(() => {});
+      markMessagesRead(id, token).catch(() => {});
     } catch (e: any) {
       if (!silent) Alert.alert('Load failed', `${e?.status ?? ''} ${e?.message ?? 'Could not load messages.'}`);
     } finally {
@@ -331,7 +332,7 @@ export default function IncidentChatScreen() {
                       <Ionicons
                         name="flash"
                         size={12}
-                        color={mine ? 'rgba(255,255,255,0.7)' : colors.accent[500]}
+                        color={mine ? colors.overlay.whiteHigh : colors.accent[500]}
                         style={{ marginBottom: 2 }}
                       />
                     )}
@@ -449,7 +450,7 @@ const s = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: colors.overlay.whiteSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -459,15 +460,15 @@ const s = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#34D399',
+    backgroundColor: colors.iconAccents.online,
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: colors.overlay.whiteFirm,
   },
   quickBtn: {
     width: 38,
     height: 38,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: colors.overlay.whiteSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },

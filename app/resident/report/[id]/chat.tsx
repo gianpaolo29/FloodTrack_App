@@ -92,7 +92,7 @@ function AnimatedBubble({ children }: { children: React.ReactNode }) {
 function RoleBadge({ role }: { role: string }) {
   const isResponder = role === 'responder';
   const isAdmin = role === 'admin';
-  const color = isAdmin ? '#8B5CF6' : isResponder ? colors.accent[500] : colors.brand[500];
+  const color = isAdmin ? colors.iconAccents.admin : isResponder ? colors.accent[500] : colors.brand[500];
   const label = isAdmin ? 'Dispatch' : isResponder ? 'Responder' : 'Resident';
 
   return (
@@ -134,10 +134,10 @@ export default function ResidentChatScreen() {
 
   // Poll typing status
   useEffect(() => {
-    if (!isConnected) return;
+    if (!isConnected || !token) return;
     const interval = setInterval(async () => {
       try {
-        const users = await getTypingUsers(id, token!);
+        const users = await getTypingUsers(id, token);
         setTypingUsers(users);
       } catch { /* ignore */ }
     }, 2000);
@@ -154,11 +154,12 @@ export default function ResidentChatScreen() {
   }
 
   const loadMessages = useCallback(async (silent = false) => {
+    if (!token) return;
     try {
       if (!silent) setLoading(true);
-      const data = await getReportMessages(id, token!);
+      const data = await getReportMessages(id, token);
       setMessages(data);
-      markMessagesRead(id, token!).catch(() => {});
+      markMessagesRead(id, token).catch(() => {});
     } catch (e: any) {
       if (!silent) Alert.alert('Load failed', `${e?.status ?? ''} ${e?.message ?? 'Could not load messages.'}`);
     } finally {
@@ -301,7 +302,7 @@ export default function ResidentChatScreen() {
                           backgroundColor: isDark ? colors.dark.card : colors.white,
                           borderBottomLeftRadius: 4,
                           borderLeftWidth: 3,
-                          borderLeftColor: item.userRole === 'admin' ? '#8B5CF6' : colors.accent[500],
+                          borderLeftColor: item.userRole === 'admin' ? colors.iconAccents.admin : colors.accent[500],
                         },
                   ]}>
                     <Text style={[
@@ -399,9 +400,9 @@ const s = StyleSheet.create({
   },
   backBtn: {
     width: 38, height: 38, borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: colors.overlay.whiteSoft,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1, borderColor: colors.overlay.whiteAccent,
   },
   headerTitle: { fontSize: 18, fontWeight: '800', color: colors.white },
   headerSub: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 1 },

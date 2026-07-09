@@ -60,18 +60,19 @@ export default function HomeTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
 
-  const bg = isDark ? colors.dark.bg : '#F2F4F7';
+  const bg = isDark ? colors.dark.bg : colors.responder.pageBg;
   const cardBg = isDark ? colors.dark.card : colors.white;
-  const cardBorder = isDark ? colors.dark.border : '#E8ECF0';
+  const cardBorder = isDark ? colors.dark.border : colors.responder.cardBorder;
   const textPrimary = isDark ? colors.white : colors.slate[900];
   const textSecondary = isDark ? colors.slate[400] : colors.slate[500];
   const textTertiary = isDark ? colors.slate[500] : colors.slate[400];
 
   const load = useCallback(
     async (isRefresh = false) => {
+      if (!token) return;
       try {
         if (!isRefresh) setLoading(true);
-        const data = await getAssignedIncidents(token!);
+        const data = await getAssignedIncidents(token);
         setIncidents(data);
       } catch {
       } finally {
@@ -83,6 +84,7 @@ export default function HomeTab() {
   );
 
   useEffect(() => {
+    if (!token) return;
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
@@ -92,7 +94,7 @@ export default function HomeTab() {
         });
         const { latitude: lat, longitude: lon } = loc.coords;
         try {
-          const w = await getWeather(lat, lon, token!);
+          const w = await getWeather(lat, lon, token);
           if (w.current.description !== 'Unavailable') {
             setWeather(w);
             return;
@@ -211,7 +213,7 @@ export default function HomeTab() {
               style={[
                 $.topCard,
                 {
-                  backgroundColor: isDark ? colors.dark.card : '#D6EAF8',
+                  backgroundColor: isDark ? colors.dark.card : colors.responder.locationCardBg,
                   borderColor: cardBorder,
                   flex: 1.2,
                 },
@@ -257,7 +259,7 @@ export default function HomeTab() {
               style={[
                 $.topCard,
                 {
-                  backgroundColor: isDark ? colors.dark.card : '#E8F8F5',
+                  backgroundColor: isDark ? colors.dark.card : colors.responder.resolveCardBg,
                   borderColor: cardBorder,
                   flex: 1,
                 },
@@ -328,7 +330,7 @@ export default function HomeTab() {
                 style={({ pressed }) => [
                   $.gridCardLarge,
                   {
-                    backgroundColor: isDark ? colors.dark.elevated : '#EBF5FB',
+                    backgroundColor: isDark ? colors.dark.elevated : colors.responder.activeCardBg,
                     borderColor: cardBorder,
                   },
                   pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
@@ -384,9 +386,7 @@ export default function HomeTab() {
 
               <View style={$.gridStack}>
                 <Pressable
-                  onPress={() =>
-                    router.push('/responder/quick-report' as never)
-                  }
+                  onPress={() => setActiveTab('active')}
                   style={({ pressed }) => [
                     $.gridCardSmall,
                     {
@@ -595,18 +595,6 @@ export default function HomeTab() {
             <View style={$.quickActions}>
               <Pressable
                 onPress={() =>
-                  router.push('/responder/quick-report' as never)
-                }
-                style={[$.quickBtn, { backgroundColor: cardBg, borderColor: cardBorder }]}
-              >
-                <Ionicons
-                  name="add-circle"
-                  size={18}
-                  color={colors.accent[500]}
-                />
-              </Pressable>
-              <Pressable
-                onPress={() =>
                   router.push('/responder/protocols' as never)
                 }
                 style={[$.quickBtn, { backgroundColor: cardBg, borderColor: cardBorder }]}
@@ -614,19 +602,7 @@ export default function HomeTab() {
                 <Ionicons
                   name="book"
                   size={18}
-                  color="#8B5CF6"
-                />
-              </Pressable>
-              <Pressable
-                onPress={() =>
-                  router.push('/responder/contacts' as never)
-                }
-                style={[$.quickBtn, { backgroundColor: cardBg, borderColor: cardBorder }]}
-              >
-                <Ionicons
-                  name="call"
-                  size={18}
-                  color={colors.severity.critical}
+                  color={colors.iconAccents.admin}
                 />
               </Pressable>
             </View>

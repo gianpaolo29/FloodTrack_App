@@ -451,10 +451,11 @@ export default function IncidentDetailScreen() {
   const cardBg   = isDark ? colors.dark.card : colors.white;
 
   const load = useCallback(async () => {
+    if (!token) return;
     try {
       setLoading(true);
       setError(null);
-      const data = await getIncidentDetail(id, token!);
+      const data = await getIncidentDetail(id, token);
       setIncident(data);
     } catch {
       setError('Could not load incident details.');

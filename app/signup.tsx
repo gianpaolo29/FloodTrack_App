@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { useAuth } from '@/context/AuthContext';
+import { colors } from '@/theme/colors';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const HERO_H = SCREEN_H * 0.30;
@@ -81,7 +82,7 @@ function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: numb
     <Animated.View style={{
       position: 'absolute', left: x, top: y,
       width: size, height: size, borderRadius: size / 2,
-      backgroundColor: 'rgba(255,255,255,0.5)',
+      backgroundColor: colors.overlay.whiteHalf,
       opacity, transform: [{ translateY }],
     }} />
   );
@@ -117,8 +118,8 @@ function AnimatedField({
   }, [focused]);
 
   const borderColor = error
-    ? '#E53E3E'
-    : glowVal.interpolate({ inputRange: [0, 1], outputRange: ['transparent', '#5A6FF5'] });
+    ? colors.feedback.error
+    : glowVal.interpolate({ inputRange: [0, 1], outputRange: ['transparent', colors.auth.primary] });
 
   return (
     <Animated.View style={[fi.wrap, { opacity: fadeIn, transform: [{ translateX: slideX }] }]}>
@@ -133,13 +134,13 @@ function AnimatedField({
           <Ionicons
             name={icon}
             size={17}
-            color={error ? '#E53E3E' : focused ? '#5A6FF5' : '#A0AEC0'}
+            color={error ? colors.feedback.error : focused ? colors.auth.primary : colors.auth.muted}
           />
         </View>
         <TextInput
           style={fi.input}
           placeholder={placeholder}
-          placeholderTextColor="#CBD5E0"
+          placeholderTextColor={colors.auth.placeholder}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           {...inputProps}
@@ -148,7 +149,7 @@ function AnimatedField({
       </Animated.View>
       {error ? (
         <View style={fi.errRow}>
-          <Ionicons name="alert-circle" size={12} color="#E53E3E" />
+          <Ionicons name="alert-circle" size={12} color={colors.feedback.error} />
           <Text style={fi.errText}>{error}</Text>
         </View>
       ) : null}
@@ -160,44 +161,44 @@ const fi = StyleSheet.create({
   wrap: { marginBottom: 14 },
   label: {
     fontSize: 11, fontWeight: '700', textTransform: 'uppercase',
-    letterSpacing: 0.8, color: '#718096', marginBottom: 7, marginLeft: 2,
+    letterSpacing: 0.8, color: colors.auth.tertiary, marginBottom: 7, marginLeft: 2,
   },
   row: {
     flexDirection: 'row', alignItems: 'center',
     height: 54, borderRadius: 16,
-    backgroundColor: '#F7F8FC',
+    backgroundColor: colors.auth.inputBg,
     borderWidth: 1.5, borderColor: 'transparent',
     paddingHorizontal: 4,
   },
   rowFocused: {
-    backgroundColor: '#fff',
-    shadowColor: '#5A6FF5',
+    backgroundColor: colors.white,
+    shadowColor: colors.auth.primary,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 4,
   },
   rowError: {
-    backgroundColor: '#FFF5F5',
-    borderColor: '#FED7D7',
+    backgroundColor: colors.feedback.errorBg,
+    borderColor: colors.feedback.errorBorder,
   },
   iconWrap: {
     width: 38, height: 38, borderRadius: 11,
-    backgroundColor: '#EDF0F7',
+    backgroundColor: colors.auth.inputIconBg,
     alignItems: 'center', justifyContent: 'center',
     marginLeft: 4,
   },
-  iconActive: { backgroundColor: '#EBF0FF' },
-  iconError:  { backgroundColor: '#FED7D7' },
+  iconActive: { backgroundColor: colors.auth.inputIconActive },
+  iconError:  { backgroundColor: colors.feedback.errorBorder },
   input: {
-    flex: 1, fontSize: 15, color: '#1A202C',
+    flex: 1, fontSize: 15, color: colors.auth.heading,
     paddingHorizontal: 11, height: '100%',
   },
   errRow: {
     flexDirection: 'row', alignItems: 'center',
     gap: 5, marginTop: 6, marginLeft: 4,
   },
-  errText: { fontSize: 11, color: '#E53E3E', fontWeight: '600' },
+  errText: { fontSize: 11, color: colors.feedback.error, fontWeight: '600' },
 });
 
 export default function SignUpScreen() {
@@ -295,7 +296,7 @@ export default function SignUpScreen() {
 
   const pwdLen = fields.password.length;
   const strength = pwdLen === 0 ? 0 : pwdLen < 6 ? 1 : pwdLen < 10 ? 2 : 3;
-  const strengthColors = ['#E2E8F0', '#E53E3E', '#F6AD55', '#48BB78'];
+  const strengthColors = [colors.dark.text, colors.feedback.error, colors.feedback.passwordMedium, colors.feedback.success];
   const strengthLabels = ['', 'Weak', 'Medium', 'Strong'];
 
   const FIELD_BASE = 500;
@@ -310,7 +311,7 @@ export default function SignUpScreen() {
       >
         <Animated.View style={{ opacity: heroOpacity, transform: [{ scale: heroScale }] }}>
           <LinearGradient
-            colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+            colors={colors.gradients.hero}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={[s.hero, { paddingTop: insets.top + 8 }]}
@@ -329,12 +330,12 @@ export default function SignUpScreen() {
               accessibilityLabel="Go back"
               hitSlop={12}
             >
-              <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
+              <Ionicons name="chevron-back" size={20} color={colors.overlay.whiteNear} />
             </Pressable>
 
             <View style={s.heroContent}>
               <View style={s.heroBadge}>
-                <Ionicons name="person-add" size={28} color="#fff" />
+                <Ionicons name="person-add" size={28} color={colors.white} />
               </View>
               <Text style={s.heroTitle}>Join FloodTrack</Text>
               <Text style={s.heroSub}>Create your account in seconds</Text>
@@ -343,7 +344,7 @@ export default function SignUpScreen() {
 
           <View style={s.waveWrap}>
             <LinearGradient
-              colors={['#6B52F5', '#7C3AED']}
+              colors={colors.gradients.wave}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={StyleSheet.absoluteFillObject}
@@ -425,7 +426,7 @@ export default function SignUpScreen() {
             <View style={s.divider}>
               <View style={s.dividerLine} />
               <View style={s.dividerPill}>
-                <Ionicons name="lock-closed" size={11} color="#A0AEC0" />
+                <Ionicons name="lock-closed" size={11} color={colors.auth.muted} />
                 <Text style={s.dividerText}>Security</Text>
               </View>
               <View style={s.dividerLine} />
@@ -448,7 +449,7 @@ export default function SignUpScreen() {
                   hitSlop={8}
                   accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
                 >
-                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={19} color="#A0AEC0" />
+                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={19} color={colors.auth.muted} />
                 </Pressable>
               }
             />
@@ -461,7 +462,7 @@ export default function SignUpScreen() {
                       key={i}
                       style={[
                         s.strengthBar,
-                        { backgroundColor: strength >= i ? strengthColors[strength] : '#EDF0F7' },
+                        { backgroundColor: strength >= i ? strengthColors[strength] : colors.auth.inputIconBg },
                       ]}
                     />
                   ))}
@@ -489,7 +490,7 @@ export default function SignUpScreen() {
                   hitSlop={8}
                   accessibilityLabel={showConfirm ? 'Hide password' : 'Show password'}
                 >
-                  <Ionicons name={showConfirm ? 'eye-off-outline' : 'eye-outline'} size={19} color="#A0AEC0" />
+                  <Ionicons name={showConfirm ? 'eye-off-outline' : 'eye-outline'} size={19} color={colors.auth.muted} />
                 </Pressable>
               }
             />
@@ -503,18 +504,18 @@ export default function SignUpScreen() {
                 style={({ pressed }) => [pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
               >
                 <LinearGradient
-                  colors={isLoading ? ['#8B9CF7', '#A78BFA'] : ['#4A6CF7', '#7C3AED']}
+                  colors={isLoading ? colors.gradients.ctaDisabled : colors.gradients.cta}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={s.ctaBtn}
                 >
                   {isLoading ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                    <ActivityIndicator size="small" color={colors.white} />
                   ) : (
                     <>
                       <Text style={s.ctaText}>Create Account</Text>
                       <View style={s.ctaArrow}>
-                        <Ionicons name="arrow-forward" size={16} color="#4A6CF7" />
+                        <Ionicons name="arrow-forward" size={16} color={colors.gradients.cta[0]} />
                       </View>
                     </>
                   )}
@@ -538,7 +539,7 @@ export default function SignUpScreen() {
                 accessibilityLabel="Sign up with Google"
               >
                 {isGoogleLoading ? (
-                  <ActivityIndicator size="small" color="#4285F4" />
+                  <ActivityIndicator size="small" color={colors.social.google} />
                 ) : (
                   <>
                     <View style={s.googleIcon}>
@@ -553,7 +554,7 @@ export default function SignUpScreen() {
                 style={({ pressed }) => [s.socialBtn, s.fbBtn, pressed && { transform: [{ scale: 0.97 }] }]}
                 accessibilityLabel="Sign up with Facebook"
               >
-                <Ionicons name="logo-facebook" size={20} color="#fff" />
+                <Ionicons name="logo-facebook" size={20} color={colors.white} />
                 <Text style={s.fbBtnText}>Facebook</Text>
               </Pressable>
             </Animated.View>
@@ -573,7 +574,7 @@ export default function SignUpScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#FAFBFE' },
+  root: { flex: 1, backgroundColor: colors.auth.pageBg },
   flex: { flex: 1 },
 
   hero: {
@@ -583,15 +584,15 @@ const s = StyleSheet.create({
   },
   orb: {
     position: 'absolute', borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: colors.overlay.whiteThin,
   },
   orb1: { width: 180, height: 180, top: -50, right: -40 },
-  orb2: { width: 120, height: 120, bottom: 0, left: -30, backgroundColor: 'rgba(255,255,255,0.04)' },
+  orb2: { width: 120, height: 120, bottom: 0, left: -30, backgroundColor: colors.overlay.whiteSubtle },
 
   backBtn: {
     width: 38, height: 38, borderRadius: 13,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: colors.overlay.whiteSoft,
+    borderWidth: 1, borderColor: colors.overlay.whiteAccent,
     alignItems: 'center', justifyContent: 'center',
     alignSelf: 'flex-start',
     marginBottom: 12,
@@ -601,16 +602,16 @@ const s = StyleSheet.create({
   },
   heroBadge: {
     width: 60, height: 60, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: colors.overlay.whiteRegular,
+    borderWidth: 1.5, borderColor: colors.overlay.whiteFirm,
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 4,
   },
   heroTitle: {
-    fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5,
+    fontSize: 22, fontWeight: '900', color: colors.white, letterSpacing: 0.5,
   },
   heroSub: {
-    fontSize: 13, color: 'rgba(255,255,255,0.6)', letterSpacing: 0.3,
+    fontSize: 13, color: colors.overlay.whiteMid, letterSpacing: 0.3,
   },
 
   waveWrap: {
@@ -619,12 +620,12 @@ const s = StyleSheet.create({
   waveShape: {
     position: 'absolute', bottom: 0,
     left: -12, right: -12, height: 55,
-    backgroundColor: '#FAFBFE',
+    backgroundColor: colors.auth.pageBg,
     borderTopLeftRadius: 36, borderTopRightRadius: 36,
   },
 
   formArea: {
-    flex: 1, backgroundColor: '#FAFBFE', marginTop: -2,
+    flex: 1, backgroundColor: colors.auth.pageBg, marginTop: -2,
   },
   formScroll: {
     paddingHorizontal: 24, paddingTop: 0,
@@ -634,9 +635,9 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'baseline',
     marginBottom: 4,
   },
-  titleBold: { fontSize: 28, fontWeight: '800', color: '#1A202C' },
-  titleLight: { fontSize: 28, fontWeight: '300', color: '#1A202C' },
-  titleSub: { fontSize: 14, color: '#A0AEC0', marginBottom: 20 },
+  titleBold: { fontSize: 28, fontWeight: '800', color: colors.auth.heading },
+  titleLight: { fontSize: 28, fontWeight: '300', color: colors.auth.heading },
+  titleSub: { fontSize: 14, color: colors.auth.muted, marginBottom: 20 },
 
   nameRow: { flexDirection: 'row', gap: 10 },
   nameHalf: { flex: 1 },
@@ -645,13 +646,13 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     gap: 12, marginVertical: 6, marginBottom: 18,
   },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#EDF0F7' },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.auth.inputIconBg },
   dividerPill: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 14, paddingVertical: 5,
-    backgroundColor: '#F7F8FC', borderRadius: 20,
+    backgroundColor: colors.auth.inputBg, borderRadius: 20,
   },
-  dividerText: { fontSize: 11, fontWeight: '600', color: '#A0AEC0' },
+  dividerText: { fontSize: 11, fontWeight: '600', color: colors.auth.muted },
 
   strengthRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -673,18 +674,18 @@ const s = StyleSheet.create({
     height: 56, borderRadius: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 10, marginTop: 4,
-    shadowColor: '#5A6FF5',
+    shadowColor: colors.auth.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
     shadowRadius: 18,
     elevation: 10,
   },
   ctaText: {
-    fontSize: 16, fontWeight: '800', color: '#fff', letterSpacing: 0.5,
+    fontSize: 16, fontWeight: '800', color: colors.white, letterSpacing: 0.5,
   },
   ctaArrow: {
     width: 28, height: 28, borderRadius: 9,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: colors.overlay.whiteAccent,
     alignItems: 'center', justifyContent: 'center',
   },
 
@@ -702,8 +703,8 @@ const s = StyleSheet.create({
     gap: 10,
   },
   googleBtn: {
-    backgroundColor: '#fff',
-    borderWidth: 1.5, borderColor: '#EDF0F7',
+    backgroundColor: colors.white,
+    borderWidth: 1.5, borderColor: colors.auth.inputIconBg,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -712,31 +713,31 @@ const s = StyleSheet.create({
   },
   googleIcon: {
     width: 26, height: 26, borderRadius: 13,
-    backgroundColor: '#F7F8FC',
+    backgroundColor: colors.auth.inputBg,
     alignItems: 'center', justifyContent: 'center',
   },
-  googleG: { fontSize: 15, fontWeight: '800', color: '#4285F4' },
-  googleBtnText: { fontSize: 14, fontWeight: '700', color: '#2D3748' },
+  googleG: { fontSize: 15, fontWeight: '800', color: colors.social.google },
+  googleBtnText: { fontSize: 14, fontWeight: '700', color: colors.auth.bodyText },
   fbBtn: {
-    backgroundColor: '#1877F2',
-    shadowColor: '#1877F2',
+    backgroundColor: colors.social.facebook,
+    shadowColor: colors.social.facebook,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 4,
   },
-  fbBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  fbBtnText: { fontSize: 14, fontWeight: '700', color: colors.white },
 
   footer: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     marginBottom: 10,
   },
-  footerText: { fontSize: 14, color: '#A0AEC0' },
-  footerLink: { fontSize: 14, fontWeight: '800', color: '#5A6FF5' },
+  footerText: { fontSize: 14, color: colors.auth.muted },
+  footerLink: { fontSize: 14, fontWeight: '800', color: colors.auth.primary },
 
   securityRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, paddingTop: 4,
   },
-  securityText: { fontSize: 11, color: '#CBD5E0', fontWeight: '500' },
+  securityText: { fontSize: 11, color: colors.auth.placeholder, fontWeight: '500' },
 });

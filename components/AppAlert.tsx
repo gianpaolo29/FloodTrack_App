@@ -32,19 +32,19 @@ const ALERT_META: Record<AlertType, {
 }> = {
   success: {
     icon:    'checkmark-circle',
-    color:   '#2E9E5B',
-    lightBg: '#E7F6EC',
+    color:   colors.severity.low,
+    lightBg: colors.status.resolved.bg,
     darkBg:  '#0E2A1A',
   },
   error: {
     icon:    'close-circle',
-    color:   '#D32F2F',
+    color:   colors.severity.critical,
     lightBg: '#FDECEA',
     darkBg:  '#2A0E0E',
   },
   warning: {
     icon:    'warning',
-    color:   '#F4B400',
+    color:   colors.severity.moderate,
     lightBg: '#FFF8E1',
     darkBg:  '#2A2208',
   },
@@ -56,7 +56,7 @@ const ALERT_META: Record<AlertType, {
   },
   confirm: {
     icon:    'help-circle',
-    color:   '#EA6A0C',
+    color:   colors.severity.high,
     lightBg: '#FFF3E0',
     darkBg:  '#2A1608',
   },
@@ -209,7 +209,7 @@ export function AppAlert({ config, onDismiss }: Props) {
 const s = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(4, 7, 14, 0.72)',
+    backgroundColor: colors.overlay.backdrop,
   },
   centerer: {
     flex: 1,
@@ -304,7 +304,7 @@ const s = StyleSheet.create({
     alignSelf: 'stretch',
   },
   btnConfirmText: {
-    color: '#FFFFFF',
+    color: colors.white,
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.2,

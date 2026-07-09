@@ -22,6 +22,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AppAlert, AlertConfig } from '@/components/AppAlert';
+import { colors } from '@/theme/colors';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const HERO_H = SCREEN_H * 0.42;
@@ -54,7 +55,7 @@ function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: numb
       style={{
         position: 'absolute', left: x, top: y,
         width: size, height: size, borderRadius: size / 2,
-        backgroundColor: 'rgba(255,255,255,0.5)',
+        backgroundColor: colors.overlay.whiteHalf,
         opacity, transform: [{ translateY }],
       }}
     />
@@ -228,8 +229,8 @@ export default function LoginScreen() {
 
   const emailValid = email.trim().length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const shimmerX = splashShimmer.interpolate({ inputRange: [0, 1], outputRange: [-120, 220] });
-  const emailBorder = emailGlow.interpolate({ inputRange: [0, 1], outputRange: ['rgba(0,0,0,0)', '#5A6FF5'] });
-  const pwdBorder   = pwdGlow.interpolate({   inputRange: [0, 1], outputRange: ['rgba(0,0,0,0)', '#5A6FF5'] });
+  const emailBorder = emailGlow.interpolate({ inputRange: [0, 1], outputRange: ['rgba(0,0,0,0)', colors.auth.primary] });
+  const pwdBorder   = pwdGlow.interpolate({   inputRange: [0, 1], outputRange: ['rgba(0,0,0,0)', colors.auth.primary] });
 
   return (
     <View style={s.root}>
@@ -238,15 +239,15 @@ export default function LoginScreen() {
       {showSplash && (
         <Animated.View style={[s.splashOverlay, { opacity: splashBgOpacity }]}>
           <LinearGradient
-            colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+            colors={colors.gradients.hero}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFillObject}
           />
           <View style={s.pulseCenter}>
-            <PulseRing size={180} color="rgba(255,255,255,0.12)" delay={0} />
-            <PulseRing size={260} color="rgba(255,255,255,0.08)" delay={800} />
-            <PulseRing size={340} color="rgba(255,255,255,0.04)" delay={1600} />
+            <PulseRing size={180} color={colors.overlay.whiteMedium} delay={0} />
+            <PulseRing size={260} color={colors.overlay.whiteDim} delay={800} />
+            <PulseRing size={340} color={colors.overlay.whiteSubtle} delay={1600} />
           </View>
 
           <Particle delay={100}  x={SCREEN_W * 0.12} y={SCREEN_H * 0.3} />
@@ -260,7 +261,7 @@ export default function LoginScreen() {
             transform: [{ scale: splashLogoScale }],
           }]}>
             <View style={s.splashLogoBadge}>
-              <Ionicons name="water" size={50} color="#fff" />
+              <Ionicons name="water" size={50} color={colors.white} />
               <Animated.View style={[s.shimmerBar, { transform: [{ translateX: shimmerX }] }]} />
             </View>
           </Animated.View>
@@ -286,7 +287,7 @@ export default function LoginScreen() {
         >
           <Animated.View style={[s.heroWrap, { opacity: heroOpacity, transform: [{ scale: heroScale }] }]}>
             <LinearGradient
-              colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+              colors={colors.gradients.hero}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={[s.hero, { paddingTop: insets.top + 12 }]}
@@ -301,7 +302,7 @@ export default function LoginScreen() {
 
               <View style={s.logoBadge}>
                 <View style={s.logoBadgeInner}>
-                  <Ionicons name="water" size={44} color="#fff" />
+                  <Ionicons name="water" size={44} color={colors.white} />
                 </View>
                 <View style={s.logoBadgeRing} />
               </View>
@@ -312,7 +313,7 @@ export default function LoginScreen() {
 
             <View style={s.waveWrap}>
               <LinearGradient
-                colors={['#6B52F5', '#7C3AED']}
+                colors={colors.gradients.wave}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={StyleSheet.absoluteFillObject}
@@ -336,7 +337,7 @@ export default function LoginScreen() {
               {errorMsg ? (
                 <View style={s.errorBanner}>
                   <View style={s.errorDot} />
-                  <Ionicons name="alert-circle" size={15} color="#E53E3E" />
+                  <Ionicons name="alert-circle" size={15} color={colors.feedback.error} />
                   <Text style={s.errorText}>{errorMsg}</Text>
                 </View>
               ) : null}
@@ -344,12 +345,12 @@ export default function LoginScreen() {
               <Animated.View style={[s.fieldWrap, { opacity: f1Opacity, transform: [{ translateX: f1TransX }] }]}>
                 <Animated.View style={[s.inputRow, { borderColor: emailBorder }, emailFocus && s.inputFocused]}>
                   <View style={[s.inputIconWrap, emailFocus && s.inputIconActive]}>
-                    <Ionicons name="mail-outline" size={18} color={emailFocus ? '#5A6FF5' : '#A0AEC0'} />
+                    <Ionicons name="mail-outline" size={18} color={emailFocus ? colors.auth.primary : colors.auth.muted} />
                   </View>
                   <TextInput
                     style={s.input}
                     placeholder="Email address"
-                    placeholderTextColor="#CBD5E0"
+                    placeholderTextColor={colors.auth.placeholder}
                     autoCapitalize="none"
                     autoCorrect={false}
                     keyboardType="email-address"
@@ -361,7 +362,7 @@ export default function LoginScreen() {
                   />
                   {emailValid && (
                     <View style={s.checkBadge}>
-                      <Ionicons name="checkmark" size={14} color="#fff" />
+                      <Ionicons name="checkmark" size={14} color={colors.white} />
                     </View>
                   )}
                 </Animated.View>
@@ -370,12 +371,12 @@ export default function LoginScreen() {
               <Animated.View style={[s.fieldWrap, { opacity: f2Opacity, transform: [{ translateX: f2TransX }] }]}>
                 <Animated.View style={[s.inputRow, { borderColor: pwdBorder }, pwdFocus && s.inputFocused]}>
                   <View style={[s.inputIconWrap, pwdFocus && s.inputIconActive]}>
-                    <Ionicons name="lock-closed-outline" size={18} color={pwdFocus ? '#5A6FF5' : '#A0AEC0'} />
+                    <Ionicons name="lock-closed-outline" size={18} color={pwdFocus ? colors.auth.primary : colors.auth.muted} />
                   </View>
                   <TextInput
                     style={s.input}
                     placeholder="Password"
-                    placeholderTextColor="#CBD5E0"
+                    placeholderTextColor={colors.auth.placeholder}
                     secureTextEntry={!showPwd}
                     textContentType="password"
                     value={password}
@@ -389,7 +390,7 @@ export default function LoginScreen() {
                     hitSlop={8}
                     accessibilityLabel={showPwd ? 'Hide password' : 'Show password'}
                   >
-                    <Ionicons name={showPwd ? 'eye-off-outline' : 'eye-outline'} size={20} color="#A0AEC0" />
+                    <Ionicons name={showPwd ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.auth.muted} />
                   </Pressable>
                 </Animated.View>
               </Animated.View>
@@ -402,7 +403,7 @@ export default function LoginScreen() {
                   accessibilityState={{ checked: remember }}
                 >
                   <View style={[s.checkbox, remember && s.checkboxOn]}>
-                    {remember && <Ionicons name="checkmark" size={11} color="#fff" />}
+                    {remember && <Ionicons name="checkmark" size={11} color={colors.white} />}
                   </View>
                   <Text style={s.rememberLabel}>Remember me</Text>
                 </Pressable>
@@ -420,18 +421,18 @@ export default function LoginScreen() {
                   style={({ pressed }) => [pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
                 >
                   <LinearGradient
-                    colors={isLoading ? ['#8B9CF7', '#A78BFA'] : ['#4A6CF7', '#7C3AED']}
+                    colors={isLoading ? colors.gradients.ctaDisabled : colors.gradients.cta}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={s.loginBtn}
                   >
                     {isLoading ? (
-                      <ActivityIndicator size="small" color="#fff" />
+                      <ActivityIndicator size="small" color={colors.white} />
                     ) : (
                       <>
                         <Text style={s.loginBtnText}>Sign In</Text>
                         <View style={s.loginBtnArrow}>
-                          <Ionicons name="arrow-forward" size={16} color="#4A6CF7" />
+                          <Ionicons name="arrow-forward" size={16} color={colors.gradients.cta[0]} />
                         </View>
                       </>
                     )}
@@ -455,7 +456,7 @@ export default function LoginScreen() {
                   accessibilityLabel="Sign in with Google"
                 >
                   {isGoogleLoading ? (
-                    <ActivityIndicator size="small" color="#4285F4" />
+                    <ActivityIndicator size="small" color={colors.social.google} />
                   ) : (
                     <>
                       <View style={s.googleIconCircle}>
@@ -470,7 +471,7 @@ export default function LoginScreen() {
                   style={({ pressed }) => [s.socialBtn, s.fbBtn, pressed && { transform: [{ scale: 0.97 }] }]}
                   accessibilityLabel="Sign in with Facebook"
                 >
-                  <Ionicons name="logo-facebook" size={20} color="#fff" />
+                  <Ionicons name="logo-facebook" size={20} color={colors.white} />
                   <Text style={s.fbBtnText}>Facebook</Text>
                 </Pressable>
               </Animated.View>
@@ -498,7 +499,7 @@ export default function LoginScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#FAFBFE' },
+  root: { flex: 1, backgroundColor: colors.auth.pageBg },
   flex: { flex: 1 },
 
   splashOverlay: {
@@ -514,31 +515,31 @@ const s = StyleSheet.create({
   splashLogoWrap: { marginBottom: 18, alignItems: 'center' },
   splashLogoBadge: {
     width: 110, height: 110, borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: colors.overlay.whiteSoft,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)',
+    borderWidth: 2, borderColor: colors.overlay.whiteBright,
     overflow: 'hidden',
   },
   shimmerBar: {
     position: 'absolute', top: 0, bottom: 0,
     width: 70,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: colors.overlay.whiteGlow,
     transform: [{ skewX: '-20deg' }],
   },
   splashTitle: {
-    fontSize: 30, fontWeight: '900', color: '#fff',
+    fontSize: 30, fontWeight: '900', color: colors.white,
     letterSpacing: 5, textAlign: 'center',
   },
   splashSub: {
-    fontSize: 13, color: 'rgba(255,255,255,0.6)',
+    fontSize: 13, color: colors.overlay.whiteMid,
     textAlign: 'center', marginTop: 8,
   },
   splashVersionPill: {
     position: 'absolute', bottom: 60,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: colors.overlay.whiteLight,
     paddingHorizontal: 16, paddingVertical: 5, borderRadius: 20,
   },
-  splashVersionText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.5)' },
+  splashVersionText: { fontSize: 11, fontWeight: '600', color: colors.overlay.whiteHalf },
 
   heroWrap: {},
   hero: {
@@ -549,11 +550,11 @@ const s = StyleSheet.create({
   },
   orb: {
     position: 'absolute', borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: colors.overlay.whiteThin,
   },
   orb1: { width: 200, height: 200, top: -60, right: -50 },
-  orb2: { width: 140, height: 140, bottom: 10, left: -40, backgroundColor: 'rgba(255,255,255,0.04)' },
-  orb3: { width: 80,  height: 80,  top: 40,   left: SCREEN_W * 0.55, backgroundColor: 'rgba(255,255,255,0.05)' },
+  orb2: { width: 140, height: 140, bottom: 10, left: -40, backgroundColor: colors.overlay.whiteSubtle },
+  orb3: { width: 80,  height: 80,  top: 40,   left: SCREEN_W * 0.55, backgroundColor: colors.overlay.whiteFaint },
 
   logoBadge: {
     alignItems: 'center', justifyContent: 'center',
@@ -561,21 +562,21 @@ const s = StyleSheet.create({
   },
   logoBadgeInner: {
     width: 80, height: 80, borderRadius: 26,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: colors.overlay.whiteRegular,
+    borderWidth: 1.5, borderColor: colors.overlay.whiteFirm,
     alignItems: 'center', justifyContent: 'center',
   },
   logoBadgeRing: {
     position: 'absolute',
     width: 100, height: 100, borderRadius: 50,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1, borderColor: colors.overlay.whiteLight,
   },
   logoTitle: {
-    fontSize: 24, fontWeight: '900', color: '#fff',
+    fontSize: 24, fontWeight: '900', color: colors.white,
     letterSpacing: 5,
   },
   logoSub: {
-    fontSize: 12, color: 'rgba(255,255,255,0.55)',
+    fontSize: 12, color: colors.overlay.whiteSub,
     marginTop: 6, letterSpacing: 1,
   },
 
@@ -586,13 +587,13 @@ const s = StyleSheet.create({
     position: 'absolute', bottom: 0,
     left: -12, right: -12,
     height: 60,
-    backgroundColor: '#FAFBFE',
+    backgroundColor: colors.auth.pageBg,
     borderTopLeftRadius: 36,
     borderTopRightRadius: 36,
   },
 
   formArea: {
-    flex: 1, backgroundColor: '#FAFBFE', marginTop: -2,
+    flex: 1, backgroundColor: colors.auth.pageBg, marginTop: -2,
   },
   formScroll: {
     paddingHorizontal: 28, paddingTop: 2,
@@ -602,32 +603,32 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'baseline',
     marginBottom: 4,
   },
-  titleBold: { fontSize: 30, fontWeight: '800', color: '#1A202C' },
-  titleLight: { fontSize: 30, fontWeight: '300', color: '#1A202C' },
-  titleSub: { fontSize: 14, color: '#A0AEC0', marginBottom: 24 },
+  titleBold: { fontSize: 30, fontWeight: '800', color: colors.auth.heading },
+  titleLight: { fontSize: 30, fontWeight: '300', color: colors.auth.heading },
+  titleSub: { fontSize: 14, color: colors.auth.muted, marginBottom: 24 },
 
   errorBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#FFF5F5',
-    borderWidth: 1, borderColor: '#FED7D7',
+    backgroundColor: colors.feedback.errorBg,
+    borderWidth: 1, borderColor: colors.feedback.errorBorder,
     borderRadius: 14, padding: 14, marginBottom: 18,
   },
   errorDot: {
-    width: 4, height: 4, borderRadius: 2, backgroundColor: '#E53E3E',
+    width: 4, height: 4, borderRadius: 2, backgroundColor: colors.feedback.error,
   },
-  errorText: { flex: 1, fontSize: 13, color: '#E53E3E', fontWeight: '500' },
+  errorText: { flex: 1, fontSize: 13, color: colors.feedback.error, fontWeight: '500' },
 
   fieldWrap: { marginBottom: 14 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
     height: 56, borderRadius: 16,
-    backgroundColor: '#F7F8FC',
+    backgroundColor: colors.auth.inputBg,
     borderWidth: 1.5, borderColor: 'transparent',
     paddingHorizontal: 4,
   },
   inputFocused: {
-    backgroundColor: '#fff',
-    shadowColor: '#5A6FF5',
+    backgroundColor: colors.white,
+    shadowColor: colors.auth.primary,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.12,
     shadowRadius: 12,
@@ -635,20 +636,20 @@ const s = StyleSheet.create({
   },
   inputIconWrap: {
     width: 40, height: 40, borderRadius: 12,
-    backgroundColor: '#EDF0F7',
+    backgroundColor: colors.auth.inputIconBg,
     alignItems: 'center', justifyContent: 'center',
     marginLeft: 4,
   },
   inputIconActive: {
-    backgroundColor: '#EBF0FF',
+    backgroundColor: colors.auth.inputIconActive,
   },
   input: {
-    flex: 1, fontSize: 15, color: '#1A202C',
+    flex: 1, fontSize: 15, color: colors.auth.heading,
     paddingHorizontal: 12, height: '100%',
   },
   checkBadge: {
     width: 24, height: 24, borderRadius: 12,
-    backgroundColor: '#48BB78',
+    backgroundColor: colors.feedback.success,
     alignItems: 'center', justifyContent: 'center',
     marginRight: 8,
   },
@@ -662,31 +663,31 @@ const s = StyleSheet.create({
   rememberRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   checkbox: {
     width: 20, height: 20, borderRadius: 6,
-    borderWidth: 1.5, borderColor: '#CBD5E0',
+    borderWidth: 1.5, borderColor: colors.auth.placeholder,
     alignItems: 'center', justifyContent: 'center',
   },
   checkboxOn: {
-    backgroundColor: '#5A6FF5', borderColor: '#5A6FF5',
+    backgroundColor: colors.auth.primary, borderColor: colors.auth.primary,
   },
-  rememberLabel: { fontSize: 13, color: '#718096', fontWeight: '500' },
-  forgotLink: { fontSize: 13, color: '#5A6FF5', fontWeight: '700' },
+  rememberLabel: { fontSize: 13, color: colors.auth.tertiary, fontWeight: '500' },
+  forgotLink: { fontSize: 13, color: colors.auth.primary, fontWeight: '700' },
 
   loginBtn: {
     height: 56, borderRadius: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 10,
-    shadowColor: '#5A6FF5',
+    shadowColor: colors.auth.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
     shadowRadius: 18,
     elevation: 10,
   },
   loginBtnText: {
-    fontSize: 16, fontWeight: '800', color: '#fff', letterSpacing: 0.5,
+    fontSize: 16, fontWeight: '800', color: colors.white, letterSpacing: 0.5,
   },
   loginBtnArrow: {
     width: 28, height: 28, borderRadius: 9,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: colors.overlay.whiteBright,
     alignItems: 'center', justifyContent: 'center',
   },
 
@@ -694,12 +695,12 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     marginVertical: 20, gap: 12,
   },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#EDF0F7' },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.auth.inputIconBg },
   dividerPill: {
     paddingHorizontal: 14, paddingVertical: 5,
-    backgroundColor: '#F7F8FC', borderRadius: 20,
+    backgroundColor: colors.auth.inputBg, borderRadius: 20,
   },
-  dividerText: { fontSize: 12, fontWeight: '600', color: '#A0AEC0' },
+  dividerText: { fontSize: 12, fontWeight: '600', color: colors.auth.muted },
 
   socialRow: {
     flexDirection: 'row', gap: 12,
@@ -711,8 +712,8 @@ const s = StyleSheet.create({
     gap: 10,
   },
   googleBtn: {
-    backgroundColor: '#fff',
-    borderWidth: 1.5, borderColor: '#EDF0F7',
+    backgroundColor: colors.white,
+    borderWidth: 1.5, borderColor: colors.auth.inputIconBg,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -721,31 +722,31 @@ const s = StyleSheet.create({
   },
   googleIconCircle: {
     width: 28, height: 28, borderRadius: 14,
-    backgroundColor: '#F7F8FC',
+    backgroundColor: colors.auth.inputBg,
     alignItems: 'center', justifyContent: 'center',
   },
-  googleG: { fontSize: 16, fontWeight: '800', color: '#4285F4' },
-  googleBtnText: { fontSize: 14, fontWeight: '700', color: '#2D3748' },
+  googleG: { fontSize: 16, fontWeight: '800', color: colors.social.google },
+  googleBtnText: { fontSize: 14, fontWeight: '700', color: colors.auth.bodyText },
   fbBtn: {
-    backgroundColor: '#1877F2',
-    shadowColor: '#1877F2',
+    backgroundColor: colors.social.facebook,
+    shadowColor: colors.social.facebook,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 4,
   },
-  fbBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  fbBtnText: { fontSize: 14, fontWeight: '700', color: colors.white },
 
   footer: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     marginBottom: 12,
   },
-  footerText: { fontSize: 14, color: '#A0AEC0' },
-  footerLink: { fontSize: 14, fontWeight: '800', color: '#5A6FF5' },
+  footerText: { fontSize: 14, color: colors.auth.muted },
+  footerLink: { fontSize: 14, fontWeight: '800', color: colors.auth.primary },
 
   securityRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, paddingTop: 4,
   },
-  securityText: { fontSize: 11, color: '#CBD5E0', fontWeight: '500' },
+  securityText: { fontSize: 11, color: colors.auth.placeholder, fontWeight: '500' },
 });
