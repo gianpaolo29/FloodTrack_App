@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Dimensions,
+  Easing,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -12,6 +15,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 
 import { colors } from '@/theme/colors';
@@ -23,14 +27,27 @@ import type { Incident, ResponderStatus } from '@/types';
 const { width: SCREEN_W } = Dimensions.get('window');
 const CARD_GAP = 12;
 const H_PAD = 20;
-const SMALL_CARD = (SCREEN_W - H_PAD * 2 - CARD_GAP) / 2;
-const BIG_CARD = SMALL_CARD;
+const HALF_CARD = (SCREEN_W - H_PAD * 2 - CARD_GAP) / 2;
 
 const STATUS_LABELS: Record<ResponderStatus, string> = {
   pending: 'Pending',
   en_route: 'En Route',
   on_scene: 'On Scene',
   resolved: 'Resolved',
+};
+
+const STATUS_COLORS: Record<ResponderStatus, string> = {
+  pending: colors.severity.moderate,
+  en_route: colors.brand[500],
+  on_scene: colors.accent[500],
+  resolved: colors.severity.low,
+};
+
+const STATUS_ICONS: Record<ResponderStatus, keyof typeof Ionicons.glyphMap> = {
+  pending: 'time',
+  en_route: 'car',
+  on_scene: 'location',
+  resolved: 'checkmark-circle',
 };
 
 const W_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -47,6 +64,43 @@ const W_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
 
 type TabKey = 'overview' | 'critical' | 'active';
 
+/* ─── stat mini-card ─── */
+function StatChip({
+  icon,
+  label,
+  value,
+  color,
+  isDark,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: number;
+  color: string;
+  isDark: boolean;
+}) {
+  return (
+    <View
+      style={[
+        $.statChip,
+        {
+          backgroundColor: isDark ? colors.dark.card : colors.white,
+          borderColor: isDark ? colors.dark.border : 'rgba(0,0,0,0.04)',
+        },
+      ]}
+    >
+      <View style={[$.statChipIcon, { backgroundColor: color + '14' }]}>
+        <Ionicons name={icon} size={16} color={color} />
+      </View>
+      <Text style={[$.statChipValue, { color: isDark ? colors.white : colors.slate[900] }]}>
+        {value}
+      </Text>
+      <Text style={[$.statChipLabel, { color: isDark ? colors.slate[500] : colors.slate[400] }]}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
 export default function HomeTab() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -60,14 +114,27 @@ export default function HomeTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
 
+  /* animations */
+  const heroAnim = useRef(new Animated.Value(0)).current;
+  const cardsAnim = useRef(new Animated.Value(0)).current;
+  const listAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.stagger(100, [
+      Animated.timing(heroAnim, { toValue: 1, duration: 500, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(cardsAnim, { toValue: 1, duration: 450, easing: Easing.out(Easing.back(1.05)), useNativeDriver: true }),
+      Animated.timing(listAnim, { toValue: 1, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+  }, []);
+
   const bg = isDark ? colors.dark.bg : colors.responder.pageBg;
   const cardBg = isDark ? colors.dark.card : colors.white;
-  const cardBorder = isDark ? colors.dark.border : colors.responder.cardBorder;
+  const cardBorder = isDark ? colors.dark.border : 'rgba(0,0,0,0.04)';
   const textPrimary = isDark ? colors.white : colors.slate[900];
   const textSecondary = isDark ? colors.slate[400] : colors.slate[500];
   const textTertiary = isDark ? colors.slate[500] : colors.slate[400];
 
-  const load = useCallback(
+  const loadIncidents = useCallback(
     async (isRefresh = false) => {
       if (!token) return;
       try {
@@ -83,90 +150,79 @@ export default function HomeTab() {
     [token],
   );
 
-  useEffect(() => {
+  const loadWeather = useCallback(async () => {
     if (!token) return;
-    (async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const loc =
+        (await Location.getLastKnownPositionAsync()) ??
+        (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }));
+      const { latitude: lat, longitude: lon } = loc.coords;
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        const { latitude: lat, longitude: lon } = loc.coords;
-        try {
-          const w = await getWeather(lat, lon, token);
-          if (w.current.description !== 'Unavailable') {
-            setWeather(w);
-            return;
-          }
-        } catch {
-        }
-        const KEY = '492a0ca6810997c64038621e373ae0de';
-        const res = await fetch(
-          `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${KEY}&units=metric`,
-        );
-        if (!res.ok) return;
-        const d = await res.json();
-        setWeather({
-          current: {
-            temperature: d.main?.temp ?? 0,
-            humidity: d.main?.humidity ?? 0,
-            windSpeed: Math.round((d.wind?.speed ?? 0) * 3.6 * 10) / 10,
-            description: d.weather?.[0]?.description
-              ? d.weather[0].description.charAt(0).toUpperCase() +
-                d.weather[0].description.slice(1)
-              : 'Unknown',
-            icon: d.weather?.[0]?.icon ?? '01d',
-            rainH: d.rain?.['1h'] ?? 0,
-            city: d.name ?? '',
-          },
-          alerts: [],
-          forecast: [],
-        });
-      } catch {
-      }
-    })();
+        const w = await getWeather(lat, lon, token);
+        if (w.current.description !== 'Unavailable') { setWeather(w); return; }
+      } catch {}
+      const KEY = '492a0ca6810997c64038621e373ae0de';
+      const res = await fetch(
+        `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${KEY}&units=metric`,
+      );
+      if (!res.ok) return;
+      const d = await res.json();
+      setWeather({
+        current: {
+          temperature: d.main?.temp ?? 0,
+          humidity: d.main?.humidity ?? 0,
+          windSpeed: Math.round((d.wind?.speed ?? 0) * 3.6 * 10) / 10,
+          description: d.weather?.[0]?.description
+            ? d.weather[0].description.charAt(0).toUpperCase() + d.weather[0].description.slice(1)
+            : 'Unknown',
+          icon: d.weather?.[0]?.icon ?? '01d',
+          rainH: d.rain?.['1h'] ?? 0,
+          city: d.name ?? '',
+        },
+        alerts: [],
+        forecast: [],
+      });
+    } catch {}
   }, [token]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadIncidents();
+    loadWeather();
+  }, [loadIncidents, loadWeather]);
 
   const active = incidents.filter((i) => i.responderStatus !== 'resolved');
   const pendingCount = incidents.filter((i) => i.responderStatus === 'pending').length;
   const enRouteCount = incidents.filter((i) => i.responderStatus === 'en_route').length;
   const onSceneCount = incidents.filter((i) => i.responderStatus === 'on_scene').length;
   const resolvedCount = incidents.filter((i) => i.responderStatus === 'resolved').length;
-  const criticalCount = active.filter((i) => i.severity === 'critical').length;
 
   const weatherIcon = (() => {
     if (!weather) return 'partly-sunny' as keyof typeof Ionicons.glyphMap;
-    const k = Object.keys(W_ICONS).find((w) =>
-      weather.current.description.toLowerCase().includes(w),
-    );
+    const k = Object.keys(W_ICONS).find((w) => weather.current.description.toLowerCase().includes(w));
     return k ? W_ICONS[k] : ('partly-sunny' as keyof typeof Ionicons.glyphMap);
   })();
 
-  const today = new Date();
-  const dateStr = today.toLocaleDateString('en-US', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'short',
-  });
+  const resolveRate = incidents.length > 0 ? Math.round((resolvedCount / incidents.length) * 100) : 0;
 
-  const TABS: { key: TabKey; label: string }[] = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'critical', label: 'Critical' },
-    { key: 'active', label: 'Active' },
+  const today = new Date();
+  const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+
+  const TABS: { key: TabKey; label: string; count: number }[] = [
+    { key: 'overview', label: 'Overview', count: incidents.length },
+    { key: 'critical', label: 'Critical', count: active.filter((i) => i.severity === 'critical').length },
+    { key: 'active', label: 'Active', count: active.length },
   ];
 
-  const resolveRate =
-    incidents.length > 0
-      ? Math.round((resolvedCount / incidents.length) * 100)
-      : 0;
+  const filteredIncidents = incidents.filter((i) => {
+    if (activeTab === 'critical') return i.severity === 'critical';
+    if (activeTab === 'active') return i.responderStatus !== 'resolved';
+    return true;
+  });
 
   return (
-    <View style={[$.root, { backgroundColor: bg, paddingTop: insets.top }]}>
+    <View style={[$.root, { backgroundColor: bg }]}>
       {loading ? (
         <View style={$.centered}>
           <ActivityIndicator size="large" color={colors.accent[500]} />
@@ -177,500 +233,364 @@ export default function HomeTab() {
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                load(true);
-              }}
+              onRefresh={() => { setRefreshing(true); loadIncidents(true); loadWeather(); }}
               tintColor={colors.accent[500]}
               colors={[colors.accent[500]]}
             />
           }
           showsVerticalScrollIndicator={false}
         >
-          <View style={$.greeting}>
-            <View>
-              <Text style={[$.greetHi, { color: textPrimary }]}>
-                Hi {user?.firstName ?? 'Responder'}
-              </Text>
-              <Text style={[$.greetSub, { color: textSecondary }]}>
-                Welcome Back
-              </Text>
-            </View>
-            <Pressable
-              onPress={() => router.push('/responder/(tabs)/profile' as never)}
-              style={[$.avatarWrap, { backgroundColor: colors.accent[500] }]}
+          {/* ═══ HERO HEADER ═══ */}
+          <Animated.View
+            style={{
+              opacity: heroAnim,
+              transform: [{ translateY: heroAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
+            }}
+          >
+            <LinearGradient
+              colors={isDark ? ['#0D2137', '#0A1628', '#070E18'] : ['#0B8F80', '#0FA896', '#12C4AE']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[$.hero, { paddingTop: insets.top + 16 }]}
             >
-              <Text style={$.avatarTxt}>
-                {user
-                  ? `${user.firstName[0]}${user.lastName[0]}`
-                  : 'R'}
-              </Text>
-            </Pressable>
-          </View>
+              {/* decorative orbs */}
+              <View style={[$.orb, { width: 160, height: 160, top: -40, left: -30, opacity: 0.08 }]} />
+              <View style={[$.orb, { width: 100, height: 100, top: 20, right: -20, opacity: 0.06 }]} />
+              <View style={[$.orb, { width: 70, height: 70, bottom: 50, left: 40, opacity: 0.07 }]} />
 
-          <View style={$.topRow}>
-            <View
-              style={[
-                $.topCard,
-                {
-                  backgroundColor: isDark ? colors.dark.card : colors.responder.locationCardBg,
-                  borderColor: cardBorder,
-                  flex: 1.2,
-                },
-              ]}
-            >
-              <Text style={[$.topCardLabel, { color: isDark ? colors.slate[400] : colors.brand[700] }]}>
-                My Location
-              </Text>
-              <Text
-                style={[$.topCardCity, { color: isDark ? colors.white : colors.brand[900] }]}
-                numberOfLines={1}
-              >
-                {weather?.current.city || 'Locating...'}
-              </Text>
-              <View style={$.weatherRow}>
-                <Text style={[$.weatherTemp, { color: isDark ? colors.white : colors.brand[900] }]}>
-                  {weather ? `${Math.round(weather.current.temperature)}°` : '--°'}
-                </Text>
-                <Ionicons
-                  name={weatherIcon}
-                  size={22}
-                  color={isDark ? colors.slate[300] : colors.brand[600]}
-                />
+              {/* greeting row */}
+              <View style={$.heroRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={$.heroDate}>{dateStr}</Text>
+                  <Text style={$.heroGreeting}>
+                    Hi, {user?.firstName ?? 'Responder'}
+                  </Text>
+                  <Text style={$.heroSub}>Welcome back</Text>
+                </View>
+                <Pressable
+                  onPress={() => router.push('/responder/(tabs)/profile' as never)}
+                  style={$.heroAvatar}
+                >
+                  {user?.avatarUrl ? (
+                    <Image source={{ uri: user.avatarUrl }} style={$.heroAvatarImg} />
+                  ) : (
+                    <LinearGradient
+                      colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.12)']}
+                      style={$.heroAvatarImg}
+                    >
+                      <Text style={$.heroAvatarText}>
+                        {user ? `${user.firstName[0]}${user.lastName[0]}` : 'R'}
+                      </Text>
+                    </LinearGradient>
+                  )}
+                </Pressable>
               </View>
-              <View style={$.weatherDescRow}>
-                <Ionicons
-                  name="cloud-outline"
-                  size={12}
-                  color={isDark ? colors.slate[500] : colors.brand[600]}
-                />
+
+              {/* weather strip */}
+              <View style={$.weatherStrip}>
+                <View style={$.weatherStripLeft}>
+                  <Ionicons name={weatherIcon} size={18} color="rgba(255,255,255,0.85)" />
+                  <Text style={$.weatherStripTemp}>
+                    {weather ? `${Math.round(weather.current.temperature)}°C` : '--°'}
+                  </Text>
+                  <View style={$.weatherDivider} />
+                  <Text style={$.weatherStripDesc} numberOfLines={1}>
+                    {weather?.current.description ?? 'Loading...'}
+                  </Text>
+                </View>
+                <Text style={$.weatherStripCity} numberOfLines={1}>
+                  {weather?.current.city || '...'}
+                </Text>
+              </View>
+
+              {/* wave transition */}
+              <View style={$.waveWrap} pointerEvents="none">
+                <View style={[$.waveBack, { backgroundColor: bg, opacity: 0.3 }]} />
+                <View style={[$.waveFront, { backgroundColor: bg }]} />
+              </View>
+            </LinearGradient>
+          </Animated.View>
+
+          {/* ═══ STAT CHIPS ═══ */}
+          <Animated.View
+            style={[
+              $.statsRow,
+              {
+                opacity: cardsAnim,
+                transform: [{ translateY: cardsAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+              },
+            ]}
+          >
+            <StatChip icon="warning" label="Active" value={active.length} color={colors.severity.high} isDark={isDark} />
+            <StatChip icon="car" label="En Route" value={enRouteCount} color={colors.brand[500]} isDark={isDark} />
+            <StatChip icon="location" label="On Scene" value={onSceneCount} color={colors.accent[500]} isDark={isDark} />
+            <StatChip icon="checkmark-circle" label="Resolved" value={resolvedCount} color={colors.severity.low} isDark={isDark} />
+          </Animated.View>
+
+          {/* ═══ OVERVIEW CARDS ═══ */}
+          <Animated.View
+            style={{
+              opacity: cardsAnim,
+              transform: [{ translateY: cardsAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
+            }}
+          >
+            <View style={$.cardRow}>
+              {/* Active Incidents Card */}
+              <Pressable
+                onPress={() => setActiveTab('active')}
+                style={({ pressed }) => [
+                  $.glassCard,
+                  {
+                    backgroundColor: isDark ? colors.dark.card : colors.white,
+                    borderColor: cardBorder,
+                    flex: 1,
+                  },
+                  pressed && { transform: [{ scale: 0.97 }], opacity: 0.9 },
+                ]}
+              >
+                <View style={$.glassCardHeader}>
+                  <LinearGradient
+                    colors={active.length > 0 ? ['#EF4444', '#F97316'] : [colors.severity.low, '#34D399']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={$.glassCardIconWrap}
+                  >
+                    <Ionicons name="shield-checkmark" size={20} color={colors.white} />
+                  </LinearGradient>
+                  <View style={[$.glassCardBadge, { backgroundColor: (active.length > 0 ? colors.severity.critical : colors.severity.low) + '18' }]}>
+                    <View style={[$.liveIndicator, { backgroundColor: active.length > 0 ? colors.severity.critical : colors.severity.low }]} />
+                    <Text style={[$.glassCardBadgeText, { color: active.length > 0 ? colors.severity.critical : colors.severity.low }]}>
+                      {active.length > 0 ? 'Alert' : 'Clear'}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={[$.glassCardBig, { color: textPrimary }]}>
+                  {active.length}
+                </Text>
+                <Text style={[$.glassCardLabel, { color: textSecondary }]}>
+                  Active Incidents
+                </Text>
+              </Pressable>
+
+              {/* Resolve Rate Card */}
+              <View
+                style={[
+                  $.glassCard,
+                  {
+                    backgroundColor: isDark ? colors.dark.card : colors.white,
+                    borderColor: cardBorder,
+                    flex: 1,
+                  },
+                ]}
+              >
+                <View style={$.glassCardHeader}>
+                  <LinearGradient
+                    colors={['#10B981', '#059669']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={$.glassCardIconWrap}
+                  >
+                    <Ionicons name="trending-up" size={20} color={colors.white} />
+                  </LinearGradient>
+                </View>
                 <Text
                   style={[
-                    $.weatherDesc,
-                    { color: isDark ? colors.slate[400] : colors.brand[600] },
-                  ]}
-                >
-                  {weather?.current.description ?? 'Unknown'}
-                </Text>
-              </View>
-            </View>
-
-            <View
-              style={[
-                $.topCard,
-                {
-                  backgroundColor: isDark ? colors.dark.card : colors.responder.resolveCardBg,
-                  borderColor: cardBorder,
-                  flex: 1,
-                },
-              ]}
-            >
-              <Text style={[$.topCardLabel, { color: isDark ? colors.slate[400] : colors.accent[700] }]}>
-                Resolve Rate
-              </Text>
-              <Text
-                style={[
-                  $.resolveRate,
-                  {
-                    color:
-                      resolveRate >= 50
+                    $.glassCardBig,
+                    {
+                      color: resolveRate >= 50
                         ? colors.severity.low
                         : resolveRate >= 25
                         ? colors.severity.moderate
                         : colors.severity.high,
-                  },
-                ]}
-              >
-                {resolveRate > 0 ? '+' : ''}
-                {resolveRate}%
-              </Text>
-              <Text style={[$.resolveRateSub, { color: textTertiary }]}>
-                {resolvedCount} of {incidents.length} resolved
-              </Text>
-            </View>
-          </View>
-
-          <View style={$.tabs}>
-            {TABS.map((t) => {
-              const isActive = activeTab === t.key;
-              return (
-                <Pressable
-                  key={t.key}
-                  onPress={() => setActiveTab(t.key)}
-                  style={$.tabItem}
-                >
-                  <Text
-                    style={[
-                      $.tabLabel,
-                      {
-                        color: isActive ? textPrimary : textTertiary,
-                        fontWeight: isActive ? '700' : '500',
-                      },
-                    ]}
-                  >
-                    {t.label}
-                  </Text>
-                  {isActive && (
-                    <View
-                      style={[
-                        $.tabIndicator,
-                        { backgroundColor: colors.accent[500] },
-                      ]}
-                    />
-                  )}
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <View style={$.grid}>
-            <View style={$.gridRow}>
-              <Pressable
-                onPress={() => setActiveTab('active')}
-                style={({ pressed }) => [
-                  $.gridCardLarge,
-                  {
-                    backgroundColor: isDark ? colors.dark.elevated : colors.responder.activeCardBg,
-                    borderColor: cardBorder,
-                  },
-                  pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
-                ]}
-              >
-                <View
-                  style={[
-                    $.gridIconLarge,
-                    { backgroundColor: colors.brand[500] + '20' },
+                    },
                   ]}
                 >
-                  <Ionicons
-                    name="warning"
-                    size={32}
-                    color={colors.brand[500]}
+                  {resolveRate}%
+                </Text>
+                <Text style={[$.glassCardLabel, { color: textSecondary }]}>
+                  Resolve Rate
+                </Text>
+                {/* mini progress bar */}
+                <View style={[$.progressTrack, { backgroundColor: isDark ? colors.dark.border : colors.slate[100] }]}>
+                  <LinearGradient
+                    colors={resolveRate >= 50 ? ['#10B981', '#34D399'] : resolveRate >= 25 ? ['#F59E0B', '#FBBF24'] : ['#EF4444', '#F87171']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[$.progressFill, { width: `${Math.max(resolveRate, 3)}%` as any }]}
                   />
                 </View>
-                <Text style={[$.gridCardTitle, { color: textPrimary }]}>
-                  Active{'\n'}Incidents
-                </Text>
-                <Text style={[$.gridCardCount, { color: textSecondary }]}>
-                  {active.length} incident{active.length !== 1 ? 's' : ''}
-                </Text>
-                <View style={$.gridToggleRow}>
-                  <View
-                    style={[
-                      $.gridToggle,
-                      {
-                        backgroundColor:
-                          active.length > 0
-                            ? colors.severity.critical
-                            : colors.severity.low,
-                      },
-                    ]}
-                  >
-                    <View style={$.gridToggleKnob} />
-                  </View>
-                  <Text
-                    style={[
-                      $.gridToggleLabel,
-                      {
-                        color:
-                          active.length > 0
-                            ? colors.severity.critical
-                            : colors.severity.low,
-                      },
-                    ]}
-                  >
-                    {active.length > 0 ? 'Alert' : 'Clear'}
-                  </Text>
-                </View>
-              </Pressable>
-
-              <View style={$.gridStack}>
-                <Pressable
-                  onPress={() => setActiveTab('active')}
-                  style={({ pressed }) => [
-                    $.gridCardSmall,
-                    {
-                      backgroundColor: cardBg,
-                      borderColor: cardBorder,
-                    },
-                    pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
-                  ]}
-                >
-                  <Text
-                    style={[$.gridSmallTitle, { color: textPrimary }]}
-                    numberOfLines={2}
-                  >
-                    En Route
-                  </Text>
-                  <Text style={[$.gridSmallSub, { color: textTertiary }]}>
-                    {enRouteCount} dispatch{enRouteCount !== 1 ? 'es' : ''}
-                  </Text>
-                  <View style={$.gridSmallBottom}>
-                    <View
-                      style={[
-                        $.gridIconSmall,
-                        { backgroundColor: colors.brand[500] + '15' },
-                      ]}
-                    >
-                      <Ionicons
-                        name="car"
-                        size={18}
-                        color={colors.brand[500]}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        $.gridToggleLabel,
-                        {
-                          color:
-                            enRouteCount > 0
-                              ? colors.brand[500]
-                              : textTertiary,
-                        },
-                      ]}
-                    >
-                      {enRouteCount > 0 ? 'Active' : 'None'}
-                    </Text>
-                  </View>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => setActiveTab('active')}
-                  style={({ pressed }) => [
-                    $.gridCardSmall,
-                    {
-                      backgroundColor: cardBg,
-                      borderColor: cardBorder,
-                    },
-                    pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
-                  ]}
-                >
-                  <Text
-                    style={[$.gridSmallTitle, { color: textPrimary }]}
-                    numberOfLines={2}
-                  >
-                    On Scene
-                  </Text>
-                  <Text style={[$.gridSmallSub, { color: textTertiary }]}>
-                    {onSceneCount} responder{onSceneCount !== 1 ? 's' : ''}
-                  </Text>
-                  <View style={$.gridSmallBottom}>
-                    <View
-                      style={[
-                        $.gridIconSmall,
-                        { backgroundColor: colors.accent[500] + '15' },
-                      ]}
-                    >
-                      <Ionicons
-                        name="location"
-                        size={18}
-                        color={colors.accent[500]}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        $.gridToggleLabel,
-                        {
-                          color:
-                            onSceneCount > 0
-                              ? colors.accent[500]
-                              : textTertiary,
-                        },
-                      ]}
-                    >
-                      {onSceneCount > 0 ? 'Active' : 'None'}
-                    </Text>
-                  </View>
-                </Pressable>
               </View>
             </View>
 
-            <View style={$.gridRow}>
+            {/* Pending + quick actions */}
+            <View style={$.cardRow}>
               <Pressable
-                onPress={() => setActiveTab('critical')}
+                onPress={() => setActiveTab('active')}
                 style={({ pressed }) => [
-                  $.gridCardSmall,
+                  $.miniCard,
                   {
-                    backgroundColor: cardBg,
+                    backgroundColor: isDark ? colors.dark.card : colors.white,
                     borderColor: cardBorder,
                     flex: 1,
                   },
-                  pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
+                  pressed && { transform: [{ scale: 0.97 }] },
                 ]}
               >
-                <Text
-                  style={[$.gridSmallTitle, { color: textPrimary }]}
-                  numberOfLines={2}
-                >
-                  Pending
-                </Text>
-                <Text style={[$.gridSmallSub, { color: textTertiary }]}>
-                  {pendingCount} awaiting
-                </Text>
-                <View style={$.gridSmallBottom}>
-                  <View
-                    style={[
-                      $.gridIconSmall,
-                      { backgroundColor: colors.severity.moderate + '15' },
-                    ]}
-                  >
-                    <Ionicons
-                      name="time"
-                      size={18}
-                      color={colors.severity.moderate}
-                    />
-                  </View>
-                  <Text
-                    style={[
-                      $.gridToggleLabel,
-                      {
-                        color:
-                          pendingCount > 0
-                            ? colors.severity.moderate
-                            : textTertiary,
-                      },
-                    ]}
-                  >
-                    {pendingCount > 0 ? 'Waiting' : 'None'}
-                  </Text>
+                <View style={[$.miniCardIcon, { backgroundColor: colors.severity.moderate + '14' }]}>
+                  <Ionicons name="time" size={18} color={colors.severity.moderate} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[$.miniCardValue, { color: textPrimary }]}>{pendingCount}</Text>
+                  <Text style={[$.miniCardLabel, { color: textTertiary }]}>Pending</Text>
                 </View>
               </Pressable>
 
               <Pressable
-                onPress={() => setActiveTab('overview')}
+                onPress={() => router.push('/responder/protocols' as never)}
                 style={({ pressed }) => [
-                  $.gridCardSmall,
+                  $.miniCard,
                   {
-                    backgroundColor: cardBg,
+                    backgroundColor: isDark ? colors.dark.card : colors.white,
                     borderColor: cardBorder,
                     flex: 1,
                   },
-                  pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
+                  pressed && { transform: [{ scale: 0.97 }] },
                 ]}
               >
-                <Text
-                  style={[$.gridSmallTitle, { color: textPrimary }]}
-                  numberOfLines={2}
-                >
-                  Resolved
-                </Text>
-                <Text style={[$.gridSmallSub, { color: textTertiary }]}>
-                  {resolvedCount} cleared
-                </Text>
-                <View style={$.gridSmallBottom}>
-                  <View
-                    style={[
-                      $.gridIconSmall,
-                      { backgroundColor: colors.severity.low + '15' },
-                    ]}
-                  >
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={18}
-                      color={colors.severity.low}
-                    />
-                  </View>
-                  <Text
-                    style={[
-                      $.gridToggleLabel,
-                      {
-                        color:
-                          resolvedCount > 0
-                            ? colors.severity.low
-                            : textTertiary,
-                      },
-                    ]}
-                  >
-                    {resolvedCount > 0 ? 'Done' : 'None'}
-                  </Text>
+                <View style={[$.miniCardIcon, { backgroundColor: colors.iconAccents.purple + '14' }]}>
+                  <Ionicons name="book" size={18} color={colors.iconAccents.purple} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[$.miniCardValue, { color: textPrimary }]}>SOP</Text>
+                  <Text style={[$.miniCardLabel, { color: textTertiary }]}>Protocols</Text>
                 </View>
               </Pressable>
             </View>
-          </View>
+          </Animated.View>
 
-          <View style={$.bottomBar}>
-            <Text style={[$.dateText, { color: textSecondary }]}>
-              {dateStr}
-            </Text>
-            <View style={$.quickActions}>
-              <Pressable
-                onPress={() =>
-                  router.push('/responder/protocols' as never)
-                }
-                style={[$.quickBtn, { backgroundColor: cardBg, borderColor: cardBorder }]}
-              >
-                <Ionicons
-                  name="book"
-                  size={18}
-                  color={colors.iconAccents.admin}
-                />
-              </Pressable>
-            </View>
-          </View>
-
-          {incidents.length > 0 && (
-            <View style={$.recentSection}>
-              <Text style={[$.sectionTitle, { color: textPrimary }]}>
-                Recent Incidents
-              </Text>
-              {incidents
-                .filter((i) => {
-                  if (activeTab === 'critical') return i.severity === 'critical';
-                  if (activeTab === 'active')
-                    return i.responderStatus !== 'resolved';
-                  return true;
-                })
-                .slice(0, 5)
-                .map((incident) => (
+          {/* ═══ TABS + INCIDENT LIST ═══ */}
+          <Animated.View
+            style={{
+              opacity: listAnim,
+              transform: [{ translateY: listAnim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
+            }}
+          >
+            {/* tabs */}
+            <View style={$.tabRow}>
+              {TABS.map((t) => {
+                const isActive = activeTab === t.key;
+                return (
                   <Pressable
-                    key={incident.id}
-                    onPress={() =>
-                      router.push(
-                        `/responder/incident/${incident.id}` as never,
-                      )
-                    }
-                    style={({ pressed }) => [
-                      $.recentCard,
+                    key={t.key}
+                    onPress={() => setActiveTab(t.key)}
+                    style={[
+                      $.tabPill,
                       {
-                        backgroundColor: cardBg,
-                        borderColor: cardBorder,
+                        backgroundColor: isActive
+                          ? (isDark ? colors.accent[500] : colors.accent[500])
+                          : (isDark ? colors.dark.card : colors.white),
+                        borderColor: isActive ? 'transparent' : cardBorder,
                       },
-                      pressed && { opacity: 0.85 },
                     ]}
                   >
-                    <View
+                    <Text
                       style={[
-                        $.recentDot,
-                        {
-                          backgroundColor:
-                            colors.severity[incident.severity],
-                        },
+                        $.tabPillText,
+                        { color: isActive ? colors.white : textSecondary },
                       ]}
-                    />
-                    <View style={$.recentContent}>
-                      <Text
-                        style={[$.recentTitle, { color: textPrimary }]}
-                        numberOfLines={1}
+                    >
+                      {t.label}
+                    </Text>
+                    {t.count > 0 && (
+                      <View
+                        style={[
+                          $.tabPillBadge,
+                          {
+                            backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : (isDark ? colors.dark.border : colors.slate[100]),
+                          },
+                        ]}
                       >
-                        {incident.title}
-                      </Text>
-                      <Text
-                        style={[$.recentMeta, { color: textTertiary }]}
-                        numberOfLines={1}
-                      >
-                        {STATUS_LABELS[incident.responderStatus]} ·{' '}
-                        {incident.reportedAt}
-                      </Text>
-                    </View>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={16}
-                      color={textTertiary}
-                    />
+                        <Text
+                          style={[
+                            $.tabPillBadgeText,
+                            { color: isActive ? colors.white : textTertiary },
+                          ]}
+                        >
+                          {t.count}
+                        </Text>
+                      </View>
+                    )}
                   </Pressable>
-                ))}
+                );
+              })}
             </View>
-          )}
+
+            {/* incident list */}
+            {filteredIncidents.length > 0 ? (
+              <View style={$.incidentList}>
+                <Text style={[$.sectionTitle, { color: textPrimary }]}>
+                  {activeTab === 'critical' ? 'Critical Incidents' : activeTab === 'active' ? 'Active Incidents' : 'Recent Incidents'}
+                </Text>
+                {filteredIncidents.slice(0, 6).map((incident, idx) => {
+                  const sevColor = colors.severity[incident.severity];
+                  const statusColor = STATUS_COLORS[incident.responderStatus];
+                  const statusIcon = STATUS_ICONS[incident.responderStatus];
+                  return (
+                    <Pressable
+                      key={incident.id}
+                      onPress={() => router.push(`/responder/incident/${incident.id}` as never)}
+                      style={({ pressed }) => [
+                        $.incidentCard,
+                        {
+                          backgroundColor: cardBg,
+                          borderColor: cardBorder,
+                        },
+                        pressed && { transform: [{ scale: 0.98 }], opacity: 0.9 },
+                      ]}
+                    >
+                      {/* severity accent line */}
+                      <View style={[$.incidentAccent, { backgroundColor: sevColor }]} />
+
+                      <View style={$.incidentBody}>
+                        <View style={$.incidentTop}>
+                          <View style={[$.incidentSevDot, { backgroundColor: sevColor }]} />
+                          <Text style={[$.incidentTitle, { color: textPrimary }]} numberOfLines={1}>
+                            {incident.title}
+                          </Text>
+                        </View>
+                        <View style={$.incidentMeta}>
+                          <View style={[$.incidentStatusPill, { backgroundColor: statusColor + '14' }]}>
+                            <Ionicons name={statusIcon} size={10} color={statusColor} />
+                            <Text style={[$.incidentStatusText, { color: statusColor }]}>
+                              {STATUS_LABELS[incident.responderStatus]}
+                            </Text>
+                          </View>
+                          <View style={$.incidentMetaRight}>
+                            <Ionicons name="location-outline" size={11} color={textTertiary} />
+                            <Text style={[$.incidentAddr, { color: textTertiary }]} numberOfLines={1}>
+                              {incident.address}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+
+                      <Ionicons name="chevron-forward" size={16} color={textTertiary} />
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={$.emptyState}>
+                <View style={[$.emptyIcon, { backgroundColor: isDark ? colors.dark.card : colors.slate[50] }]}>
+                  <Ionicons name="checkmark-circle" size={36} color={colors.severity.low} />
+                </View>
+                <Text style={[$.emptyTitle, { color: textPrimary }]}>All clear</Text>
+                <Text style={[$.emptySub, { color: textTertiary }]}>
+                  No {activeTab === 'critical' ? 'critical' : activeTab === 'active' ? 'active' : ''} incidents right now
+                </Text>
+              </View>
+            )}
+          </Animated.View>
         </ScrollView>
       )}
     </View>
@@ -679,297 +599,409 @@ export default function HomeTab() {
 
 const $ = StyleSheet.create({
   root: { flex: 1 },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  greeting: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  /* ── hero ── */
+  hero: {
+    paddingBottom: 48,
     paddingHorizontal: H_PAD,
-    paddingTop: 16,
-    paddingBottom: 8,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  greetHi: {
-    fontSize: 28,
+  orb: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,1)',
+  },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  heroDate: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.55)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  heroGreeting: {
+    fontSize: 26,
     fontWeight: '800',
+    color: colors.white,
     letterSpacing: -0.5,
   },
-  greetSub: {
+  heroSub: {
     fontSize: 14,
     fontWeight: '500',
+    color: 'rgba(255,255,255,0.60)',
     marginTop: 2,
   },
-  avatarWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+  heroAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    borderWidth: 2.5,
+    borderColor: 'rgba(255,255,255,0.30)',
+    overflow: 'hidden',
+  },
+  heroAvatarImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarTxt: {
-    fontSize: 16,
+  heroAvatarText: {
+    fontSize: 18,
     fontWeight: '800',
     color: colors.white,
   },
 
-  topRow: {
+  /* weather strip */
+  weatherStrip: {
     flexDirection: 'row',
-    paddingHorizontal: H_PAD,
-    gap: CARD_GAP,
-    marginTop: 16,
-  },
-  topCard: {
-    borderRadius: 20,
-    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 18,
     borderWidth: 1,
-    gap: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    borderColor: 'rgba(255,255,255,0.10)',
   },
-  topCardLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
-  topCardCity: {
-    fontSize: 14,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  weatherRow: {
+  weatherStripLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: 4,
+    flex: 1,
   },
-  weatherTemp: {
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: -1,
+  weatherStripTemp: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.white,
   },
-  weatherDescRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
+  weatherDivider: {
+    width: 1,
+    height: 14,
+    backgroundColor: 'rgba(255,255,255,0.20)',
   },
-  weatherDesc: {
+  weatherStripDesc: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.70)',
+    flex: 1,
+  },
+  weatherStripCity: {
     fontSize: 11,
     fontWeight: '600',
-  },
-  resolveRate: {
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: -1,
-    marginTop: 8,
-  },
-  resolveRateSub: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 4,
+    color: 'rgba(255,255,255,0.50)',
+    maxWidth: 100,
+    textAlign: 'right',
   },
 
-  tabs: {
-    flexDirection: 'row',
-    paddingHorizontal: H_PAD,
-    gap: 24,
-    marginTop: 24,
-    marginBottom: 4,
-  },
-  tabItem: {
-    paddingBottom: 8,
-    alignItems: 'center',
-  },
-  tabLabel: {
-    fontSize: 15,
-  },
-  tabIndicator: {
+  /* wave */
+  waveWrap: {
     position: 'absolute',
     bottom: 0,
-    height: 3,
-    width: 20,
-    borderRadius: 2,
+    left: 0,
+    right: 0,
+    height: 32,
+  },
+  waveBack: {
+    position: 'absolute',
+    bottom: 0,
+    left: -8,
+    right: -8,
+    height: 32,
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+  },
+  waveFront: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 24,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
   },
 
-  grid: {
-    paddingHorizontal: H_PAD,
-    gap: CARD_GAP,
-    marginTop: 16,
-  },
-  gridRow: {
+  /* ── stat chips ── */
+  statsRow: {
     flexDirection: 'row',
-    gap: CARD_GAP,
+    paddingHorizontal: H_PAD,
+    gap: 8,
+    marginTop: -4,
+    marginBottom: 16,
   },
-  gridCardLarge: {
-    width: BIG_CARD,
-    borderRadius: 22,
-    padding: 18,
+  statChip: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    justifyContent: 'space-between',
-    minHeight: BIG_CARD * 1.2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  gridIconLarge: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  gridCardTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    lineHeight: 22,
-  },
-  gridCardCount: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  gridToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
-  },
-  gridToggle: {
-    width: 40,
-    height: 22,
-    borderRadius: 11,
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
-  gridToggleKnob: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: colors.white,
-    alignSelf: 'flex-end',
-  },
-  gridToggleLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  gridStack: {
-    flex: 1,
-    gap: CARD_GAP,
-  },
-  gridCardSmall: {
-    borderRadius: 20,
-    padding: 14,
-    borderWidth: 1,
-    justifyContent: 'space-between',
-    minHeight: 100,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
-    shadowRadius: 6,
+    shadowRadius: 8,
     elevation: 2,
   },
-  gridSmallTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  gridSmallSub: {
-    fontSize: 10,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  gridSmallBottom: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  gridIconSmall: {
-    width: 34,
-    height: 34,
+  statChipIcon: {
+    width: 32,
+    height: 32,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  statChipValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  statChipLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
 
-  bottomBar: {
+  /* ── glass cards ── */
+  cardRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: H_PAD,
-    marginTop: 24,
+    gap: CARD_GAP,
+    marginBottom: CARD_GAP,
   },
-  dateText: {
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'lowercase',
+  glassCard: {
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
   },
-  quickActions: {
+  glassCardHeader: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
-  quickBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+  glassCardIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 2,
+  },
+  glassCardBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  liveIndicator: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  glassCardBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  glassCardBig: {
+    fontSize: 34,
+    fontWeight: '800',
+    letterSpacing: -1,
+  },
+  glassCardLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  progressTrack: {
+    height: 4,
+    borderRadius: 2,
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 2,
   },
 
-  recentSection: {
+  /* mini cards */
+  miniCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  miniCardIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniCardValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  miniCardLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+
+  /* ── tabs ── */
+  tabRow: {
+    flexDirection: 'row',
     paddingHorizontal: H_PAD,
-    marginTop: 20,
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  tabPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    borderWidth: 1,
+  },
+  tabPillText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  tabPillBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  tabPillBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+
+  /* ── incident list ── */
+  incidentList: {
+    paddingHorizontal: H_PAD,
     gap: 10,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.2,
     marginBottom: 4,
   },
-  recentCard: {
+  incidentCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
-    gap: 12,
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
-    shadowRadius: 6,
+    shadowRadius: 8,
     elevation: 2,
   },
-  recentDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+  incidentAccent: {
+    width: 4,
+    alignSelf: 'stretch',
   },
-  recentContent: {
+  incidentBody: {
     flex: 1,
-    gap: 3,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    gap: 8,
   },
-  recentTitle: {
+  incidentTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  incidentSevDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  incidentTitle: {
     fontSize: 14,
     fontWeight: '600',
+    flex: 1,
   },
-  recentMeta: {
-    fontSize: 11,
+  incidentMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  incidentStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  incidentStatusText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  incidentMetaRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    flex: 1,
+  },
+  incidentAddr: {
+    fontSize: 10,
     fontWeight: '500',
+    flex: 1,
+  },
+
+  /* ── empty state ── */
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    gap: 12,
+  },
+  emptyIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  emptySub: {
+    fontSize: 13,
+    textAlign: 'center',
   },
 });

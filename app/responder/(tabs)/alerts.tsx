@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
+import { useAlert } from '@/context/AlertContext';
 import { getAlertsWithReadState, markAlertRead, markAllAlertsRead } from '@/services/api';
 import type { AlertItem } from '@/types';
 
@@ -188,6 +189,7 @@ export default function AlertsScreen() {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const { token } = useAuth();
+  const { showAlert } = useAlert();
   const router = useRouter();
 
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
@@ -218,14 +220,22 @@ export default function AlertsScreen() {
   }, [load]);
 
   async function handleAlertPress(alert: AlertItem) {
-    if (!alert.read) {
-      await markAlertRead(alert.id, token!);
-      setAlerts((prev) =>
-        prev.map((a) => (a.id === alert.id ? { ...a, read: true } : a)),
-      );
-    }
+    try {
+      if (!alert.read) {
+        await markAlertRead(alert.id, token!);
+        setAlerts((prev) =>
+          prev.map((a) => (a.id === alert.id ? { ...a, read: true } : a)),
+        );
+      }
+    } catch {}
     if (alert.reportId) {
       router.push(`/responder/incident/${alert.reportId}`);
+    } else {
+      showAlert({
+        type: alert.kind === 'critical' ? 'error' : 'info',
+        title: alert.title,
+        message: alert.body + (alert.area ? `\n\nArea: ${alert.area}` : ''),
+      });
     }
   }
 

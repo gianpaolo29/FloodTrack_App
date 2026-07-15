@@ -227,3 +227,31 @@ export interface AdminStats {
     user?: { id: number; name: string };
   }>;
 }
+
+export type HazardCategoryType = 'flood' | 'road';
+
+export interface Hazard {
+  id: string;
+  category: HazardCategoryType;
+  type: string;
+  severity: Severity;
+  title: string;
+  description: string;
+  latitude: number;
+  longitude: number;
+  address: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HazardPayload {
+  category: HazardCategoryType;
+  type: string;
+  severity: Severity;
+  title: string;
+  description: string;
+  latitude: number;
+  longitude: number;
+  address: string;
+}

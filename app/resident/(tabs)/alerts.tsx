@@ -284,10 +284,12 @@ export default function AlertsScreen() {
   useEffect(() => { load(); }, [load]);
 
   async function handleAlertPress(alert: AlertItem) {
-    if (!alert.read) {
-      await markAlertRead(alert.id, token!);
-      setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, read: true } : a));
-    }
+    try {
+      if (!alert.read) {
+        await markAlertRead(alert.id, token!);
+        setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, read: true } : a));
+      }
+    } catch {}
     if (alert.reportId) {
       router.push(`/resident/report/${alert.reportId}`);
     } else {

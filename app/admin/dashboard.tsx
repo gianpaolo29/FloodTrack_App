@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -36,6 +37,7 @@ export default function AdminDashboard() {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
+  const router = useRouter();
   const { token, logout } = useAuth();
 
   const [data, setData] = useState<AdminStats | null>(null);
@@ -108,6 +110,21 @@ export default function AdminDashboard() {
               <StatCard label="Total Users" value={s.total_users} icon="people" color="#0EA5E9" cardBg={cardBg} cardBorder={cardBorder} textPrimary={textPrimary} textSecondary={textSecondary} isDark={isDark} />
               <StatCard label="Responders" value={s.total_responders} icon="shield" color={colors.accent[500]} cardBg={cardBg} cardBorder={cardBorder} textPrimary={textPrimary} textSecondary={textSecondary} isDark={isDark} />
             </View>
+
+            {/* Hazard Management shortcut */}
+            <Pressable
+              onPress={() => router.push('/admin/hazards')}
+              style={({ pressed }) => [$.hazardMgmtCard, { backgroundColor: cardBg, borderColor: cardBorder }, pressed && { opacity: 0.85 }]}
+            >
+              <View style={[$.hazardMgmtIcon, { backgroundColor: colors.brand[500] + '15' }]}>
+                <Ionicons name="warning" size={22} color={colors.brand[500]} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[$.hazardMgmtTitle, { color: textPrimary }]}>Hazard Management</Text>
+                <Text style={[$.hazardMgmtSub, { color: textSecondary }]}>Create and manage flood & road hazards on the map</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={textSecondary} />
+            </Pressable>
 
             <Text style={[$.sectionTitle, { color: textPrimary }]}>Severity Breakdown</Text>
             <View style={[$.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
@@ -300,4 +317,29 @@ const $ = StyleSheet.create({
     borderRadius: 10,
   },
   statusText: { fontSize: 10, fontWeight: '700', textTransform: 'capitalize' },
+
+  hazardMgmtCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  hazardMgmtIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hazardMgmtTitle: { fontSize: 15, fontWeight: '700' },
+  hazardMgmtSub: { fontSize: 11, fontWeight: '500', marginTop: 2 },
 });

@@ -33,12 +33,9 @@ import { SeverityChip, type Severity } from '@/components/SeverityChip';
 import { StatusBadge, type ReportStatus } from '@/components/StatusBadge';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getAllReports, getReportDetail, getEvacuationCenters } from '@/services/api';
-import type { Report as ApiReport } from '@/types';
-import { HeatmapLegend } from '@/components/HeatmapLegend';
+import { getAllReports, getReportDetail, getEvacuationCenters, getActiveHazards } from '@/services/api';
+import type { Report as ApiReport, Hazard } from '@/types';
 import { HeatmapZoneSummary } from '@/components/HeatmapZoneSummary';
-import { HeatmapTimeScrubber } from '@/components/HeatmapTimeScrubber';
-
 type HazardType = 'all' | 'flood';
 
 interface Report {
@@ -69,6 +66,18 @@ const HAZARD_META: Record<string, {
   color: string;
 }> = {
   flood: { label: 'Flood', icon: 'water', color: colors.brand[500] },
+};
+
+const HAZARD_MARKER_META: Record<string, { icon: keyof typeof Ionicons.glyphMap; color: string }> = {
+  flash_flood:   { icon: 'thunderstorm', color: colors.floodHazard.flashFlood },
+  river_flood:   { icon: 'water',        color: colors.floodHazard.riverFlood },
+  coastal_flood: { icon: 'boat',         color: colors.floodHazard.coastalFlood },
+  urban_flood:   { icon: 'business',     color: colors.floodHazard.urbanFlood },
+  closed_road:   { icon: 'close-circle', color: colors.roadHazard.closedRoad },
+  debris:        { icon: 'warning',      color: colors.roadHazard.debris },
+  landslide:     { icon: 'earth',        color: colors.roadHazard.landslide },
+  flooded_road:  { icon: 'car',          color: colors.roadHazard.impassable },
+  slow_zone:     { icon: 'speedometer',  color: colors.roadHazard.slowDown },
 };
 
 type MapTypeKey = MapType | 'flood';
@@ -758,6 +767,163 @@ const evs = StyleSheet.create({
   dirBtnText: { color: colors.white, fontWeight: '700', fontSize: 15 },
 });
 
+/* ───────────── Hazard Detail Sheet ───────────── */
+
+const HAZARD_CATEGORY_LABELS: Record<string, string> = {
+  flood: 'FLOOD HAZARD',
+  road: 'ROAD HAZARD',
+};
+
+const HAZARD_TYPE_LABELS: Record<string, string> = {
+  flash_flood:   'Flash Flood',
+  river_flood:   'River Overflow',
+  coastal_flood: 'Coastal / Storm Surge',
+  urban_flood:   'Urban Flood',
+  closed_road:   'Road Closed',
+  debris:        'Debris / Obstruction',
+  landslide:     'Landslide',
+  flooded_road:  'Flooded Road',
+  slow_zone:     'Slow Down Zone',
+};
+
+function HazardSheet({
+  hazard,
+  onClose,
+  isDark,
+  bottomInset,
+}: {
+  hazard: Hazard;
+  onClose: () => void;
+  isDark: boolean;
+  bottomInset: number;
+}) {
+  const meta      = HAZARD_MARKER_META[hazard.type];
+  const hzColor   = meta?.color ?? colors.severity[hazard.severity];
+  const bg        = isDark ? colors.slate[900] : colors.white;
+  const textMain  = isDark ? colors.white      : colors.slate[900];
+  const textSub   = isDark ? colors.slate[400] : colors.slate[500];
+  const sepColor  = isDark ? colors.slate[800] : colors.slate[100];
+  const catLabel  = HAZARD_CATEGORY_LABELS[hazard.category] ?? 'HAZARD';
+  const typeLabel = HAZARD_TYPE_LABELS[hazard.type] ?? hazard.type;
+
+  return (
+    <View style={[hzs.sheet, { backgroundColor: bg, paddingBottom: bottomInset + 16 }]}>
+      <View style={[hzs.accentBar, { backgroundColor: hzColor }]} />
+      <View style={hzs.handle} />
+
+      <View style={hzs.header}>
+        <View style={[hzs.iconWrap, { backgroundColor: hzColor }]}>
+          <Ionicons name={meta?.icon ?? 'alert'} size={22} color="#fff" />
+        </View>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text style={[hzs.catLabel, { color: hzColor }]}>
+            {catLabel} · {typeLabel.toUpperCase()}
+          </Text>
+          <Text style={[hzs.title, { color: textMain }]} numberOfLines={2}>
+            {hazard.title}
+          </Text>
+          {hazard.address ? (
+            <View style={hzs.addressRow}>
+              <Ionicons name="location-sharp" size={12} color={hzColor} />
+              <Text style={[hzs.address, { color: textSub }]} numberOfLines={1}>
+                {hazard.address}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        <Pressable
+          onPress={onClose}
+          style={[hzs.closeBtn, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]}
+          hitSlop={8}
+        >
+          <Ionicons name="close" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
+        </Pressable>
+      </View>
+
+      <View style={[hzs.divider, { backgroundColor: sepColor }]} />
+
+      <View style={hzs.chips}>
+        <View style={[hzs.chip, { backgroundColor: colors.severity[hazard.severity] + '18' }]}>
+          <View style={[hzs.chipDot, { backgroundColor: colors.severity[hazard.severity] }]} />
+          <Text style={[hzs.chipText, { color: colors.severity[hazard.severity] }]}>
+            {hazard.severity.charAt(0).toUpperCase() + hazard.severity.slice(1)}
+          </Text>
+        </View>
+        <View style={[hzs.chip, { backgroundColor: hzColor + '18' }]}>
+          <Ionicons name={meta?.icon ?? 'alert'} size={12} color={hzColor} />
+          <Text style={[hzs.chipText, { color: hzColor }]}>{typeLabel}</Text>
+        </View>
+        <View style={[hzs.chip, { backgroundColor: colors.severity.low + '18' }]}>
+          <View style={[hzs.chipDot, { backgroundColor: colors.severity.low }]} />
+          <Text style={[hzs.chipText, { color: colors.severity.low }]}>Active</Text>
+        </View>
+      </View>
+
+      {hazard.description ? (
+        <View style={hzs.descWrap}>
+          <Text style={[hzs.descText, { color: textSub }]}>{hazard.description}</Text>
+        </View>
+      ) : null}
+
+      <View style={hzs.footer}>
+        <Ionicons name="time-outline" size={12} color={textSub} />
+        <Text style={[hzs.footerText, { color: textSub }]}>Reported {hazard.createdAt}</Text>
+      </View>
+    </View>
+  );
+}
+
+const hzs = StyleSheet.create({
+  sheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15, shadowRadius: 20, elevation: 16,
+  },
+  accentBar: { height: 4 },
+  handle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: colors.slate[200],
+    alignSelf: 'center', marginTop: 12, marginBottom: 16,
+  },
+  header: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+    paddingHorizontal: 16, marginBottom: 14,
+  },
+  iconWrap: {
+    width: 48, height: 48, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  catLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
+  title: { fontSize: 16, fontWeight: '700', lineHeight: 22 },
+  addressRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  address: { fontSize: 12, flex: 1 },
+  closeBtn: {
+    width: 30, height: 30, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  divider: { height: StyleSheet.hairlineWidth, marginBottom: 14 },
+  chips: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 8,
+    paddingHorizontal: 16,
+  },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+  },
+  chipDot: { width: 7, height: 7, borderRadius: 3.5 },
+  chipText: { fontSize: 12, fontWeight: '600' },
+  descWrap: { paddingHorizontal: 16, marginTop: 12 },
+  descText: { fontSize: 13, lineHeight: 20 },
+  footer: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 16, marginTop: 12,
+  },
+  footerText: { fontSize: 11, fontWeight: '500' },
+});
+
 export default function MapScreen() {
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
@@ -767,10 +933,12 @@ export default function MapScreen() {
   const { token } = useAuth();
 
   const [reports,            setReports]            = useState<Report[]>([]);
+  const [adminHazards,       setAdminHazards]       = useState<Hazard[]>([]);
   const [evacCenters,        setEvacCenters]        = useState<EvacCenter[]>(FALLBACK_EVAC_CENTERS);
   const filter: HazardType = 'all';
   const [mapTypeKey,         setMapTypeKey]          = useState<MapTypeKey>('standard');
   const [selected,           setSelected]           = useState<Report | null>(null);
+  const [selectedHazard,     setSelectedHazard]     = useState<Hazard | null>(null);
   const [selectedEvac,       setSelectedEvac]       = useState<EvacCenter | null>(null);
   const [layersVisible,      setLayersVisible]      = useState(false);
   const [locating,           setLocating]           = useState(false);
@@ -782,7 +950,6 @@ export default function MapScreen() {
   const [photoUrls,          setPhotoUrls]          = useState<string[]>([]);
   const [photosLoading,      setPhotosLoading]      = useState(false);
   const [advisoryDismissed,  setAdvisoryDismissed]  = useState(false);
-  const [timeScrubHours, setTimeScrubHours] = useState(0);
   const [zoneSummary, setZoneSummary] = useState<{ latitude: number; longitude: number } | null>(null);
   const heatmapOpacity = useRef(new Animated.Value(0)).current;
 
@@ -906,24 +1073,22 @@ export default function MapScreen() {
         if (centers.length > 0) setEvacCenters(centers);
       })
       .catch(() => {});
+    getActiveHazards(token)
+      .then(setAdminHazards)
+      .catch(() => {});
   }, [token]);
 
   const filtered = filter === 'all'
     ? reports
     : reports.filter(r => r.hazardType === filter);
 
-  const now = Date.now();
-  const timeFiltered = timeScrubHours === 0
-    ? filtered
-    : filtered.filter(r => {
-        const reportTime = new Date(r.reportedAt).getTime();
-        return (now - reportTime) <= timeScrubHours * 3600000;
-      });
+  const timeFiltered = filtered;
 
   function handleMarkerPress(report: Report) {
     setSelected(report);
     setPhotoUrls([]);
     setSelectedEvac(null);
+    setSelectedHazard(null);
     mapRef.current?.animateToRegion({
       latitude: report.latitude - 0.01,
       longitude: report.longitude,
@@ -985,6 +1150,7 @@ export default function MapScreen() {
     setSearchQuery('');
     setSelectedEvac(center);
     setSelected(null);
+    setSelectedHazard(null);
     mapRef.current?.animateToRegion({
       latitude:       center.latitude - 0.008,
       longitude:      center.longitude,
@@ -1029,6 +1195,7 @@ export default function MapScreen() {
         onPress={(e: any) => {
           setSelected(null);
           setSelectedEvac(null);
+          setSelectedHazard(null);
           setPhotoUrls([]);
           if (showFloodHeatmap && e?.nativeEvent?.coordinate) {
             const { latitude, longitude } = e.nativeEvent.coordinate;
@@ -1071,6 +1238,33 @@ export default function MapScreen() {
             <HazardMarker report={report} />
           </Marker>
         ))}
+
+        {/* Admin-created hazard markers */}
+        {adminHazards.map(hz => {
+          const meta = HAZARD_MARKER_META[hz.type];
+          const hzColor = meta?.color ?? colors.severity[hz.severity];
+          return (
+            <Marker
+              key={`hz-${hz.id}`}
+              coordinate={{ latitude: hz.latitude, longitude: hz.longitude }}
+              tracksViewChanges={false}
+              anchor={{ x: 0.5, y: 1 }}
+              zIndex={5}
+              onPress={() => {
+                setSelectedHazard(hz);
+                setSelected(null);
+                setSelectedEvac(null);
+              }}
+            >
+              <View style={{ alignItems: 'center' }}>
+                <View style={[s.hazardPin, { backgroundColor: hzColor }]}>
+                  <Ionicons name={meta?.icon ?? 'alert'} size={14} color="#fff" />
+                </View>
+                <View style={[s.hazardPinTail, { borderTopColor: hzColor }]} />
+              </View>
+            </Marker>
+          );
+        })}
 
         {selectedEvac && (
           <Marker
@@ -1473,21 +1667,6 @@ export default function MapScreen() {
         );
       })()}
 
-      {showFloodHeatmap && !selected && !selectedEvac && !zoneSummary && (
-        <View style={[s.legendFloat, { bottom: tabClear + 186 }]}>
-          <HeatmapLegend mode="floodDepth" isDark={isDark} />
-        </View>
-      )}
-
-      {showFloodHeatmap && !selected && !selectedEvac && !zoneSummary && (
-        <View style={[s.timeScrubber, { bottom: tabClear + 14 }]}>
-          <HeatmapTimeScrubber
-            value={timeScrubHours}
-            onTimeChange={setTimeScrubHours}
-            isDark={isDark}
-          />
-        </View>
-      )}
 
       {zoneSummary && (
         <HeatmapZoneSummary
@@ -1667,16 +1846,28 @@ const s = StyleSheet.create({
   },
   advisoryText: { flex: 1, fontSize: 12, fontWeight: '600', color: '#fff' },
 
-  legendFloat: {
-    position: 'absolute',
-    left: 12,
-    zIndex: 20,
+  hazardPin: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2.5,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
   },
-
-  timeScrubber: {
-    position: 'absolute',
-    left: 12,
-    right: 66,
-    zIndex: 20,
+  hazardPinTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 7,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    marginTop: -1,
   },
 });

@@ -476,7 +476,7 @@ export default function ProfileScreen() {
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
         showsVerticalScrollIndicator={false}
       >
 
@@ -492,15 +492,11 @@ export default function ProfileScreen() {
             colors={colors.gradients.hero}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[styles.hero, { paddingTop: insets.top + 20 }]}
+            style={[styles.hero, { paddingTop: insets.top + 12 }]}
           >
             <View style={styles.orb1} />
             <View style={styles.orb2} />
             <View style={styles.orb3} />
-
-            <Pressable style={styles.editBtn} onPress={openEditProfile} accessibilityRole="button" accessibilityLabel="Edit profile">
-              <Ionicons name="pencil" size={15} color={colors.overlay.whiteFull} />
-            </Pressable>
 
             <Pressable onPress={handlePickAvatar} style={styles.avatarRing} disabled={avatarUploading}>
               <View style={[styles.avatarRingInner, { borderColor: roleColor }]}>
@@ -926,8 +922,8 @@ const styles = StyleSheet.create({
 
   hero: {
     alignItems: 'center',
-    paddingBottom: 52,
-    gap: 6,
+    paddingBottom: 40,
+    gap: 4,
     position: 'relative',
     overflow: 'hidden',
   },
@@ -960,19 +956,6 @@ const styles = StyleSheet.create({
     left: 30,
   },
 
-  editBtn: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: colors.overlay.whiteAccent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.overlay.whiteFirm,
-  },
   avatarRing: {
     padding: 4,
     borderRadius: 56,
@@ -1056,7 +1039,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 16,
     marginTop: -6,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   statTile: {
     flex: 1,
@@ -1089,7 +1072,7 @@ const styles = StyleSheet.create({
   },
   statLabel: { fontSize: 10, color: colors.slate[400], textAlign: 'center' },
 
-  content: { padding: 16, gap: 8 },
+  content: { padding: 16, gap: 6 },
 
   sectionLabel: {
     fontSize: 11,
@@ -1098,8 +1081,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     paddingLeft: 4,
-    marginTop: 10,
-    marginBottom: 4,
+    marginTop: 6,
+    marginBottom: 2,
   },
 
   card: {

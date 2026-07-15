@@ -110,6 +110,25 @@ export const colors = {
     online: '#34D399',
   },
 
+  // Road hazard colors
+  roadHazard: {
+    closedRoad:   '#D32F2F',
+    debris:       '#E65100',
+    landslide:    '#6D4C41',
+    impassable:   '#B71C1C',
+    slowDown:     '#F9A825',
+    gradient: ['#F9A825', '#E65100', '#D32F2F', '#B71C1C'],
+  },
+
+  // Flood hazard icon palette (map legend specific)
+  floodHazard: {
+    flashFlood:   '#0D47A1',
+    riverFlood:   '#1565C0',
+    coastalFlood: '#0277BD',
+    urbanFlood:   '#42A5F5',
+    gradient: ['#42A5F5', '#1565C0', '#0D47A1'],
+  },
+
   // Evacuation center color
   evac: '#0E9E6E',
 

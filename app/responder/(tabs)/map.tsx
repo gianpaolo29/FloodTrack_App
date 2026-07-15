@@ -33,8 +33,8 @@ import { SeverityChip } from '@/components/SeverityChip';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getAssignedIncidents, getEvacuationCenters } from '@/services/api';
-import type { Incident, ResponderStatus, Severity } from '@/types';
+import { getAssignedIncidents, getEvacuationCenters, getActiveHazards } from '@/services/api';
+import type { Incident, ResponderStatus, Severity, Hazard } from '@/types';
 import { HeatmapLegend } from '@/components/HeatmapLegend';
 import { HeatmapZoneSummary } from '@/components/HeatmapZoneSummary';
 import { HeatmapTimeScrubber } from '@/components/HeatmapTimeScrubber';
@@ -94,6 +94,18 @@ const MAP_TYPES: { key: MapTypeKey; label: string; icon: keyof typeof Ionicons.g
   { key: 'terrain',   label: 'Terrain',   icon: 'layers-outline', desc: 'Topographic'        },
   { key: 'flood',     label: 'Flood',     icon: 'water',          desc: 'Severity heatmap'   },
 ];
+
+const HAZARD_MARKER_META: Record<string, { icon: keyof typeof Ionicons.glyphMap; color: string }> = {
+  flash_flood:   { icon: 'thunderstorm', color: colors.floodHazard.flashFlood },
+  river_flood:   { icon: 'water',        color: colors.floodHazard.riverFlood },
+  coastal_flood: { icon: 'boat',         color: colors.floodHazard.coastalFlood },
+  urban_flood:   { icon: 'business',     color: colors.floodHazard.urbanFlood },
+  closed_road:   { icon: 'close-circle', color: colors.roadHazard.closedRoad },
+  debris:        { icon: 'warning',      color: colors.roadHazard.debris },
+  landslide:     { icon: 'earth',        color: colors.roadHazard.landslide },
+  flooded_road:  { icon: 'car',          color: colors.roadHazard.impassable },
+  slow_zone:     { icon: 'speedometer',  color: colors.roadHazard.slowDown },
+};
 
 interface EvacCenter {
   id: string;
@@ -583,6 +595,7 @@ export default function ResponderMapScreen() {
   const { token } = useAuth();
 
   const [incidents,      setIncidents]      = useState<Incident[]>([]);
+  const [adminHazards,   setAdminHazards]   = useState<Hazard[]>([]);
   const [evacCenters,    setEvacCenters]    = useState<EvacCenter[]>(FALLBACK_EVAC_CENTERS);
   const [loading,        setLoading]        = useState(true);
   const [filter,         setFilter]         = useState<StatusFilter>('all');
@@ -724,6 +737,9 @@ export default function ResponderMapScreen() {
         if (centers.length > 0) setEvacCenters(centers);
       })
       .catch(() => {});
+    getActiveHazards(token)
+      .then(setAdminHazards)
+      .catch(() => {});
   }, [token]);
 
   useEffect(() => {
@@ -731,7 +747,8 @@ export default function ResponderMapScreen() {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') return;
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const loc = await Location.getLastKnownPositionAsync() ??
+          await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
         setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
       } catch {}
     })();
@@ -802,7 +819,8 @@ export default function ResponderMapScreen() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const loc = await Location.getLastKnownPositionAsync() ??
+        await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
       setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
     } catch {}
   }
@@ -908,6 +926,28 @@ export default function ResponderMapScreen() {
             <IncidentMarker incident={incident} />
           </Marker>
         ))}
+
+        {/* Admin-created hazard markers */}
+        {adminHazards.map(hz => {
+          const meta = HAZARD_MARKER_META[hz.type];
+          const hzColor = meta?.color ?? colors.severity[hz.severity];
+          return (
+            <Marker
+              key={`hz-${hz.id}`}
+              coordinate={{ latitude: hz.latitude, longitude: hz.longitude }}
+              tracksViewChanges={false}
+              anchor={{ x: 0.5, y: 1 }}
+              zIndex={5}
+            >
+              <View style={{ alignItems: 'center' }}>
+                <View style={[s.hazardPin, { backgroundColor: hzColor }]}>
+                  <Ionicons name={meta?.icon ?? 'alert'} size={14} color="#fff" />
+                </View>
+                <View style={[s.hazardPinTail, { borderTopColor: hzColor }]} />
+              </View>
+            </Marker>
+          );
+        })}
 
         {selectedEvac && (
           <Marker
@@ -1558,4 +1598,29 @@ const s = StyleSheet.create({
     paddingVertical: 12,
   },
   shimmerFooterText: { fontSize: 12, fontWeight: '600' },
+
+  hazardPin: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2.5,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  hazardPinTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 7,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    marginTop: -1,
+  },
 });

@@ -8,6 +8,8 @@ import type {
   FamilyGroup,
   FamilyMember,
   FieldReportData,
+  Hazard,
+  HazardPayload,
   Incident,
   IncidentDetail,
   IncidentMessage,
@@ -852,6 +854,64 @@ export async function getProtocols(token: string): Promise<ProtocolItem[]> {
 
 export async function getAdminStats(token: string): Promise<AdminStats> {
   return get<AdminStats>('/admin/stats', token);
+}
+
+/* ── Hazard Management (Admin) ─────────────────────── */
+
+interface RawHazard {
+  id: number;
+  category: 'flood' | 'road';
+  type: string;
+  severity: 'low' | 'moderate' | 'high' | 'critical';
+  title: string;
+  description: string | null;
+  latitude: number;
+  longitude: number;
+  address: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+function adaptHazard(raw: RawHazard): Hazard {
+  return {
+    id:          String(raw.id),
+    category:    raw.category,
+    type:        raw.type,
+    severity:    raw.severity,
+    title:       raw.title,
+    description: raw.description ?? '',
+    latitude:    raw.latitude,
+    longitude:   raw.longitude,
+    address:     raw.address ?? '',
+    active:      raw.active,
+    createdAt:   formatRelativeTime(raw.created_at),
+    updatedAt:   formatRelativeTime(raw.updated_at),
+  };
+}
+
+export async function getHazards(token: string): Promise<Hazard[]> {
+  const data = await get<{ data: RawHazard[] }>('/admin/hazards', token);
+  return (Array.isArray(data) ? data : data.data).map(adaptHazard);
+}
+
+export async function getActiveHazards(token: string): Promise<Hazard[]> {
+  const data = await get<{ data: RawHazard[] }>('/hazards', token);
+  return (Array.isArray(data) ? data : data.data).map(adaptHazard);
+}
+
+export async function createHazard(payload: HazardPayload, token: string): Promise<Hazard> {
+  const raw = await post<RawHazard>('/admin/hazards', payload, token);
+  return adaptHazard(raw);
+}
+
+export async function updateHazard(id: string, payload: Partial<HazardPayload> & { active?: boolean }, token: string): Promise<Hazard> {
+  const raw = await put<RawHazard>(`/admin/hazards/${id}`, payload, token);
+  return adaptHazard(raw);
+}
+
+export async function deleteHazard(id: string, token: string): Promise<void> {
+  await del(`/admin/hazards/${id}`, token);
 }
 
 export async function getCurrentUser(token: string): Promise<User & { isOnDuty?: boolean }> {
