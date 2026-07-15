@@ -91,10 +91,13 @@ export default function AdminDashboard() {
         showsVerticalScrollIndicator={false}
       >
         <View style={$.header}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={[$.headerTitle, { color: textPrimary }]}>Admin Dashboard</Text>
             <Text style={[$.headerSub, { color: textSecondary }]}>System overview</Text>
           </View>
+          <Pressable onPress={() => router.push('/admin/settings')} style={[$.logoutBtn, { borderColor: cardBorder }]}>
+            <Ionicons name="settings-outline" size={18} color={textSecondary} />
+          </Pressable>
           <Pressable onPress={logout} style={[$.logoutBtn, { borderColor: cardBorder }]}>
             <Ionicons name="log-out-outline" size={18} color={colors.severity.critical} />
           </Pressable>
@@ -110,6 +113,26 @@ export default function AdminDashboard() {
               <StatCard label="Total Users" value={s.total_users} icon="people" color="#0EA5E9" cardBg={cardBg} cardBorder={cardBorder} textPrimary={textPrimary} textSecondary={textSecondary} isDark={isDark} />
               <StatCard label="Responders" value={s.total_responders} icon="shield" color={colors.accent[500]} cardBg={cardBg} cardBorder={cardBorder} textPrimary={textPrimary} textSecondary={textSecondary} isDark={isDark} />
             </View>
+
+            {/* Report Management shortcut */}
+            <Pressable
+              onPress={() => router.push('/admin/reports')}
+              style={({ pressed }) => [$.hazardMgmtCard, { backgroundColor: cardBg, borderColor: cardBorder }, pressed && { opacity: 0.85 }]}
+            >
+              <View style={[$.hazardMgmtIcon, { backgroundColor: '#3B82F6' + '15' }]}>
+                <Ionicons name="document-text" size={22} color="#3B82F6" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[$.hazardMgmtTitle, { color: textPrimary }]}>Report Management</Text>
+                <Text style={[$.hazardMgmtSub, { color: textSecondary }]}>Review, approve, or reject flood reports · AI auto-processes clear cases</Text>
+              </View>
+              {s.pending > 0 && (
+                <View style={[$.pendingBadge, { backgroundColor: '#F59E0B' }]}>
+                  <Text style={$.pendingBadgeText}>{s.pending}</Text>
+                </View>
+              )}
+              <Ionicons name="chevron-forward" size={18} color={textSecondary} />
+            </Pressable>
 
             {/* Hazard Management shortcut */}
             <Pressable
@@ -163,18 +186,41 @@ export default function AdminDashboard() {
             </View>
 
             <Text style={[$.sectionTitle, { color: textPrimary }]}>Recent Reports</Text>
-            {data.recent_reports.map(report => (
-              <View key={report.id} style={[$.recentCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-                <View style={[$.recentDot, { backgroundColor: SEVERITY_COLORS[report.severity] ?? colors.slate[400] }]} />
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={[$.recentRef, { color: textPrimary }]}>{report.reference_number}</Text>
-                  <Text style={[$.recentAddr, { color: textSecondary }]} numberOfLines={1}>{report.address}</Text>
+            {data.recent_reports.map(report => {
+              const isDuplicate  = report.potential_duplicate_of != null;
+              const imageFailed  = report.ai_image_verified === false;
+              const textFlagged  = report.ai_flagged && !isDuplicate && !imageFailed;
+              const imageOk      = report.ai_image_verified === true && !report.ai_flagged;
+              const aiBadgeColor = isDuplicate || imageFailed || textFlagged
+                ? colors.severity.moderate
+                : imageOk
+                ? colors.severity.low
+                : null;
+              const aiBadgeLabel = isDuplicate  ? 'Duplicate'
+                : imageFailed  ? 'Bad image'
+                : textFlagged  ? 'Suspicious'
+                : imageOk      ? 'AI verified'
+                : null;
+
+              return (
+                <View key={report.id} style={[$.recentCard, { backgroundColor: cardBg, borderColor: aiBadgeColor ? aiBadgeColor + '40' : cardBorder }]}>
+                  <View style={[$.recentDot, { backgroundColor: SEVERITY_COLORS[report.severity] ?? colors.slate[400] }]} />
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={[$.recentRef, { color: textPrimary }]}>{report.reference_number}</Text>
+                    <Text style={[$.recentAddr, { color: textSecondary }]} numberOfLines={1}>{report.address}</Text>
+                    {aiBadgeLabel && (
+                      <View style={[$.aiBadge, { backgroundColor: aiBadgeColor! + '18' }]}>
+                        <Ionicons name="sparkles" size={9} color={aiBadgeColor!} />
+                        <Text style={[$.aiBadgeText, { color: aiBadgeColor! }]}>{aiBadgeLabel}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={[$.statusBadge, { backgroundColor: (STATUS_COLORS[report.status] ?? colors.slate[400]) + '20' }]}>
+                    <Text style={[$.statusText, { color: STATUS_COLORS[report.status] ?? colors.slate[400] }]}>{report.status}</Text>
+                  </View>
                 </View>
-                <View style={[$.statusBadge, { backgroundColor: (STATUS_COLORS[report.status] ?? colors.slate[400]) + '20' }]}>
-                  <Text style={[$.statusText, { color: STATUS_COLORS[report.status] ?? colors.slate[400] }]}>{report.status}</Text>
-                </View>
-              </View>
-            ))}
+              );
+            })}
           </>
         )}
       </ScrollView>
@@ -217,8 +263,8 @@ const $ = StyleSheet.create({
 
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 10,
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 12,
@@ -318,6 +364,17 @@ const $ = StyleSheet.create({
   },
   statusText: { fontSize: 10, fontWeight: '700', textTransform: 'capitalize' },
 
+  aiBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  aiBadgeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.2 },
+
   hazardMgmtCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -340,6 +397,16 @@ const $ = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  pendingBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  pendingBadgeText: { fontSize: 11, fontWeight: '800', color: '#fff' },
+
   hazardMgmtTitle: { fontSize: 15, fontWeight: '700' },
   hazardMgmtSub: { fontSize: 11, fontWeight: '500', marginTop: 2 },
 });

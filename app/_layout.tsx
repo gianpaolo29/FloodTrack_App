@@ -7,6 +7,7 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { AlertProvider } from '@/context/AlertContext';
+import { AlertBadgeProvider } from '@/context/AlertBadgeContext';
 import { initNotifications, onNotificationResponse } from '@/services/notifications';
 
 function AuthGuard() {
@@ -96,9 +97,11 @@ export const unstable_settings = {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <AlertProvider>
-        <RootLayoutInner />
-      </AlertProvider>
+      <AlertBadgeProvider>
+        <AlertProvider>
+          <RootLayoutInner />
+        </AlertProvider>
+      </AlertBadgeProvider>
     </AuthProvider>
   );
 }

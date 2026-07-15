@@ -76,6 +76,21 @@ export interface ReportDetail extends Report {
   updates: ResponderUpdate[];
   evidenceCount: number;
   mediaUrls: string[];
+  aiFlagged: boolean;
+  aiFlagReason: string | null;
+  aiImageVerified: boolean | null;
+  aiImageNotes: string | null;
+  aiHasDuplicate: boolean;
+}
+
+export interface AdminReport extends Report {
+  description: string;
+  aiImageVerified: boolean | null;
+  aiFlagged: boolean;
+  aiFlagReason: string | null;
+  aiHasDuplicate: boolean;
+  aiImageNotes: string | null;
+  reportedByName: string;
 }
 
 export interface ReportSubmission {
@@ -225,6 +240,11 @@ export interface AdminStats {
     address: string;
     created_at: string;
     user?: { id: number; name: string };
+    ai_flagged?: boolean;
+    ai_flag_reason?: string | null;
+    ai_image_verified?: boolean | null;
+    ai_image_notes?: string | null;
+    potential_duplicate_of?: number | null;
   }>;
 }
 

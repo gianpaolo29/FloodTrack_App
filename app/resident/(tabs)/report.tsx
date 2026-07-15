@@ -14,6 +14,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -81,7 +82,7 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
             i < current
               ? { backgroundColor: colors.brand[500] }
               : i === current
-              ? { backgroundColor: colors.brand[500], width: 24 }
+              ? { backgroundColor: colors.brand[500], width: 20 }
               : { backgroundColor: colors.slate[200] },
           ]}
         />
@@ -92,7 +93,7 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
 
 const stepStyles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 6, alignItems: 'center' },
-  dot: { height: 6, width: 6, borderRadius: 3 },
+  dot: { height: 5, width: 5, borderRadius: 2.5 },
 });
 
 interface LocationData {
@@ -1187,6 +1188,7 @@ export default function ReportScreen() {
           setFloodDepth(null);
           setPhotos([]);
           setDescription('');
+          detectLocation();
           router.replace('/resident');
         }}
       />
@@ -1195,7 +1197,7 @@ export default function ReportScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
-      <View style={[styles.header, { paddingTop: insets.top + 12, backgroundColor: colors.brand[500] }]}>
+      <LinearGradient colors={[colors.brand[500], colors.brand[700]]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <Pressable
           onPress={step === 0 ? () => router.back() : () => animateStepTransition('back', () => setStep(s => s - 1))}
           style={styles.backBtn}
@@ -1214,7 +1216,7 @@ export default function ReportScreen() {
         </View>
 
         <StepIndicator current={step} total={TOTAL_STEPS} />
-      </View>
+      </LinearGradient>
 
       <ScrollView
         style={[styles.scroll, { backgroundColor: cardBg }]}
@@ -1347,7 +1349,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     backgroundColor: colors.brand[50],
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.brand[100],
   },
@@ -1361,10 +1363,10 @@ const styles = StyleSheet.create({
   severityCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
+    gap: 12,
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
     borderColor: colors.slate[200],
     backgroundColor: colors.white,
   },
@@ -1455,7 +1457,7 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: 20,
     paddingTop: 12,
-    borderTopWidth: 1,
+    borderTopWidth: StyleSheet.hairlineWidth,
     gap: 12,
   },
   summaryRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
@@ -1476,10 +1478,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
-    gap: 16,
+    gap: 20,
   },
   confirmIcon:  { marginBottom: 8 },
-  confirmTitle: { fontSize: 24, fontWeight: '800', color: colors.slate[900], textAlign: 'center' },
+  confirmTitle: { fontSize: 26, fontWeight: '800', color: colors.slate[900], textAlign: 'center' },
   confirmSub:   { fontSize: 15, color: colors.slate[600], textAlign: 'center', lineHeight: 22 },
   confirmNote:  { fontSize: 13, color: colors.slate[400], textAlign: 'center', lineHeight: 20 },
 });

@@ -18,7 +18,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import MapView, {
-  Circle,
+  Heatmap,
   Marker,
   PROVIDER_GOOGLE,
   type MapType,
@@ -78,12 +78,15 @@ const STATUS_FILTERS: { key: StatusFilter; label: string; icon: keyof typeof Ion
   { key: 'on_scene', label: 'On scene', icon: 'location-outline', color: colors.accent[500] },
 ];
 
-const FLOOD_DOT: Record<Severity, { fill: string; stroke: string; radius: number }> = {
-  low:      { fill: 'rgba(144,202,249,0.25)', stroke: 'rgba(144,202,249,0.6)',  radius: 10 },
-  moderate: { fill: 'rgba(66,165,245,0.30)',  stroke: 'rgba(66,165,245,0.65)', radius: 14 },
-  high:     { fill: 'rgba(21,101,192,0.35)',  stroke: 'rgba(21,101,192,0.7)',  radius: 18 },
-  critical: { fill: 'rgba(13,71,161,0.40)',   stroke: 'rgba(13,71,161,0.75)', radius: 22 },
+// Flood-type RGB values matching web admin blue palette (dark navy → light blue)
+const FLOOD_TYPE_RGB: Record<string, string> = {
+  flash_flood:   '13,71,161',   // #0D47A1 dark navy
+  river_flood:   '21,101,192',  // #1565C0 medium blue
+  coastal_flood: '2,119,189',   // #0277BD sky blue
+  urban_flood:   '66,165,245',  // #42A5F5 light blue
 };
+const FLOOD_TYPE_DEFAULT_RGB = '21,101,192'; // fallback for unclassified flood incidents
+
 
 type MapTypeKey = MapType | 'flood';
 
@@ -297,7 +300,7 @@ const mtm = StyleSheet.create({
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
     padding: 22, paddingBottom: 42,
     shadowColor: '#000', shadowOffset: { width: 0, height: -6 },
     shadowOpacity: 0.15, shadowRadius: 20, elevation: 20,
@@ -419,7 +422,7 @@ function IncidentSheet({
 const sheetStyles = StyleSheet.create({
   root: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
     overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: -6 },
     shadowOpacity: 0.15, shadowRadius: 20, elevation: 18,
@@ -545,7 +548,7 @@ function EvacSheet({
 const evacSheet = StyleSheet.create({
   sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
     overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15, shadowRadius: 20, elevation: 16,
@@ -554,7 +557,7 @@ const evacSheet = StyleSheet.create({
   handle: {
     width: 36, height: 4, borderRadius: 2,
     backgroundColor: colors.slate[200],
-    alignSelf: 'center', marginTop: 12, marginBottom: 16,
+    alignSelf: 'center', marginTop: 10, marginBottom: 14,
   },
   header:     { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, marginBottom: 14 },
   iconWrap: {
@@ -900,20 +903,63 @@ export default function ResponderMapScreen() {
           }
         }}
       >
-        {showFloodHeatmap && timeFilteredActive.map(i => {
-          const dot = FLOOD_DOT[i.severity];
+        {showFloodHeatmap && [
+          { key: 'flash_flood',   rgb: '13,71,161'  },
+          { key: 'river_flood',   rgb: '21,101,192' },
+          { key: 'coastal_flood', rgb: '2,119,189'  },
+          { key: 'urban_flood',   rgb: '66,165,245' },
+        ].flatMap(({ key, rgb }) => {
+          const pts = [
+            ...timeFilteredActive.filter(i => i.type === key),
+            ...adminHazards.filter(hz => hz.category === 'flood' && hz.type === key),
+          ].map(src => ({
+            latitude:  src.latitude,
+            longitude: src.longitude,
+            weight:    SEVERITY_WEIGHT[src.severity],
+          }));
+          if (pts.length === 0) return [];
+          return [(
+            <Heatmap
+              key={`hm-${key}`}
+              points={pts}
+              radius={55}
+              opacity={0.78}
+              gradient={{
+                colors:      [`rgba(${rgb},0)`, `rgba(${rgb},0.55)`, `rgba(${rgb},0.95)`],
+                startPoints: [0, 0.38, 1],
+                colorMapSize: 256,
+              }}
+            />
+          )];
+        })}
+
+        {/* Catch-all heatmap for incidents whose type isn't a known flood subtype */}
+        {showFloodHeatmap && (() => {
+          const known = ['flash_flood', 'river_flood', 'coastal_flood', 'urban_flood'];
+          const pts = [
+            ...timeFilteredActive.filter(i => !known.includes(i.type)),
+            ...adminHazards.filter(hz => hz.category === 'flood' && !known.includes(hz.type)),
+          ].map(src => ({
+            latitude:  src.latitude,
+            longitude: src.longitude,
+            weight:    SEVERITY_WEIGHT[src.severity],
+          }));
+          if (pts.length === 0) return null;
+          const rgb = FLOOD_TYPE_DEFAULT_RGB;
           return (
-            <Circle
-              key={`flood-${i.id}`}
-              center={{ latitude: i.latitude, longitude: i.longitude }}
-              radius={dot.radius}
-              fillColor={dot.fill}
-              strokeColor={dot.stroke}
-              strokeWidth={1.5}
-              zIndex={SEVERITY_WEIGHT[i.severity]}
+            <Heatmap
+              key="hm-default"
+              points={pts}
+              radius={55}
+              opacity={0.78}
+              gradient={{
+                colors:      [`rgba(${rgb},0)`, `rgba(${rgb},0.55)`, `rgba(${rgb},0.95)`],
+                startPoints: [0, 0.38, 1],
+                colorMapSize: 256,
+              }}
             />
           );
-        })}
+        })()}
 
         {timeFiltered.map(incident => (
           <Marker
@@ -1299,7 +1345,6 @@ export default function ResponderMapScreen() {
             style={({ pressed }) => [
               s.ctrlBtn,
               { bottom: tabClear + 68, right: 12, backgroundColor: ctrlBg },
-              isDark && { borderColor: colors.dark.border },
               pressed && { opacity: 0.8 },
             ]}
             onPress={() => setLayersVisible(true)}
@@ -1314,7 +1359,6 @@ export default function ResponderMapScreen() {
             style={({ pressed }) => [
               s.ctrlBtn,
               { bottom: tabClear + 14, right: 12, backgroundColor: ctrlBg },
-              isDark && { borderColor: colors.dark.border },
               pressed && { opacity: 0.8 },
             ]}
             onPress={handleLocateMe}
@@ -1394,7 +1438,25 @@ export default function ResponderMapScreen() {
 
       {showFloodHeatmap && !selected && !selectedEvac && !zoneSummary && (
         <View style={[s.legendFloat, { bottom: tabClear + 186 }]}>
-          <HeatmapLegend mode="floodDepth" isDark={isDark} />
+          {(() => {
+            const floodSources = [
+              ...timeFilteredActive,
+              ...adminHazards.filter(hz => hz.category === 'flood'),
+            ];
+            return (
+              <HeatmapLegend
+                mode="floodType"
+                isDark={isDark}
+                detailed
+                floodTypeCounts={{
+                  flash_flood:   floodSources.filter(x => x.type === 'flash_flood').length,
+                  river_flood:   floodSources.filter(x => x.type === 'river_flood').length,
+                  coastal_flood: floodSources.filter(x => x.type === 'coastal_flood').length,
+                  urban_flood:   floodSources.filter(x => x.type === 'urban_flood').length,
+                }}
+              />
+            );
+          })()}
         </View>
       )}
 
@@ -1444,7 +1506,7 @@ const s = StyleSheet.create({
     position: 'absolute', top: 0, left: 0, right: 0,
     borderBottomLeftRadius: 22, borderBottomRightRadius: 22,
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.10, shadowRadius: 14, elevation: 10,
+    shadowOpacity: 0.08, shadowRadius: 12, elevation: 10,
     overflow: 'hidden',
   },
   searchRow: {
@@ -1454,8 +1516,8 @@ const s = StyleSheet.create({
   searchBar: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: colors.slate[50],
-    borderWidth: 1.5, borderColor: colors.slate[200],
-    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10,
+    borderWidth: 1, borderColor: colors.slate[200],
+    borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10,
     position: 'relative',
     overflow: 'hidden',
   },
@@ -1478,7 +1540,7 @@ const s = StyleSheet.create({
 
   ctrlBtn: {
     position: 'absolute',
-    width: 46, height: 46, borderRadius: 16, borderWidth: 1,
+    width: 46, height: 46, borderRadius: 16,
     borderColor: '#E8ECF0',
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
@@ -1524,7 +1586,7 @@ const s = StyleSheet.create({
   dropdown: {
     position: 'absolute', left: 0, right: 0,
     zIndex: 99,
-    borderBottomLeftRadius: 20, borderBottomRightRadius: 20,
+    borderBottomLeftRadius: 22, borderBottomRightRadius: 22,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18, shadowRadius: 20, elevation: 16,

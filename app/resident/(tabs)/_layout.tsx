@@ -1,36 +1,66 @@
 import { Tabs } from 'expo-router';
 import type { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
-import { Platform, Pressable, View } from 'react-native';
+import { Platform, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAlertBadge } from '@/context/AlertBadgeContext';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
 function TabIcon({
   name,
+  label,
   color,
   size,
   focused,
+  badge = false,
 }: {
   name: IoniconsName;
+  label: string;
   color: string;
   size: number;
   focused: boolean;
+  badge?: boolean;
 }) {
   return (
-    <View style={{ alignItems: 'center', gap: 4 }}>
-      <Ionicons name={name} size={size} color={color} />
+    <View style={{ alignItems: 'center', justifyContent: 'center' }}>
       <View
         style={{
-          width: focused ? 16 : 4,
-          height: 3,
-          borderRadius: 2,
-          backgroundColor: focused ? color : 'transparent',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: focused ? color + '18' : 'transparent',
+          borderRadius: 20,
+          paddingHorizontal: focused ? 14 : 10,
+          paddingVertical: 6,
+          gap: 5,
         }}
-      />
+      >
+        <View>
+          <Ionicons name={name} size={size} color={color} />
+          {badge && (
+            <View style={{
+              position: 'absolute', top: -2, right: -4,
+              width: 8, height: 8, borderRadius: 4,
+              backgroundColor: colors.severity.critical,
+              borderWidth: 1.5, borderColor: colors.white,
+            }} />
+          )}
+        </View>
+        {focused && (
+          <Text style={{
+            fontSize: 11,
+            fontWeight: '700',
+            color,
+            letterSpacing: 0.1,
+          }}>
+            {label}
+          </Text>
+        )}
+      </View>
     </View>
   );
 }
@@ -62,14 +92,14 @@ function ReportFABButton({
         <View
           style={{
             position: 'absolute',
-            top: -30,
+            top: -28,
             width: 64,
             height: 64,
             borderRadius: 32,
             backgroundColor: pressed ? colors.brand[600] : colors.brand[500],
             alignItems: 'center',
             justifyContent: 'center',
-            borderWidth: 4,
+            borderWidth: 3.5,
             borderColor: ringColor,
             shadowColor: colors.brand[700],
             shadowOffset: { width: 0, height: 6 },
@@ -78,7 +108,7 @@ function ReportFABButton({
             elevation: pressed ? 6 : 12,
           }}
         >
-          <Ionicons name="add" size={32} color={colors.white} />
+          <Ionicons name="add" size={30} color={colors.white} />
         </View>
       )}
     </Pressable>
@@ -88,6 +118,7 @@ function ReportFABButton({
 export default function ResidentTabLayout() {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
+  const { unreadCount } = useAlertBadge();
 
   const tabBarBg = isDark ? '#0D1117' : colors.white;
 
@@ -103,19 +134,14 @@ export default function ResidentTabLayout() {
           borderTopWidth: 0,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -4 },
-          shadowOpacity: isDark ? 0.35 : 0.08,
-          shadowRadius: 20,
+          shadowOpacity: isDark ? 0.3 : 0.06,
+          shadowRadius: 16,
           elevation: 16,
           height: Platform.OS === 'ios' ? 90 : 72,
           paddingBottom: Platform.OS === 'ios' ? 28 : 10,
           paddingTop: 10,
         },
-        tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: '600',
-          letterSpacing: 0.2,
-          marginTop: 0,
-        },
+        tabBarShowLabel: false,
       }}
     >
       <Tabs.Screen
@@ -123,7 +149,7 @@ export default function ResidentTabLayout() {
         options={{
           title: 'Map',
           tabBarIcon: ({ color, size, focused }) => (
-            <TabIcon name={focused ? 'map' : 'map-outline'} color={color} size={size} focused={focused} />
+            <TabIcon name={focused ? 'map' : 'map-outline'} label="Map" color={color} size={size} focused={focused} />
           ),
         }}
       />
@@ -135,6 +161,7 @@ export default function ResidentTabLayout() {
           tabBarIcon: ({ color, size, focused }) => (
             <TabIcon
               name={focused ? 'document-text' : 'document-text-outline'}
+              label="Reports"
               color={color}
               size={size}
               focused={focused}
@@ -161,9 +188,11 @@ export default function ResidentTabLayout() {
           tabBarIcon: ({ color, size, focused }) => (
             <TabIcon
               name={focused ? 'notifications' : 'notifications-outline'}
+              label="Alerts"
               color={color}
               size={size}
               focused={focused}
+              badge={unreadCount > 0}
             />
           ),
         }}
@@ -176,6 +205,7 @@ export default function ResidentTabLayout() {
           tabBarIcon: ({ color, size, focused }) => (
             <TabIcon
               name={focused ? 'person-circle' : 'person-circle-outline'}
+              label="Profile"
               color={color}
               size={size}
               focused={focused}

@@ -25,7 +25,7 @@ import { AppAlert, AlertConfig } from '@/components/AppAlert';
 import { colors } from '@/theme/colors';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const HERO_H = SCREEN_H * 0.42;
+const HERO_H = SCREEN_H * 0.30;
 
 function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: number; size?: number }) {
   const translateY = useRef(new Animated.Value(0)).current;
@@ -130,7 +130,6 @@ export default function LoginScreen() {
   const [remember, setRemember] = useState(false);
   const [isLoading, setIsLoading]       = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const [errorMsg, setErrorMsg]         = useState('');
   const [alertConfig, setAlertConfig]   = useState<AlertConfig | null>(null);
   const [emailFocus, setEmailFocus]     = useState(false);
   const [pwdFocus, setPwdFocus]         = useState(false);
@@ -188,27 +187,22 @@ export default function LoginScreen() {
 
   const handleLogin = useCallback(async () => {
     if (!email.trim() || !password.trim()) {
-      const msg = 'Please enter your email and password.';
-      setErrorMsg(msg);
       setAlertConfig({
         type: 'warning',
         title: 'Missing Fields',
-        message: msg,
+        message: 'Please enter your email and password.',
         confirmText: 'OK',
       });
       return;
     }
-    setErrorMsg('');
     setIsLoading(true);
     try {
       await login({ email: email.trim(), password });
     } catch (e: any) {
-      const msg = e?.message ?? 'Invalid credentials. Please try again.';
-      setErrorMsg(msg);
       setAlertConfig({
         type: 'error',
-        title: 'Login Failed',
-        message: msg,
+        title: 'Incorrect Password',
+        message: e?.message ?? 'Invalid credentials. Please check your email and password and try again.',
         confirmText: 'Try Again',
       });
     } finally {
@@ -217,11 +211,15 @@ export default function LoginScreen() {
   }, [email, password, login]);
 
   const handleGoogleLogin = useCallback(async () => {
-    setErrorMsg('');
     setIsGoogleLoading(true);
     try {
       await new Promise(r => setTimeout(r, 1500));
-      setErrorMsg('Google sign-in is not yet configured.');
+      setAlertConfig({
+        type: 'info',
+        title: 'Coming Soon',
+        message: 'Google sign-in is not yet configured.',
+        confirmText: 'OK',
+      });
     } finally {
       setIsGoogleLoading(false);
     }
@@ -334,13 +332,6 @@ export default function LoginScreen() {
               </View>
               <Text style={s.titleSub}>Sign in to access your dashboard</Text>
 
-              {errorMsg ? (
-                <View style={s.errorBanner}>
-                  <View style={s.errorDot} />
-                  <Ionicons name="alert-circle" size={15} color={colors.feedback.error} />
-                  <Text style={s.errorText}>{errorMsg}</Text>
-                </View>
-              ) : null}
 
               <Animated.View style={[s.fieldWrap, { opacity: f1Opacity, transform: [{ translateX: f1TransX }] }]}>
                 <Animated.View style={[s.inputRow, { borderColor: emailBorder }, emailFocus && s.inputFocused]}>
@@ -356,7 +347,7 @@ export default function LoginScreen() {
                     keyboardType="email-address"
                     textContentType="emailAddress"
                     value={email}
-                    onChangeText={t => { setEmail(t); setErrorMsg(''); }}
+                    onChangeText={t => { setEmail(t); }}
                     onFocus={() => setEmailFocus(true)}
                     onBlur={() => setEmailFocus(false)}
                   />
@@ -380,7 +371,7 @@ export default function LoginScreen() {
                     secureTextEntry={!showPwd}
                     textContentType="password"
                     value={password}
-                    onChangeText={t => { setPassword(t); setErrorMsg(''); }}
+                    onChangeText={t => { setPassword(t); }}
                     onFocus={() => setPwdFocus(true)}
                     onBlur={() => setPwdFocus(false)}
                   />
@@ -450,7 +441,7 @@ export default function LoginScreen() {
 
               <Animated.View style={[s.socialRow, { opacity: gBtnOpacity, transform: [{ translateY: gBtnTransY }] }]}>
                 <Pressable
-                  style={({ pressed }) => [s.socialBtn, s.googleBtn, pressed && { transform: [{ scale: 0.97 }] }]}
+                  style={({ pressed }) => [s.socialBtn, s.googleBtn, s.googleBtnFull, pressed && { transform: [{ scale: 0.97 }] }]}
                   onPress={handleGoogleLogin}
                   disabled={isLoading || isGoogleLoading}
                   accessibilityLabel="Sign in with Google"
@@ -465,14 +456,6 @@ export default function LoginScreen() {
                       <Text style={s.googleBtnText}>Google</Text>
                     </>
                   )}
-                </Pressable>
-
-                <Pressable
-                  style={({ pressed }) => [s.socialBtn, s.fbBtn, pressed && { transform: [{ scale: 0.97 }] }]}
-                  accessibilityLabel="Sign in with Facebook"
-                >
-                  <Ionicons name="logo-facebook" size={20} color={colors.white} />
-                  <Text style={s.fbBtnText}>Facebook</Text>
                 </Pressable>
               </Animated.View>
 
@@ -596,7 +579,7 @@ const s = StyleSheet.create({
     flex: 1, backgroundColor: colors.auth.pageBg, marginTop: -2,
   },
   formScroll: {
-    paddingHorizontal: 28, paddingTop: 2,
+    paddingHorizontal: 28, paddingTop: 16,
   },
 
   titleRow: {
@@ -606,17 +589,6 @@ const s = StyleSheet.create({
   titleBold: { fontSize: 30, fontWeight: '800', color: colors.auth.heading },
   titleLight: { fontSize: 30, fontWeight: '300', color: colors.auth.heading },
   titleSub: { fontSize: 14, color: colors.auth.muted, marginBottom: 24 },
-
-  errorBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: colors.feedback.errorBg,
-    borderWidth: 1, borderColor: colors.feedback.errorBorder,
-    borderRadius: 14, padding: 14, marginBottom: 18,
-  },
-  errorDot: {
-    width: 4, height: 4, borderRadius: 2, backgroundColor: colors.feedback.error,
-  },
-  errorText: { flex: 1, fontSize: 13, color: colors.feedback.error, fontWeight: '500' },
 
   fieldWrap: { marginBottom: 14 },
   inputRow: {
@@ -727,15 +699,7 @@ const s = StyleSheet.create({
   },
   googleG: { fontSize: 16, fontWeight: '800', color: colors.social.google },
   googleBtnText: { fontSize: 14, fontWeight: '700', color: colors.auth.bodyText },
-  fbBtn: {
-    backgroundColor: colors.social.facebook,
-    shadowColor: colors.social.facebook,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  fbBtnText: { fontSize: 14, fontWeight: '700', color: colors.white },
+  googleBtnFull: { flex: 1 },
 
   footer: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',

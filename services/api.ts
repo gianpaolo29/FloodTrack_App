@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import type {
+  AdminReport,
   AdminStats,
   AlertItem,
   ChangePasswordPayload,
@@ -72,6 +73,11 @@ interface RawReport {
   media?: RawMedia[];
   status_updates?: RawStatusUpdate[];
   created_at: string;
+  ai_flagged?: boolean;
+  ai_flag_reason?: string | null;
+  ai_image_verified?: boolean | null;
+  ai_image_notes?: string | null;
+  potential_duplicate_of?: number | null;
 }
 
 interface RawAlert {
@@ -176,12 +182,17 @@ function adaptReportDetail(raw: RawReport): ReportDetail {
 
   return {
     ...adaptReport(raw),
-    description:   raw.description ?? '',
-    reportedBy:    raw.user?.name ?? 'Unknown',
-    evidenceCount: raw.media?.length ?? 0,
-    mediaUrls:     raw.media?.map(m => m.url) ?? [],
+    description:     raw.description ?? '',
+    reportedBy:      raw.user?.name ?? 'Unknown',
+    evidenceCount:   raw.media?.length ?? 0,
+    mediaUrls:       raw.media?.map(m => m.url) ?? [],
     timeline,
-    updates: responderUpdates,
+    updates:         responderUpdates,
+    aiFlagged:       raw.ai_flagged ?? false,
+    aiFlagReason:    raw.ai_flag_reason ?? null,
+    aiImageVerified: raw.ai_image_verified ?? null,
+    aiImageNotes:    raw.ai_image_notes ?? null,
+    aiHasDuplicate:  raw.potential_duplicate_of != null,
   };
 }
 
@@ -440,8 +451,57 @@ export async function markAllAlertsRead(_alertIds: string[], token: string): Pro
   await post('/alerts/read-all', {}, token);
 }
 
+// ─── Personal (per-user) notifications ───────────────────────────────────────
+
+interface RawUserNotification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  report_id: number | null;
+  new_status: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+function adaptUserNotification(raw: RawUserNotification): AlertItem {
+  return {
+    id:       `notif_${raw.id}`,
+    kind:     'status_update',
+    title:    raw.title,
+    body:     raw.message,
+    area:     '',
+    time:     formatRelativeTime(raw.created_at),
+    read:     raw.read_at !== null,
+    reportId: raw.report_id ? String(raw.report_id) : undefined,
+  };
+}
+
+export async function getUserNotifications(token: string): Promise<AlertItem[]> {
+  const data = await get<RawUserNotification[]>('/user/notifications', token);
+  return data.map(adaptUserNotification);
+}
+
+export async function markUserNotificationRead(notifId: string, token: string): Promise<void> {
+  const rawId = notifId.replace('notif_', '');
+  await post(`/user/notifications/${rawId}/read`, {}, token);
+}
+
+export async function markAllUserNotificationsRead(token: string): Promise<void> {
+  await post('/user/notifications/read-all', {}, token);
+}
+
 export async function getAlertsWithReadState(token: string): Promise<AlertItem[]> {
-  return getAlerts(token);
+  const [broadcasts, personal] = await Promise.all([
+    getAlerts(token),
+    getUserNotifications(token),
+  ]);
+  // Merge and sort newest first (personal notifs have ISO time in title/body, broadcasts same)
+  return [...personal, ...broadcasts].sort((a, b) => {
+    // Both have relative time strings; sort by 'Today' first, then keep order
+    // Preserve server order — personal first by default since they're user-specific
+    return 0;
+  });
 }
 
 export async function updateProfile(
@@ -854,6 +914,35 @@ export async function getProtocols(token: string): Promise<ProtocolItem[]> {
 
 export async function getAdminStats(token: string): Promise<AdminStats> {
   return get<AdminStats>('/admin/stats', token);
+}
+
+function adaptAdminReport(raw: RawReport): AdminReport {
+  return {
+    ...adaptReport(raw),
+    description:     raw.description ?? '',
+    aiImageVerified: raw.ai_image_verified ?? null,
+    aiFlagged:       raw.ai_flagged ?? false,
+    aiFlagReason:    raw.ai_flag_reason ?? null,
+    aiHasDuplicate:  raw.potential_duplicate_of != null,
+    aiImageNotes:    raw.ai_image_notes ?? null,
+    reportedByName:  raw.user?.name ?? 'Unknown',
+  };
+}
+
+export async function getAdminReports(token: string): Promise<AdminReport[]> {
+  const data = await get<{ data: RawReport[] }>('/reports', token);
+  return data.data.map(adaptAdminReport);
+}
+
+export async function updateAdminReportStatus(
+  id: string,
+  status: 'verified' | 'rejected',
+  token: string,
+): Promise<void> {
+  const path = status === 'verified'
+    ? `/reports/${id}/verify`
+    : `/reports/${id}/reject`;
+  await patch<unknown>(path, {}, token);
 }
 
 /* ── Hazard Management (Admin) ─────────────────────── */

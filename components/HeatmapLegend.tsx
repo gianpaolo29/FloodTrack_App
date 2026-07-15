@@ -4,7 +4,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/theme/colors';
 
-export type LegendMode = 'severity' | 'floodDepth' | 'density';
+export type LegendMode = 'severity' | 'floodDepth' | 'density' | 'floodType';
+
+export interface FloodTypeCounts {
+  flash_flood: number;
+  river_flood: number;
+  coastal_flood: number;
+  urban_flood: number;
+}
 
 interface Props {
   mode: LegendMode;
@@ -12,29 +19,46 @@ interface Props {
   lastUpdated?: string;
   detailed?: boolean;
   counts?: { low: number; moderate: number; high: number; critical: number };
+  floodTypeCounts?: FloodTypeCounts;
 }
 
-const SEVERITY_LABELS = ['Safe', 'Caution', 'Danger', 'Critical'];
-const DEPTH_LABELS    = ['Ankle', 'Knee', 'Waist', '> 4 ft'];
-const DENSITY_LABELS  = ['Sparse', '', '', 'Hotspot'];
+const SEVERITY_LABELS  = ['Safe', 'Caution', 'Danger', 'Critical'];
+const DEPTH_LABELS     = ['Ankle', 'Knee', 'Waist', '> 4 ft'];
+const DENSITY_LABELS   = ['Sparse', '', '', 'Hotspot'];
+const FLOOD_TYPE_LABELS = ['Flash', 'River', 'Coastal', 'Urban'];
 
-const SEVERITY_COLORS = [colors.severity.low, colors.severity.moderate, colors.severity.high, colors.severity.critical];
-const DEPTH_COLORS    = colors.floodDepth.gradient.slice(1);
-const DENSITY_COLORS  = [colors.heatmap[0], colors.heatmap[2], colors.heatmap[3], colors.heatmap[4]];
+const SEVERITY_COLORS   = [colors.severity.low, colors.severity.moderate, colors.severity.high, colors.severity.critical];
+const DEPTH_COLORS      = colors.floodDepth.gradient.slice(1);
+const DENSITY_COLORS    = [colors.heatmap[0], colors.heatmap[2], colors.heatmap[3], colors.heatmap[4]];
+const FLOOD_TYPE_COLORS = [
+  colors.floodHazard.flashFlood,
+  colors.floodHazard.riverFlood,
+  colors.floodHazard.coastalFlood,
+  colors.floodHazard.urbanFlood,
+];
+
+const FLOOD_TYPE_DEFS = [
+  { key: 'flash_flood' as const,   label: 'Flash',   icon: 'thunderstorm' as const, color: colors.floodHazard.flashFlood },
+  { key: 'river_flood' as const,   label: 'River',   icon: 'water' as const,        color: colors.floodHazard.riverFlood },
+  { key: 'coastal_flood' as const, label: 'Coastal', icon: 'boat' as const,         color: colors.floodHazard.coastalFlood },
+  { key: 'urban_flood' as const,   label: 'Urban',   icon: 'business' as const,     color: colors.floodHazard.urbanFlood },
+];
 
 function getConfig(mode: LegendMode) {
   switch (mode) {
     case 'floodDepth':
-      return { title: 'Flood Depth', icon: 'water' as const, colors: [...DEPTH_COLORS], labels: DEPTH_LABELS };
+      return { title: 'Flood Depth',      icon: 'water' as const,            colors: [...DEPTH_COLORS],     labels: DEPTH_LABELS     };
     case 'density':
-      return { title: 'Incident Density', icon: 'flame' as const, colors: DENSITY_COLORS, labels: DENSITY_LABELS };
+      return { title: 'Incident Density', icon: 'flame' as const,            colors: DENSITY_COLORS,        labels: DENSITY_LABELS   };
+    case 'floodType':
+      return { title: 'Flood Type',       icon: 'water' as const,            colors: FLOOD_TYPE_COLORS,     labels: FLOOD_TYPE_LABELS };
     case 'severity':
     default:
-      return { title: 'Severity', icon: 'shield-checkmark' as const, colors: SEVERITY_COLORS, labels: SEVERITY_LABELS };
+      return { title: 'Severity',         icon: 'shield-checkmark' as const, colors: SEVERITY_COLORS,       labels: SEVERITY_LABELS  };
   }
 }
 
-export function HeatmapLegend({ mode, isDark, lastUpdated, detailed, counts }: Props) {
+export function HeatmapLegend({ mode, isDark, lastUpdated, detailed, counts, floodTypeCounts }: Props) {
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(12)).current;
 
@@ -93,7 +117,18 @@ export function HeatmapLegend({ mode, isDark, lastUpdated, detailed, counts }: P
         ))}
       </View>
 
-      {detailed && counts && (
+      {detailed && mode === 'floodType' && floodTypeCounts && (
+        <View style={s.countsRow}>
+          {FLOOD_TYPE_DEFS.map(ft => (
+            <View key={ft.key} style={[s.countPill, { backgroundColor: ft.color + '18' }]}>
+              <Ionicons name={ft.icon} size={9} color={ft.color} />
+              <Text style={[s.countText, { color: ft.color }]}>{floodTypeCounts[ft.key]}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {detailed && mode !== 'floodType' && counts && (
         <View style={s.countsRow}>
           {(['low', 'moderate', 'high', 'critical'] as const).map(sev => (
             <View key={sev} style={[s.countPill, { backgroundColor: colors.severity[sev] + '18' }]}>

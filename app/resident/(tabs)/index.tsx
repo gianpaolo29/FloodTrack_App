@@ -33,7 +33,8 @@ import { SeverityChip, type Severity } from '@/components/SeverityChip';
 import { StatusBadge, type ReportStatus } from '@/components/StatusBadge';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getAllReports, getReportDetail, getEvacuationCenters, getActiveHazards } from '@/services/api';
+import { getAllReports, getReportDetail, getEvacuationCenters, getActiveHazards, getWeather } from '@/services/api';
+import type { WeatherData } from '@/services/api';
 import type { Report as ApiReport, Hazard } from '@/types';
 import { HeatmapZoneSummary } from '@/components/HeatmapZoneSummary';
 type HazardType = 'all' | 'flood';
@@ -403,7 +404,7 @@ const mtm = StyleSheet.create({
   sheet: {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
     padding: 20, paddingBottom: 40,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -569,7 +570,7 @@ function ReportSheet({
 const bs = StyleSheet.create({
   sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -579,7 +580,7 @@ const bs = StyleSheet.create({
   handle: {
     width: 36, height: 4, borderRadius: 2,
     backgroundColor: colors.slate[200],
-    alignSelf: 'center', marginTop: 12, marginBottom: 16,
+    alignSelf: 'center', marginTop: 10, marginBottom: 14,
   },
   header:      { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, marginBottom: 14 },
   hazardIcon:  { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
@@ -725,7 +726,7 @@ function EvacSheet({
 const evs = StyleSheet.create({
   sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -735,7 +736,7 @@ const evs = StyleSheet.create({
   handle: {
     width: 36, height: 4, borderRadius: 2,
     backgroundColor: colors.slate[200],
-    alignSelf: 'center', marginTop: 12, marginBottom: 16,
+    alignSelf: 'center', marginTop: 10, marginBottom: 14,
   },
   header:      { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, marginBottom: 14 },
   iconWrap: {
@@ -876,7 +877,7 @@ function HazardSheet({
 const hzs = StyleSheet.create({
   sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -886,7 +887,7 @@ const hzs = StyleSheet.create({
   handle: {
     width: 36, height: 4, borderRadius: 2,
     backgroundColor: colors.slate[200],
-    alignSelf: 'center', marginTop: 12, marginBottom: 16,
+    alignSelf: 'center', marginTop: 10, marginBottom: 14,
   },
   header: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
@@ -924,6 +925,110 @@ const hzs = StyleSheet.create({
   footerText: { fontSize: 11, fontWeight: '500' },
 });
 
+// ─── Weather helpers ──────────────────────────────────────────────────────────
+
+function owmIconToIonicons(icon: string): keyof typeof Ionicons.glyphMap {
+  if (icon.startsWith('01')) return 'sunny-outline';
+  if (icon.startsWith('02') || icon.startsWith('03') || icon.startsWith('04')) return 'partly-sunny-outline';
+  if (icon.startsWith('09') || icon.startsWith('10')) return 'rainy-outline';
+  if (icon.startsWith('11')) return 'thunderstorm-outline';
+  if (icon.startsWith('13')) return 'snow-outline';
+  return 'cloud-outline';
+}
+
+function deriveFloodRisk(w: WeatherData, reports: Report[]): { level: Severity; label: string } {
+  const rain = w.current.rainH ?? 0;
+  const hasCritical = reports.some(r => r.severity === 'critical');
+  const highCount   = reports.filter(r => r.severity === 'high').length;
+  const hasAlerts   = w.alerts.length > 0;
+
+  if (rain > 25 || hasCritical || hasAlerts)  return { level: 'critical', label: 'Critical' };
+  if (rain > 10 || highCount >= 2)            return { level: 'high',     label: 'High'     };
+  if (rain > 2  || highCount >= 1 || reports.length > 4) return { level: 'moderate', label: 'Moderate' };
+  return { level: 'low', label: 'Low' };
+}
+
+function WeatherStrip({
+  weather,
+  reports,
+  loading,
+  isDark,
+}: {
+  weather: WeatherData | null;
+  reports: Report[];
+  loading: boolean;
+  isDark: boolean;
+}) {
+  const textSub = isDark ? colors.slate[500] : colors.slate[400];
+  const textMain = isDark ? colors.slate[300] : colors.slate[700];
+  const divider  = isDark ? colors.slate[800] : colors.slate[100];
+
+  if (loading) {
+    return (
+      <View style={[ws.strip, { borderTopColor: divider }]}>
+        <ActivityIndicator size="small" color={colors.brand[500]} />
+        <Text style={[ws.desc, { color: textSub }]}>Loading weather…</Text>
+      </View>
+    );
+  }
+
+  if (!weather) return null;
+
+  const { current } = weather;
+  const risk        = deriveFloodRisk(weather, reports);
+  const riskColor   = colors.severity[risk.level];
+  const iconName    = owmIconToIonicons(current.icon);
+
+  return (
+    <View style={[ws.strip, { borderTopColor: divider }]}>
+      {/* Weather info */}
+      <Ionicons name={iconName} size={15} color={colors.brand[500]} />
+      <Text style={[ws.temp, { color: textMain }]}>{Math.round(current.temperature)}°C</Text>
+      <Text style={[ws.desc, { color: textSub }]} numberOfLines={1}>{current.description}</Text>
+
+      {current.rainH > 0 && (
+        <>
+          <View style={[ws.sep, { backgroundColor: divider }]} />
+          <Ionicons name="water-outline" size={12} color={colors.brand[300]} />
+          <Text style={[ws.rain, { color: colors.brand[500] }]}>{current.rainH} mm/h</Text>
+        </>
+      )}
+
+      {/* Spacer */}
+      <View style={{ flex: 1 }} />
+
+      {/* Flood risk badge */}
+      <View style={[ws.riskBadge, { backgroundColor: riskColor + '15' }]}>
+        <View style={[ws.riskDot, { backgroundColor: riskColor }]} />
+        <Text style={[ws.riskLabel, { color: riskColor }]}>Flood Risk: {risk.label}</Text>
+      </View>
+    </View>
+  );
+}
+
+const ws = StyleSheet.create({
+  strip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  temp:  { fontSize: 13, fontWeight: '700' },
+  desc:  { fontSize: 12, flexShrink: 1 },
+  rain:  { fontSize: 12, fontWeight: '600' },
+  sep:   { width: StyleSheet.hairlineWidth, height: 12, marginHorizontal: 2 },
+  riskBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20,
+  },
+  riskDot:   { width: 6, height: 6, borderRadius: 3 },
+  riskLabel: { fontSize: 11, fontWeight: '700' },
+});
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 export default function MapScreen() {
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
@@ -951,6 +1056,8 @@ export default function MapScreen() {
   const [photosLoading,      setPhotosLoading]      = useState(false);
   const [advisoryDismissed,  setAdvisoryDismissed]  = useState(false);
   const [zoneSummary, setZoneSummary] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [weather,        setWeather]        = useState<WeatherData | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
   const heatmapOpacity = useRef(new Animated.Value(0)).current;
 
   // ── Search animations ─────────────────────────────────────────
@@ -1076,7 +1183,21 @@ export default function MapScreen() {
     getActiveHazards(token)
       .then(setAdminHazards)
       .catch(() => {});
+    // Fetch weather with area default on mount
+    setWeatherLoading(true);
+    getWeather(INITIAL_REGION.latitude, INITIAL_REGION.longitude, token)
+      .then(setWeather)
+      .catch(() => {})
+      .finally(() => setWeatherLoading(false));
   }, [token]);
+
+  // Re-fetch weather with precise user location once known
+  useEffect(() => {
+    if (!token || !userLocation) return;
+    getWeather(userLocation.latitude, userLocation.longitude, token)
+      .then(setWeather)
+      .catch(() => {});
+  }, [userLocation, token]);
 
   const filtered = filter === 'all'
     ? reports
@@ -1374,7 +1495,12 @@ export default function MapScreen() {
           </View>
         </View>
 
-
+        <WeatherStrip
+          weather={weather}
+          reports={reports}
+          loading={weatherLoading}
+          isDark={isDark}
+        />
       </View>
 
       {searchFocused && topCardHeight > 0 && (
@@ -1581,7 +1707,6 @@ export default function MapScreen() {
             style={({ pressed }) => [
               s.ctrlBtn,
               { bottom: tabClear + 122, right: 12, backgroundColor: ctrlBg },
-              isDark && { borderColor: colors.slate[800] },
               pressed && { opacity: 0.8 },
             ]}
             onPress={() => router.push('/resident/family')}
@@ -1593,7 +1718,6 @@ export default function MapScreen() {
             style={({ pressed }) => [
               s.ctrlBtn,
               { bottom: tabClear + 68, right: 12, backgroundColor: ctrlBg },
-              isDark && { borderColor: colors.slate[800] },
               pressed && { opacity: 0.8 },
             ]}
             onPress={() => setLayersVisible(true)}
@@ -1610,7 +1734,6 @@ export default function MapScreen() {
             style={({ pressed }) => [
               s.ctrlBtn,
               { bottom: tabClear + 14, right: 12, backgroundColor: ctrlBg },
-              isDark && { borderColor: colors.slate[800] },
               pressed && { opacity: 0.8 },
             ]}
             onPress={handleLocateMe}
@@ -1703,7 +1826,7 @@ const s = StyleSheet.create({
     position: 'absolute', top: 0, left: 0, right: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12, shadowRadius: 14, elevation: 10,
+    shadowOpacity: 0.08, shadowRadius: 12, elevation: 10,
     overflow: 'hidden',
   },
   searchRow: {
@@ -1713,8 +1836,8 @@ const s = StyleSheet.create({
   searchBar: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: colors.slate[50],
-    borderWidth: 1.5, borderColor: colors.slate[200],
-    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10,
+    borderWidth: 1, borderColor: colors.slate[200],
+    borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10,
     position: 'relative',
     overflow: 'hidden',
   },
@@ -1741,21 +1864,21 @@ const s = StyleSheet.create({
   ctrlBtn: {
     position: 'absolute',
     width: 46, height: 46,
-    borderRadius: 12, borderWidth: 1,
+    borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
+    shadowOpacity: 0.10, shadowRadius: 12, elevation: 4,
   },
 
 
   dropdown: {
     position: 'absolute', left: 0, right: 0,
     zIndex: 99,
-    borderBottomLeftRadius: 20, borderBottomRightRadius: 20,
+    borderBottomLeftRadius: 22, borderBottomRightRadius: 22,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18, shadowRadius: 20, elevation: 16,
+    shadowOpacity: 0.14, shadowRadius: 20, elevation: 16,
     overflow: 'hidden',
   },
   dropdownItem: {

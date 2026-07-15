@@ -19,6 +19,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { colors } from '@/theme/colors';
 import { SeverityChip } from '@/components/SeverityChip';
@@ -75,7 +76,7 @@ const tlStyles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    borderWidth: 2,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -217,6 +218,123 @@ const gal = StyleSheet.create({
   emptyText: { fontSize: 13, color: colors.slate[500] },
 });
 
+// ─── AI Status Card ───────────────────────────────────────────────────────────
+
+type AiEntry = { icon: string; color: string; title: string; note: string };
+
+function AiStatusCard({ report, isDark }: { report: ReportDetail; isDark: boolean }) {
+  const { aiFlagged, aiImageVerified, aiImageNotes, aiFlagReason, aiHasDuplicate } = report;
+
+  const entries: AiEntry[] = [];
+
+  if (aiImageVerified === true) {
+    entries.push({
+      icon:  'shield-checkmark',
+      color: colors.severity.low,
+      title: 'AI Verified',
+      note:  aiImageNotes ?? 'Photo evidence confirmed flooding.',
+    });
+  }
+
+  if (aiImageVerified === false) {
+    entries.push({
+      icon:  'image-outline',
+      color: colors.severity.moderate,
+      title: 'Image Under Review',
+      note:  aiImageNotes ?? 'Our AI could not confirm flooding in the submitted photo.',
+    });
+  }
+
+  if (aiHasDuplicate) {
+    entries.push({
+      icon:  'copy-outline',
+      color: colors.severity.moderate,
+      title: 'Possible Duplicate',
+      note:  'A similar report was already submitted nearby. An admin will review.',
+    });
+  }
+
+  if (aiFlagged) {
+    entries.push({
+      icon:  'alert-circle-outline',
+      color: colors.severity.high,
+      title: 'Under Admin Review',
+      note:  aiFlagReason ?? 'Your report has been flagged for manual review.',
+    });
+  }
+
+  // Fall back to neutral if no AI findings
+  if (entries.length === 0) {
+    entries.push({
+      icon:  'checkmark-circle-outline',
+      color: colors.severity.low,
+      title: 'Report Received',
+      note:  'Your report looks good and is awaiting admin verification.',
+    });
+  }
+
+  return (
+    <View style={[aiStyles.outerCard, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
+      <View style={aiStyles.headerRow}>
+        <Ionicons name="sparkles" size={13} color={colors.brand[500]} />
+        <Text style={[aiStyles.headerLabel, isDark && { color: colors.slate[300] }]}>AI Analysis</Text>
+      </View>
+      <View style={{ gap: 10 }}>
+        {entries.map((entry, i) => (
+          <View
+            key={i}
+            style={[
+              aiStyles.card,
+              { borderColor: entry.color + '30', backgroundColor: isDark ? entry.color + '10' : entry.color + '08' },
+            ]}
+          >
+            <View style={[aiStyles.iconWrap, { backgroundColor: entry.color + '18' }]}>
+              <Ionicons name={entry.icon as any} size={20} color={entry.color} />
+            </View>
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={[aiStyles.title, { color: entry.color }]}>{entry.title}</Text>
+              <Text style={[aiStyles.note, isDark && { color: colors.slate[400] }]}>{entry.note}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const aiStyles = StyleSheet.create({
+  outerCard: {
+    borderRadius: 14,
+    padding: 14,
+    gap: 10,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.slate[100],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 },
+  headerLabel: { fontSize: 12, fontWeight: '700', color: colors.slate[500], textTransform: 'uppercase', letterSpacing: 0.5 },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+  },
+  iconWrap: {
+    width: 38, height: 38, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  title: { fontSize: 13, fontWeight: '700' },
+  note: { fontSize: 12, color: colors.slate[600], lineHeight: 17 },
+});
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ReportDetailScreen() {
@@ -281,7 +399,7 @@ export default function ReportDetailScreen() {
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
       {/* ── Header ── */}
-      <View style={[styles.header, { paddingTop: insets.top + 10, backgroundColor: colors.brand[500] }]}>
+      <LinearGradient colors={[colors.brand[500], colors.brand[700]]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <Pressable
           onPress={() => router.back()}
           style={styles.backBtn}
@@ -313,7 +431,7 @@ export default function ReportDetailScreen() {
             <Ionicons name="share-outline" size={20} color={colors.white} />
           </Pressable>
         )}
-      </View>
+      </LinearGradient>
 
       {/* Loading */}
       {loading && (
@@ -364,6 +482,9 @@ export default function ReportDetailScreen() {
               </View>
             </View>
           </View>
+
+          {/* ── AI Analysis badge ── */}
+          <AiStatusCard report={report} isDark={isDark} />
 
           {/* ── Map snippet ── */}
           <View style={[styles.card, { backgroundColor: cardBg }]}>
@@ -505,12 +626,12 @@ const styles = StyleSheet.create({
   scroll: { padding: 16, gap: 12 },
 
   card: {
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    gap: 14,
+    gap: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.05,
     shadowRadius: 6,
     elevation: 2,
   },
@@ -523,9 +644,9 @@ const styles = StyleSheet.create({
   metaValue: { fontSize: 14, color: colors.slate[900], fontWeight: '500' },
 
   mapSnippet: {
-    height: 120,
-    borderRadius: 10,
-    backgroundColor: '#D6E8F5',
+    height: 110,
+    borderRadius: 14,
+    backgroundColor: colors.brand[50],
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
@@ -557,8 +678,8 @@ const styles = StyleSheet.create({
   },
   messageBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: colors.white, borderRadius: 18, padding: 16,
-    borderWidth: 1.5, borderColor: colors.brand[500] + '30',
+    backgroundColor: colors.white, borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: colors.brand[500] + '30',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
   },
@@ -572,7 +693,7 @@ const styles = StyleSheet.create({
 
   withdrawBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 14, borderRadius: 12,
+    gap: 8, paddingVertical: 14, borderRadius: 14,
     borderWidth: 1, borderColor: colors.severity.critical + '33',
     backgroundColor: colors.severity.critical + '0A',
   },
