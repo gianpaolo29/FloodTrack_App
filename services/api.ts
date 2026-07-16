@@ -1,3 +1,4 @@
+import axios, { type AxiosError } from 'axios';
 import { Platform } from 'react-native';
 import type {
   AdminReport,
@@ -54,7 +55,7 @@ interface RawStatusUpdate {
   id: number;
   status: string;
   notes: string | null;
-  user: { id: number; name: string; role: string };
+  user: { id: number; name: string; role: string } | null;
   created_at: string;
 }
 
@@ -161,7 +162,16 @@ function adaptReport(raw: RawReport): Report {
 function adaptReportDetail(raw: RawReport): ReportDetail {
   const updates = raw.status_updates ?? [];
 
-  const timeline: TimelineEvent[] = TIMELINE_STEPS.map(step => {
+  // Use different timeline steps based on whether the report was rejected
+  const isRejected = raw.status === 'rejected';
+  const steps = isRejected
+    ? [
+        { status: 'pending',  label: 'Submitted' },
+        { status: 'rejected', label: 'Rejected'  },
+      ]
+    : TIMELINE_STEPS;
+
+  const timeline: TimelineEvent[] = steps.map(step => {
     const match = updates.find(u => u.status === step.status);
     return {
       status: step.status as ReportDetail['status'],
@@ -175,7 +185,7 @@ function adaptReportDetail(raw: RawReport): ReportDetail {
   const responderUpdates: ResponderUpdate[] = updates
     .filter(u => ['en_route', 'on_scene'].includes(u.status) && u.notes)
     .map(u => ({
-      author: `${u.user.name} (Responder)`,
+      author: `${u.user?.name ?? 'AI System'} (Responder)`,
       note:   u.notes!,
       time:   formatRelativeTime(u.created_at),
     }));
@@ -186,6 +196,7 @@ function adaptReportDetail(raw: RawReport): ReportDetail {
     reportedBy:      raw.user?.name ?? 'Unknown',
     evidenceCount:   raw.media?.length ?? 0,
     mediaUrls:       raw.media?.map(m => m.url) ?? [],
+    mediaItems:      raw.media?.map(m => ({ id: String(m.id), url: m.url, type: m.file_type })) ?? [],
     timeline,
     updates:         responderUpdates,
     aiFlagged:       raw.ai_flagged ?? false,
@@ -208,9 +219,10 @@ function adaptAlert(raw: RawAlert): AlertItem {
     title:    raw.title,
     body:     raw.body,
     area:     raw.area || raw.address || '',
-    time:     formatRelativeTime(raw.created_at),
-    read:     raw.read ?? false,
-    reportId: raw.report_id ? String(raw.report_id) : undefined,
+    time:      formatRelativeTime(raw.created_at),
+    createdAt: raw.created_at,
+    read:      raw.read ?? false,
+    reportId:  raw.report_id ? String(raw.report_id) : undefined,
   };
 }
 
@@ -252,120 +264,80 @@ class ApiError extends Error {
   }
 }
 
+const client = axios.create({
+  baseURL: BASE_URL,
+  headers: { Accept: 'application/json' },
+});
+
+client.interceptors.response.use(
+  res => res,
+  (error: AxiosError<{ message?: string }>) => {
+    const status = error.response?.status ?? 0;
+    const message = error.response?.data?.message ?? error.message;
+    throw new ApiError(status, message);
+  },
+);
+
 async function get<T>(path: string, token: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/json',
-    },
+  const res = await client.get<T>(path, {
+    headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.message ?? `GET ${path} → ${res.status}`);
-  }
-  return res.json();
+  return res.data;
 }
 
 async function post<T>(path: string, body: unknown, token?: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: 'POST',
+  const res = await client.post<T>(path, body, {
     headers: {
       'Content-Type': 'application/json',
-      Accept: 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, err.message ?? `POST ${path} → ${res.status}`);
-  }
-  const text = await res.text();
-  return text ? JSON.parse(text) : ({} as T);
+  return res.data;
 }
 
 async function put<T>(path: string, body: unknown, token: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: 'PUT',
+  const res = await client.put<T>(path, body, {
     headers: {
       'Content-Type': 'application/json',
-      Accept: 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, err.message ?? `PUT ${path} → ${res.status}`);
-  }
-  const text = await res.text();
-  return text ? JSON.parse(text) : ({} as T);
+  return res.data;
 }
 
 async function patch<T>(path: string, body: unknown, token: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: 'PATCH',
+  const res = await client.patch<T>(path, body, {
     headers: {
       'Content-Type': 'application/json',
-      Accept: 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, err.message ?? `PATCH ${path} → ${res.status}`);
-  }
-  return res.json();
+  return res.data;
 }
 
 async function formPost<T>(path: string, formData: FormData, token?: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: 'POST',
+  const res = await client.post<T>(path, formData, {
     headers: {
-      Accept: 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: formData,
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, err.message ?? `POST ${path} → ${res.status}`);
-  }
-  return res.json();
+  return res.data;
 }
 
 async function formPatch<T>(path: string, formData: FormData, token: string): Promise<T> {
   formData.append('_method', 'PATCH');
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
+  const res = await client.post<T>(path, formData, {
+    headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, err.message ?? `PATCH ${path} → ${res.status}`);
-  }
-  return res.json();
+  return res.data;
 }
 
-async function del<T>(path: string, token: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: 'DELETE',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/json',
-    },
+async function del<T>(path: string, token: string, data?: unknown): Promise<T> {
+  const res = await client.delete<T>(path, {
+    headers: { Authorization: `Bearer ${token}` },
+    ...(data ? { data } : {}),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, err.message ?? `DELETE ${path} → ${res.status}`);
-  }
-  const text = await res.text();
-  return text ? JSON.parse(text) : ({} as T);
+  return res.data;
 }
 
 export async function apiLogin(
@@ -405,6 +377,23 @@ export async function getMyReports(token: string): Promise<Report[]> {
 export async function getAllReports(token: string): Promise<Report[]> {
   const data = await get<{ data: RawReport[] }>('/reports', token);
   return data.data.map(adaptReport);
+}
+
+export async function updateReport(
+  id: string,
+  payload: { severity?: string; description?: string },
+  token: string,
+): Promise<ReportDetail> {
+  const raw = await put<RawReport>(`/reports/${id}`, payload, token);
+  return adaptReportDetail(raw);
+}
+
+export async function deleteReportMedia(
+  reportId: string,
+  mediaId: string,
+  token: string,
+): Promise<void> {
+  await del(`/reports/${reportId}/media/${mediaId}`, token);
 }
 
 export async function getReportDetail(id: string, token: string): Promise<ReportDetail> {
@@ -471,9 +460,10 @@ function adaptUserNotification(raw: RawUserNotification): AlertItem {
     title:    raw.title,
     body:     raw.message,
     area:     '',
-    time:     formatRelativeTime(raw.created_at),
-    read:     raw.read_at !== null,
-    reportId: raw.report_id ? String(raw.report_id) : undefined,
+    time:      formatRelativeTime(raw.created_at),
+    createdAt: raw.created_at,
+    read:      raw.read_at !== null,
+    reportId:  raw.report_id ? String(raw.report_id) : undefined,
   };
 }
 
@@ -496,12 +486,10 @@ export async function getAlertsWithReadState(token: string): Promise<AlertItem[]
     getAlerts(token),
     getUserNotifications(token),
   ]);
-  // Merge and sort newest first (personal notifs have ISO time in title/body, broadcasts same)
-  return [...personal, ...broadcasts].sort((a, b) => {
-    // Both have relative time strings; sort by 'Today' first, then keep order
-    // Preserve server order — personal first by default since they're user-specific
-    return 0;
-  });
+  // Merge and sort newest first by ISO date
+  return [...personal, ...broadcasts].sort((a, b) =>
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
 }
 
 export async function updateProfile(
@@ -587,19 +575,7 @@ export async function registerPushToken(pushToken: string, token: string): Promi
 }
 
 export async function removePushToken(pushToken: string, token: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/device-tokens`, {
-    method: 'DELETE',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ token: pushToken }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, err.message ?? `DELETE /device-tokens → ${res.status}`);
-  }
+  await del('/device-tokens', token, { token: pushToken });
 }
 
 export async function updateDutyStatus(isOnDuty: boolean, token: string): Promise<void> {

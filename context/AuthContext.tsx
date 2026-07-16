@@ -3,6 +3,7 @@ import * as Storage from '@/utils/storage';
 
 import { apiLogin, apiLogout, apiRegister, registerPushToken, removePushToken } from '@/services/api';
 import { getExpoPushToken } from '@/services/notifications';
+import { socketService } from '@/services/socket';
 import type { LoginPayload, RegisterPayload, User } from '@/types';
 
 const TOKEN_KEY      = 'floodtrack_token';
@@ -34,6 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           Storage.getItem(USER_KEY),
         ]);
         if (storedToken && storedUser) {
+          socketService.connect(storedToken);
           setToken(storedToken);
           setUser(JSON.parse(storedUser) as User);
 
@@ -72,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       await apiLogout(token);
     }
+    socketService.disconnect();
     await Promise.all([
       Storage.deleteItem(TOKEN_KEY),
       Storage.deleteItem(USER_KEY),
@@ -90,6 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       Storage.setItem(TOKEN_KEY, t),
       Storage.setItem(USER_KEY, JSON.stringify(u)),
     ]);
+    socketService.connect(t);
     setToken(t);
     setUser(u);
 

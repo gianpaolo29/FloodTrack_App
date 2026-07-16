@@ -21,51 +21,12 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useAlertBadge } from '@/context/AlertBadgeContext';
 import { getAlertsWithReadState, markAlertRead, markAllAlertsRead } from '@/services/api';
+import { socketService } from '@/services/socket';
 import type { AlertItem } from '@/types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
 const GRAD = colors.gradients.hero as [string, string, string];
-
-// ---------------------------------------------------------------------------
-// PulseDot — animated unread indicator
-// ---------------------------------------------------------------------------
-function PulseDot({ color }: { color: string }) {
-  const scale   = useRef(new Animated.Value(1)).current;
-  const opacity = useRef(new Animated.Value(0.7)).current;
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(scale,   { toValue: 1.9, duration: 850, useNativeDriver: true }),
-          Animated.timing(scale,   { toValue: 1,   duration: 850, useNativeDriver: true }),
-        ]),
-        Animated.sequence([
-          Animated.timing(opacity, { toValue: 0,   duration: 850, useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 0.7, duration: 850, useNativeDriver: true }),
-        ]),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [scale, opacity]);
-
-  return (
-    <View style={{ width: 14, height: 14, alignItems: 'center', justifyContent: 'center' }}>
-      <Animated.View
-        style={{
-          position: 'absolute',
-          width: 14, height: 14, borderRadius: 7,
-          backgroundColor: color,
-          opacity,
-          transform: [{ scale }],
-        }}
-      />
-      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
-    </View>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // HeaderOrb — decorative circle for gradient header
@@ -82,7 +43,7 @@ function HeaderOrb({ style }: { style: object }) {
 }
 
 // ---------------------------------------------------------------------------
-// AlertCard — premium card design with left accent border for unread
+// AlertCard
 // ---------------------------------------------------------------------------
 function AlertCard({
   alert,
@@ -110,10 +71,7 @@ function AlertCard({
     ? 'checkmark-circle'
     : 'information-circle';
 
-  const baseBg  = isDark ? colors.dark.elevated : colors.white;
-  const cardBg  = !alert.read
-    ? (isDark ? accentColor + '0A' : accentColor + '08')
-    : baseBg;
+  const cardBg = isDark ? colors.dark.elevated : colors.white;
 
   const titleColor = alert.read
     ? (isDark ? colors.slate[400] : colors.slate[500])
@@ -121,8 +79,11 @@ function AlertCard({
 
   const translateX = animValue.interpolate({
     inputRange: [0, 1],
-    outputRange: [-32, 0],
+    outputRange: [-20, 0],
   });
+
+  const kindLabel = isCritical ? 'Critical' : isStatusUpdate ? 'Update' : 'Advisory';
+  const shortTime = alert.time.includes(',') ? alert.time.split(',').pop()?.trim() ?? alert.time : alert.time;
 
   return (
     <Animated.View style={{ opacity: animValue, transform: [{ translateX }] }}>
@@ -132,70 +93,28 @@ function AlertCard({
           styles.card,
           {
             backgroundColor: cardBg,
-            borderWidth: alert.read ? 1 : 1.5,
-            borderColor: alert.read ? (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)') : accentColor + '35',
+            borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
           },
-          pressed && { opacity: 0.86, transform: [{ scale: 0.984 }] },
+          pressed && { opacity: 0.88, transform: [{ scale: 0.988 }] },
         ]}
         accessibilityRole="button"
         accessibilityLabel={`${alert.title}. ${alert.body}`}
       >
         <View style={styles.cardInner}>
-          <View style={styles.cardTopRow}>
-            <LinearGradient
-              colors={[accentColor + '28', accentColor + '10']}
-              style={styles.iconBadge}
-            >
-              <Ionicons name={iconName} size={22} color={accentColor} />
-            </LinearGradient>
-
-            <View style={styles.cardTitleWrap}>
-              <Text
-                style={[styles.cardTitle, { color: titleColor }]}
-                numberOfLines={2}
-              >
-                {alert.title}
-              </Text>
+          <View style={styles.cardRow}>
+            <View style={[styles.iconDot, { backgroundColor: accentColor + '18' }]}>
+              <Ionicons name={iconName} size={18} color={accentColor} />
             </View>
-
-            <View style={styles.cardRight}>
-              {!alert.read && <PulseDot color={accentColor} />}
-              <View style={[
-                styles.timePill,
-                isDark && { backgroundColor: colors.dark.surface },
-              ]}>
-                <Text style={[styles.timeText, isDark && { color: colors.slate[400] }]}>
-                  {alert.time}
-                </Text>
+            <View style={styles.cardContent}>
+              <Text style={[styles.cardTitle, { color: titleColor, fontWeight: alert.read ? '500' : '700' }]} numberOfLines={1}>{alert.title}</Text>
+              <View style={styles.cardMetaLine}>
+                <Text style={[styles.kindTag, { color: accentColor }]}>{kindLabel}</Text>
+                <View style={styles.metaDividerDot} />
+                <Text style={[styles.cardTime, isDark && { color: colors.slate[500] }]}>{shortTime}</Text>
               </View>
             </View>
-          </View>
-
-          <Text
-            style={[styles.cardBody, isDark && { color: colors.slate[400] }]}
-            numberOfLines={2}
-          >
-            {alert.body}
-          </Text>
-
-          <View style={styles.cardFooter}>
-            <View style={styles.footerLeft}>
-              <Ionicons name="location-outline" size={12} color={colors.slate[400]} />
-              <Text
-                style={[styles.footerAreaText, isDark && { color: colors.slate[500] }]}
-                numberOfLines={1}
-              >
-                {alert.area || 'Unknown area'}
-              </Text>
-            </View>
-            <LinearGradient
-              colors={[accentColor + '28', accentColor + '14']}
-              style={styles.kindBadge}
-            >
-              <Text style={[styles.kindText, { color: accentColor }]}>
-                {isCritical ? 'Critical' : isStatusUpdate ? 'Update' : 'Advisory'}
-              </Text>
-            </LinearGradient>
+            {!alert.read && <View style={styles.unreadDot} />}
+            <Ionicons name="chevron-forward" size={16} color={isDark ? colors.slate[600] : colors.slate[300]} />
           </View>
         </View>
       </Pressable>
@@ -203,32 +122,6 @@ function AlertCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// SectionLabel — clean pill + uppercase label + count
-// ---------------------------------------------------------------------------
-function SectionLabel({
-  label,
-  count,
-  color,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  count: number;
-  color: string;
-  isDark: boolean;
-}) {
-  return (
-    <View style={styles.sectionRow}>
-      <View style={[styles.sectionPill, { backgroundColor: color }]} />
-      <Text style={[styles.sectionLabel, { color }]}>
-        {label.toUpperCase()}
-      </Text>
-      <View style={[styles.sectionCount, { backgroundColor: color + '1A' }]}>
-        <Text style={[styles.sectionCountText, { color }]}>{count}</Text>
-      </View>
-    </View>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // AlertDetail — slide-in detail panel
@@ -248,7 +141,7 @@ function AlertDetail({ alert, isDark, screenBg, bottomInset, onBack, onViewRepor
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: screenBg }}
-      contentContainerStyle={{ padding: 20, paddingBottom: bottomInset + 40 }}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: bottomInset + 30 }}
       showsVerticalScrollIndicator={false}
     >
       {/* Back */}
@@ -259,42 +152,46 @@ function AlertDetail({ alert, isDark, screenBg, bottomInset, onBack, onViewRepor
         <Text style={[d.backLabel, { color: accentColor }]}>Alerts</Text>
       </Pressable>
 
-      {/* Hero icon */}
-      <View style={d.heroWrap}>
-        <LinearGradient colors={[accentColor + '30', accentColor + '10']} style={d.heroCircle}>
-          <Ionicons name={iconName} size={44} color={accentColor} />
-        </LinearGradient>
-        <View style={[d.kindChip, { backgroundColor: accentColor + '18' }]}>
-          <Text style={[d.kindChipText, { color: accentColor }]}>{kindLabel}</Text>
+      {/* Email-style envelope card */}
+      <View style={[d.emailCard, { backgroundColor: cardBg, borderColor }]}>
+        {/* Accent top bar */}
+        <View style={[d.emailAccentBar, { backgroundColor: accentColor }]} />
+
+        {/* Header: From / Subject / Date */}
+        <View style={d.emailHeader}>
+          <View style={d.emailFromRow}>
+            <View style={[d.emailAvatar, { backgroundColor: accentColor + '14' }]}>
+              <Ionicons name={iconName} size={20} color={accentColor} />
+            </View>
+            <View style={d.emailFromText}>
+              <View style={d.emailFromNameRow}>
+                <Text style={[d.emailFromName, isDark && { color: colors.white }]}>FloodTrack</Text>
+                <View style={[d.kindChip, { backgroundColor: accentColor + '14' }]}>
+                  <Text style={[d.kindChipText, { color: accentColor }]}>{kindLabel}</Text>
+                </View>
+              </View>
+              <Text style={[d.emailDate, isDark && { color: colors.slate[500] }]}>{alert.time}</Text>
+            </View>
+          </View>
+
+          {/* Subject */}
+          <Text style={[d.emailSubject, isDark && { color: colors.white }]}>{alert.title}</Text>
         </View>
-      </View>
 
-      {/* Title */}
-      <Text style={[d.title, isDark && { color: colors.white }]}>{alert.title}</Text>
+        {/* Divider */}
+        <View style={[d.emailDivider, { backgroundColor: borderColor }]} />
 
-      {/* Body */}
-      <Text style={[d.body, isDark && { color: colors.slate[300] }]}>{alert.body}</Text>
-
-      {/* Meta card */}
-      <View style={[d.metaCard, { backgroundColor: cardBg, borderColor }]}>
-        <View style={d.metaRow}>
-          <View style={[d.metaIconWrap, { backgroundColor: accentColor + '14' }]}>
-            <Ionicons name="location-outline" size={16} color={accentColor} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[d.metaLabel, isDark && { color: colors.slate[500] }]}>Location</Text>
-            <Text style={[d.metaValue, isDark && { color: colors.dark.text }]}>{alert.area || 'Unknown area'}</Text>
-          </View>
+        {/* Body */}
+        <View style={d.emailBody}>
+          <Text style={[d.emailBodyText, isDark && { color: colors.slate[300] }]}>
+            {alert.body || 'No additional details provided.'}
+          </Text>
         </View>
-        <View style={[d.metaDivider, { backgroundColor: borderColor }]} />
-        <View style={d.metaRow}>
-          <View style={[d.metaIconWrap, { backgroundColor: accentColor + '14' }]}>
-            <Ionicons name="time-outline" size={16} color={accentColor} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[d.metaLabel, isDark && { color: colors.slate[500] }]}>Received</Text>
-            <Text style={[d.metaValue, isDark && { color: colors.dark.text }]}>{alert.time}</Text>
-          </View>
+
+        {/* Footer */}
+        <View style={[d.emailFooter, { borderTopColor: borderColor }]}>
+          <Ionicons name="time-outline" size={13} color={isDark ? colors.slate[500] : colors.slate[400]} />
+          <Text style={[d.emailFooterText, isDark && { color: colors.slate[500] }]}>Issued at {alert.time}</Text>
         </View>
       </View>
 
@@ -314,25 +211,34 @@ function AlertDetail({ alert, isDark, screenBg, bottomInset, onBack, onViewRepor
 }
 
 const d = StyleSheet.create({
-  backRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 28 },
-  backBtn:      { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  backLabel:    { fontSize: 15, fontWeight: '700' },
-  heroWrap:     { alignItems: 'center', gap: 14, marginBottom: 24 },
-  heroCircle:   { width: 96, height: 96, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  kindChip:     { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20 },
-  kindChipText: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8 },
-  title:        { fontSize: 22, fontWeight: '800', color: colors.slate[900], letterSpacing: -0.3, lineHeight: 30, marginBottom: 12, textAlign: 'center' },
-  body:         { fontSize: 15, color: colors.slate[500], lineHeight: 24, textAlign: 'center', marginBottom: 24 },
-  metaCard:     { borderRadius: 18, borderWidth: 1, overflow: 'hidden', marginBottom: 28 },
-  metaRow:      { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 },
-  metaIconWrap: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  metaLabel:    { fontSize: 11, color: colors.slate[400], fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
-  metaValue:    { fontSize: 14, color: colors.slate[800], fontWeight: '600' },
-  metaDivider:  { height: 1, marginHorizontal: 16 },
-  ctaWrap:      { borderRadius: 16, overflow: 'hidden' },
-  ctaBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, height: 56, paddingHorizontal: 24 },
-  ctaText:      { fontSize: 16, fontWeight: '800', color: colors.white, letterSpacing: 0.3 },
-  ctaArrow:     { width: 28, height: 28, borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
+  backRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  backBtn:    { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  backLabel:  { fontSize: 15, fontWeight: '700' },
+
+  // Email card
+  emailCard:  { borderRadius: 16, borderWidth: 1, overflow: 'hidden', marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
+  emailAccentBar: { height: 4 },
+  emailHeader: { padding: 16, gap: 14 },
+  emailFromRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  emailAvatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  emailFromText: { flex: 1, gap: 2 },
+  emailFromNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  emailFromName: { fontSize: 15, fontWeight: '700', color: colors.slate[900] },
+  emailDate:  { fontSize: 12, color: colors.slate[400], fontWeight: '500', marginTop: 1 },
+  emailSubject: { fontSize: 18, fontWeight: '800', color: colors.slate[900], letterSpacing: -0.2, lineHeight: 24 },
+  emailDivider: { height: 1, marginHorizontal: 16 },
+  emailBody:  { padding: 16 },
+  emailBodyText: { fontSize: 14, color: colors.slate[600], lineHeight: 23 },
+  emailFooter: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1 },
+  emailFooterText: { fontSize: 11, color: colors.slate[400], fontWeight: '500' },
+
+  kindChip:   { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, alignSelf: 'flex-start' },
+  kindChipText: { fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  ctaWrap:    { borderRadius: 14, overflow: 'hidden' },
+  ctaBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, height: 50, paddingHorizontal: 20 },
+  ctaText:    { fontSize: 15, fontWeight: '800', color: colors.white, letterSpacing: 0.3 },
+  ctaArrow:   { width: 26, height: 26, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
 });
 
 // ---------------------------------------------------------------------------
@@ -415,9 +321,15 @@ export default function AlertsScreen() {
       if (state === 'active') load(true);
     });
 
+    const refresh = () => load(true);
+    socketService.on('new-alert', refresh);
+    socketService.on('new-notification', refresh);
+
     return () => {
       clearInterval(interval);
       sub.remove();
+      socketService.off('new-alert', refresh);
+      socketService.off('new-notification', refresh);
     };
   }, [load]);
 
@@ -455,22 +367,13 @@ export default function AlertsScreen() {
     } catch {}
   }
 
-  const criticals    = alerts.filter((a) => a.kind === 'critical');
-  const nonCriticals = alerts.filter((a) => a.kind !== 'critical');
   const unreadCount  = alerts.filter((a) => !a.read).length;
 
   const headerSubtitle = loading
     ? 'Loading notifications…'
-    : alerts.length === 0
-    ? "You're all caught up"
-    : (() => {
-        const parts: string[] = [];
-        if (criticals.length > 0)
-          parts.push(`${criticals.length} critical`);
-        if (nonCriticals.length > 0)
-          parts.push(`${nonCriticals.length} advisor${nonCriticals.length !== 1 ? 'ies' : 'y'}`);
-        return parts.join(' · ');
-      })();
+    : unreadCount > 0
+    ? `${unreadCount} unread notification${unreadCount !== 1 ? 's' : ''}`
+    : "You're all caught up";
 
   let cardSlot = 0;
 
@@ -618,53 +521,18 @@ export default function AlertsScreen() {
                 }
                 showsVerticalScrollIndicator={false}
               >
-                {criticals.length > 0 && (
-                  <View style={styles.section}>
-                    <SectionLabel
-                      icon="alert-circle"
-                      label="Critical Alerts"
-                      count={criticals.length}
-                      color={colors.severity.critical}
+                {alerts.map((a) => {
+                  const slot = cardSlot++;
+                  return (
+                    <AlertCard
+                      key={a.id}
+                      alert={a}
                       isDark={isDark}
+                      onPress={() => handleAlertPress(a)}
+                      animValue={cardAnims[Math.min(slot, 29)]}
                     />
-                    {criticals.map((a) => {
-                      const slot = cardSlot++;
-                      return (
-                        <AlertCard
-                          key={a.id}
-                          alert={a}
-                          isDark={isDark}
-                          onPress={() => handleAlertPress(a)}
-                          animValue={cardAnims[Math.min(slot, 29)]}
-                        />
-                      );
-                    })}
-                  </View>
-                )}
-
-                {nonCriticals.length > 0 && (
-                  <View style={styles.section}>
-                    <SectionLabel
-                      icon="notifications-outline"
-                      label="Advisories & Updates"
-                      count={nonCriticals.length}
-                      color={isDark ? colors.gradients.cta[0] : colors.slate[600]}
-                      isDark={isDark}
-                    />
-                    {nonCriticals.map((a) => {
-                      const slot = cardSlot++;
-                      return (
-                        <AlertCard
-                          key={a.id}
-                          alert={a}
-                          isDark={isDark}
-                          onPress={() => handleAlertPress(a)}
-                          animValue={cardAnims[Math.min(slot, 29)]}
-                        />
-                      );
-                    })}
-                  </View>
-                )}
+                  );
+                })}
 
                 {alerts.length === 0 && (
                   <View style={styles.emptyState}>
@@ -814,7 +682,7 @@ const styles = StyleSheet.create({
 
   // Wave
   waveWrap: {
-    height: 52,
+    height: 24,
     position: 'relative',
     marginTop: -1,
   },
@@ -823,9 +691,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: -12,
     right: -12,
-    height: 56,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    height: 28,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
   },
 
   // Slide container
@@ -833,100 +701,30 @@ const styles = StyleSheet.create({
 
   // List
   listWrapper: { flex: 1 },
-  scroll:      { padding: 16, gap: 22, paddingTop: 8 },
+  scroll:      { paddingHorizontal: 16, gap: 8, paddingTop: 4 },
   scrollEmpty: { flex: 1, justifyContent: 'center' },
-
-  // Section header
-  section: { gap: 10 },
-  sectionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    marginBottom: 4,
-    paddingLeft: 2,
-  },
-  sectionPill: {
-    width: 3,
-    height: 14,
-    borderRadius: 1.5,
-  },
-  sectionLabel: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  sectionCount: {
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  sectionCountText: { fontSize: 11, fontWeight: '800' },
 
   // Card
   card: {
-    borderRadius: 18,
+    borderRadius: 14,
+    borderWidth: 1,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  cardInner: { flex: 1, padding: 14, gap: 9 },
-  cardTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
-
-  iconBadge: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-
-  cardTitleWrap: { flex: 1 },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 20,
-  },
-
-  cardRight: { alignItems: 'flex-end', gap: 7, flexShrink: 0 },
-  timePill: {
-    backgroundColor: colors.slate[100],
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  timeText: { fontSize: 10, fontWeight: '600', color: colors.slate[500] },
-
-  cardBody: {
-    fontSize: 13,
-    color: colors.slate[500],
-    lineHeight: 20,
-  },
-
-  cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  footerLeft: { flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 },
-  footerAreaText: { fontSize: 11, color: colors.slate[400], flex: 1 },
-  kindBadge: {
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 9,
-  },
-  kindText: {
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
+  cardInner: { paddingHorizontal: 14, paddingVertical: 12 },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  iconDot: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  cardContent: { flex: 1, gap: 3 },
+  cardTitle: { fontSize: 14, lineHeight: 19 },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent[500], marginRight: 2 },
+  cardMetaLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  kindTag: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
+  metaDividerDot: { width: 3, height: 3, borderRadius: 2, backgroundColor: colors.slate[300] },
+  cardTime: { fontSize: 11, color: colors.slate[400], fontWeight: '500' },
 
   // Empty / loading states
   emptyState:    { alignItems: 'center', gap: 18 },

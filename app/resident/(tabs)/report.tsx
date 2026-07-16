@@ -80,10 +80,10 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
           style={[
             stepStyles.dot,
             i < current
-              ? { backgroundColor: colors.brand[500] }
+              ? { backgroundColor: colors.white }
               : i === current
-              ? { backgroundColor: colors.brand[500], width: 20 }
-              : { backgroundColor: colors.slate[200] },
+              ? { backgroundColor: colors.white, width: 22, borderRadius: 4 }
+              : { backgroundColor: 'rgba(255,255,255,0.3)' },
           ]}
         />
       ))}
@@ -93,7 +93,7 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
 
 const stepStyles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 6, alignItems: 'center' },
-  dot: { height: 5, width: 5, borderRadius: 2.5 },
+  dot: { height: 6, width: 6, borderRadius: 3 },
 });
 
 interface LocationData {
@@ -113,20 +113,41 @@ function LocationBanner({
   detecting: boolean;
   onRefresh: () => void;
 }) {
+  const hasLoc = !!location;
+  const bgColor = detecting
+    ? (isDark ? colors.dark.card : colors.brand[50])
+    : hasLoc
+    ? (isDark ? colors.dark.card : colors.brand[50])
+    : (isDark ? '#2A1A1A' : '#FEF2F2');
+  const borderColor = detecting
+    ? (isDark ? colors.dark.border : colors.brand[100])
+    : hasLoc
+    ? (isDark ? colors.dark.border : colors.brand[100])
+    : (isDark ? '#4A2020' : '#FECACA');
+
   return (
-    <View style={[styles.locBanner, isDark && { backgroundColor: colors.dark.surface, borderColor: colors.slate[800] }]}>
+    <View style={[styles.locBanner, { backgroundColor: bgColor, borderColor }]}>
       {detecting ? (
         <ActivityIndicator size="small" color={colors.brand[500]} />
       ) : (
-        <Ionicons name="location" size={15} color={location ? colors.brand[500] : colors.slate[400]} />
+        <Ionicons
+          name={hasLoc ? 'location' : 'location-outline'}
+          size={16}
+          color={hasLoc ? colors.brand[500] : colors.severity.critical}
+        />
       )}
       <View style={{ flex: 1 }}>
         <Text
-          style={[styles.locBannerText, isDark && { color: colors.white }]}
+          style={[styles.locBannerText, { color: isDark ? colors.white : colors.slate[700] }]}
           numberOfLines={1}
         >
-          {location ? location.address : detecting ? 'Detecting location…' : 'Location unavailable'}
+          {detecting ? 'Detecting your location…' : hasLoc ? location.address : 'Location required to continue'}
         </Text>
+        {!hasLoc && !detecting && (
+          <Text style={{ fontSize: 11, color: isDark ? colors.slate[500] : colors.slate[400], marginTop: 2 }}>
+            Tap refresh to detect your location
+          </Text>
+        )}
       </View>
       <Pressable
         onPress={onRefresh}
@@ -134,9 +155,13 @@ function LocationBanner({
         accessibilityLabel="Re-detect location"
         hitSlop={8}
         disabled={detecting}
-        style={[styles.locRefreshBtn, isDark && { backgroundColor: colors.slate[800] }]}
+        style={[styles.locRefreshBtn, { backgroundColor: isDark ? colors.dark.elevated : (hasLoc ? colors.brand[50] : '#FEE2E2') }]}
       >
-        <Ionicons name="refresh" size={14} color={detecting ? colors.slate[400] : colors.brand[500]} />
+        <Ionicons
+          name={detecting ? 'hourglass-outline' : 'refresh'}
+          size={14}
+          color={detecting ? colors.slate[400] : hasLoc ? colors.brand[500] : colors.severity.critical}
+        />
       </Pressable>
     </View>
   );
@@ -161,7 +186,7 @@ function SeverityStep({
         Choose the level that best describes the danger.
       </Text>
 
-      <View style={{ gap: 10 }}>
+      <View style={{ gap: 12 }}>
         {SEVERITY_OPTIONS.map(opt => {
           const active    = selected === opt.level;
           const levelColor = colors.severity[opt.level];
@@ -169,21 +194,21 @@ function SeverityStep({
             <Pressable
               key={opt.level}
               onPress={() => onSelect(opt.level)}
-              style={[
+              style={({ pressed }) => [
                 styles.severityCard,
-                isDark && { backgroundColor: colors.slate[900] },
+                isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
                 active && {
                   borderColor: levelColor,
-                  backgroundColor: opt.level === 'critical'
-                    ? levelColor + '18'
-                    : levelColor + '14',
+                  borderWidth: 1.5,
+                  backgroundColor: isDark ? levelColor + '15' : levelColor + '08',
                 },
+                pressed && !active && { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50] },
               ]}
               accessibilityRole="radio"
               accessibilityState={{ checked: active }}
               accessibilityLabel={`${opt.label}: ${opt.description}`}
             >
-              <View style={[styles.severityLeft, { borderColor: levelColor, backgroundColor: levelColor + '18' }]}>
+              <View style={[styles.severityLeft, { borderColor: levelColor + '40', backgroundColor: levelColor + '14' }]}>
                 <Ionicons
                   name={
                     opt.level === 'low'      ? 'information-circle' :
@@ -194,7 +219,7 @@ function SeverityStep({
                   color={levelColor}
                 />
               </View>
-              <View style={{ flex: 1, gap: 2 }}>
+              <View style={{ flex: 1, gap: 3 }}>
                 <Text style={[styles.severityLabel, isDark && { color: colors.white }]}>
                   {opt.label}
                 </Text>
@@ -1110,6 +1135,7 @@ export default function ReportScreen() {
 
   function canAdvance() {
     if (step === 0 && !severity)    return false;
+    if (step === 0 && !location)    return false;
     if (step === 1 && !floodDepth)  return false;
     return true;
   }
@@ -1220,7 +1246,7 @@ export default function ReportScreen() {
 
       <ScrollView
         style={[styles.scroll, { backgroundColor: cardBg }]}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 160 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 200 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         scrollEnabled={step !== 1}
@@ -1275,7 +1301,7 @@ export default function ReportScreen() {
         style={[
           styles.actionBar,
           {
-            paddingBottom: insets.bottom + 70,
+            paddingBottom: insets.bottom + 100,
             backgroundColor: cardBg,
             borderTopColor: isDark ? colors.slate[900] : colors.slate[100],
           },
@@ -1336,50 +1362,47 @@ const styles = StyleSheet.create({
 
   scroll: { flex: 1 },
 
-  stepBody: { padding: 24, gap: 20 },
-  stepTitle:    { fontSize: 20, fontWeight: '700', color: colors.slate[900] },
-  stepSubtitle: { fontSize: 14, color: colors.slate[600], lineHeight: 20 },
+  stepBody: { padding: 24, gap: 16 },
+  stepTitle:    { fontSize: 22, fontWeight: '800', color: colors.slate[900], letterSpacing: -0.3 },
+  stepSubtitle: { fontSize: 14, color: colors.slate[500], lineHeight: 21 },
 
   locBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginHorizontal: 16,
-    marginTop: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: colors.brand[50],
-    borderRadius: 12,
+    gap: 10,
+    marginHorizontal: 20,
+    marginTop: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.brand[100],
   },
-  locBannerText: { fontSize: 13, fontWeight: '500', color: colors.slate[700] },
+  locBannerText: { fontSize: 13, fontWeight: '600', color: colors.slate[700] },
   locRefreshBtn: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: colors.brand[50],
+    width: 32, height: 32, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
   },
 
   severityCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
     padding: 16,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.slate[200],
     backgroundColor: colors.white,
   },
   severityLeft: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
+    width: 46,
+    height: 46,
+    borderRadius: 14,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  severityLabel: { fontSize: 15, fontWeight: '600', color: colors.slate[900] },
-  severityDesc:  { fontSize: 12, color: colors.slate[600] },
+  severityLabel: { fontSize: 15, fontWeight: '700', color: colors.slate[900] },
+  severityDesc:  { fontSize: 12, color: colors.slate[500], lineHeight: 17 },
 
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   photoCell: {
@@ -1414,16 +1437,16 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', gap: 4,
   },
   photoAddLabel: { fontSize: 12, color: colors.brand[500], fontWeight: '600' },
-  evidenceGrid: { flexDirection: 'row', gap: 12 },
+  evidenceGrid: { flexDirection: 'row', gap: 14 },
   evidenceAdd: {
     flex: 1, aspectRatio: 1,
-    borderRadius: 14, borderWidth: 2,
-    borderStyle: 'dashed', borderColor: colors.brand[100],
+    borderRadius: 16, borderWidth: 2,
+    borderStyle: 'dashed', borderColor: colors.brand[200],
     backgroundColor: colors.brand[50],
     alignItems: 'center', justifyContent: 'center',
-    gap: 10, maxHeight: 140,
+    gap: 10, maxHeight: 150,
   },
-  evidenceAddLabel: { fontSize: 14, color: colors.brand[500], fontWeight: '600' },
+  evidenceAddLabel: { fontSize: 14, color: colors.brand[500], fontWeight: '700' },
   evidenceRowBtns: { flexDirection: 'row', gap: 10 },
   evidenceRowBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -1441,12 +1464,13 @@ const styles = StyleSheet.create({
   textarea: {
     borderWidth: 1.5,
     borderColor: colors.slate[200],
-    borderRadius: 12,
-    padding: 14,
+    borderRadius: 14,
+    padding: 16,
     fontSize: 15,
     color: colors.slate[900],
-    minHeight: 130,
+    minHeight: 140,
     backgroundColor: colors.white,
+    lineHeight: 22,
   },
   charCount: { fontSize: 12, color: colors.slate[400], alignSelf: 'flex-end' },
 
@@ -1456,21 +1480,26 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingTop: 14,
     borderTopWidth: StyleSheet.hairlineWidth,
-    gap: 12,
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  summaryRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  summaryRow: { flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
   summaryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     backgroundColor: colors.slate[100],
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
-  summaryChipText: { fontSize: 12, color: colors.slate[600], fontWeight: '500' },
+  summaryChipText: { fontSize: 12, color: colors.slate[600], fontWeight: '600' },
 
   confirmRoot: {
     flex: 1,

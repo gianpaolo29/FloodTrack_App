@@ -69,6 +69,12 @@ export interface ResponderUpdate {
   time: string;
 }
 
+export interface MediaItem {
+  id: string;
+  url: string;
+  type: 'image' | 'video';
+}
+
 export interface ReportDetail extends Report {
   description: string;
   reportedBy: string;
@@ -76,6 +82,7 @@ export interface ReportDetail extends Report {
   updates: ResponderUpdate[];
   evidenceCount: number;
   mediaUrls: string[];
+  mediaItems: MediaItem[];
   aiFlagged: boolean;
   aiFlagReason: string | null;
   aiImageVerified: boolean | null;
@@ -110,6 +117,7 @@ export interface AlertItem {
   body: string;
   area: string;
   time: string;
+  createdAt: string;
   read: boolean;
   reportId?: string;
 }

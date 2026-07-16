@@ -5,6 +5,7 @@ import {
   Dimensions,
   Easing,
   Image,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -22,6 +23,7 @@ import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { getAssignedIncidents, getWeather, type WeatherData } from '@/services/api';
+import { socketService } from '@/services/socket';
 import type { Incident, ResponderStatus } from '@/types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -64,18 +66,30 @@ const W_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
 
 type TabKey = 'overview' | 'critical' | 'active';
 
+/* ─── time ago helper ─── */
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 /* ─── stat mini-card ─── */
 function StatChip({
   icon,
   label,
   value,
-  color,
+  gradient,
   isDark,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: number;
-  color: string;
+  gradient: [string, string];
   isDark: boolean;
 }) {
   return (
@@ -88,9 +102,14 @@ function StatChip({
         },
       ]}
     >
-      <View style={[$.statChipIcon, { backgroundColor: color + '14' }]}>
-        <Ionicons name={icon} size={16} color={color} />
-      </View>
+      <LinearGradient
+        colors={gradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={$.statChipIcon}
+      >
+        <Ionicons name={icon} size={14} color="#fff" />
+      </LinearGradient>
       <Text style={[$.statChipValue, { color: isDark ? colors.white : colors.slate[900] }]}>
         {value}
       </Text>
@@ -100,6 +119,60 @@ function StatChip({
     </View>
   );
 }
+
+/* ─── quick action button ─── */
+function QuickAction({
+  icon,
+  label,
+  gradient,
+  isDark,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  gradient: [string, string];
+  isDark: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        $.quickAction,
+        {
+          backgroundColor: isDark ? colors.dark.card : colors.white,
+          borderColor: isDark ? colors.dark.border : 'rgba(0,0,0,0.04)',
+        },
+        pressed && { transform: [{ scale: 0.95 }], opacity: 0.85 },
+      ]}
+    >
+      <LinearGradient
+        colors={gradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={$.quickActionIcon}
+      >
+        <Ionicons name={icon} size={18} color="#fff" />
+      </LinearGradient>
+      <Text
+        style={[$.quickActionLabel, { color: isDark ? colors.slate[300] : colors.slate[700] }]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/* ── weather detail tile colors ── */
+const WEATHER_TILES = {
+  humidity:   { icon: 'water-outline'       as const, label: 'Humidity',   lightBg: '#E8F4FD', darkBg: '#0E2A4A', color: colors.brand[500] },
+  wind:       { icon: 'leaf-outline'        as const, label: 'Wind',       lightBg: '#E6F7F1', darkBg: '#1A2E3A', color: '#0FA896' },
+  tempLow:    { icon: 'thermometer-outline' as const, label: 'Low',        lightBg: '#EDE9FE', darkBg: '#1E1E3A', color: '#7C3AED' },
+  tempHigh:   { icon: 'thermometer-outline' as const, label: 'High',       lightBg: '#FEF3E2', darkBg: '#2A1A0A', color: '#D97706' },
+  rainTotal:  { icon: 'water'              as const, label: 'Rain/h',     lightBg: '#E0F2FE', darkBg: '#0A2540', color: '#0284C7' },
+  rainChance: { icon: 'umbrella-outline'   as const, label: 'Rain %',     lightBg: '#FCE7F3', darkBg: '#1A1A2E', color: '#DB2777' },
+};
 
 export default function HomeTab() {
   const router = useRouter();
@@ -113,11 +186,13 @@ export default function HomeTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [weatherExpanded, setWeatherExpanded] = useState(false);
 
   /* animations */
   const heroAnim = useRef(new Animated.Value(0)).current;
   const cardsAnim = useRef(new Animated.Value(0)).current;
   const listAnim = useRef(new Animated.Value(0)).current;
+  const expandAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.stagger(100, [
@@ -192,6 +267,22 @@ export default function HomeTab() {
     loadWeather();
   }, [loadIncidents, loadWeather]);
 
+  useEffect(() => {
+    socketService.on('new-notification', loadIncidents);
+    return () => socketService.off('new-notification', loadIncidents);
+  }, [loadIncidents]);
+
+  /* toggle weather panel */
+  function toggleWeather() {
+    setWeatherExpanded(!weatherExpanded);
+    Animated.spring(expandAnim, {
+      toValue: weatherExpanded ? 0 : 1,
+      tension: 80,
+      friction: 12,
+      useNativeDriver: false,
+    }).start();
+  }
+
   const active = incidents.filter((i) => i.responderStatus !== 'resolved');
   const pendingCount = incidents.filter((i) => i.responderStatus === 'pending').length;
   const enRouteCount = incidents.filter((i) => i.responderStatus === 'en_route').length;
@@ -221,11 +312,39 @@ export default function HomeTab() {
     return true;
   });
 
+  // storm detection
+  const descLower = weather?.current.description.toLowerCase() ?? '';
+  const hasStorm = !!descLower.match(/thunder|storm|bagyo|typhoon|cyclone/);
+
+  // weather detail tiles
+  const weatherTiles = weather ? [
+    { ...WEATHER_TILES.humidity,  value: `${weather.current.humidity}%` },
+    { ...WEATHER_TILES.wind,      value: `${weather.current.windSpeed} km/h` },
+    ...(weather.forecast?.[0] ? [
+      { ...WEATHER_TILES.tempLow,   value: `${Math.round(weather.forecast[0].tempMin)}°` },
+      { ...WEATHER_TILES.tempHigh,  value: `${Math.round(weather.forecast[0].tempMax)}°` },
+    ] : []),
+    ...(weather.current.rainH > 0 ? [
+      { ...WEATHER_TILES.rainTotal, value: `${weather.current.rainH} mm` },
+    ] : []),
+  ] : [];
+
   return (
     <View style={[$.root, { backgroundColor: bg }]}>
       {loading ? (
         <View style={$.centered}>
-          <ActivityIndicator size="large" color={colors.accent[500]} />
+          <View style={{ alignItems: 'center', gap: 16 }}>
+            <View style={{
+              width: 64, height: 64, borderRadius: 20,
+              backgroundColor: isDark ? colors.dark.card : colors.accent[500] + '10',
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <ActivityIndicator size="large" color={colors.accent[500]} />
+            </View>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: textSecondary }}>
+              Loading dashboard...
+            </Text>
+          </View>
         </View>
       ) : (
         <ScrollView
@@ -254,9 +373,9 @@ export default function HomeTab() {
               style={[$.hero, { paddingTop: insets.top + 16 }]}
             >
               {/* decorative orbs */}
-              <View style={[$.orb, { width: 160, height: 160, top: -40, left: -30, opacity: 0.08 }]} />
-              <View style={[$.orb, { width: 100, height: 100, top: 20, right: -20, opacity: 0.06 }]} />
-              <View style={[$.orb, { width: 70, height: 70, bottom: 50, left: 40, opacity: 0.07 }]} />
+              <View style={[$.orb, { width: 180, height: 180, top: -50, left: -40, opacity: 0.07 }]} />
+              <View style={[$.orb, { width: 120, height: 120, top: 10, right: -30, opacity: 0.05 }]} />
+              <View style={[$.orb, { width: 80, height: 80, bottom: 60, left: 50, opacity: 0.06 }]} />
 
               {/* greeting row */}
               <View style={$.heroRow}>
@@ -269,7 +388,7 @@ export default function HomeTab() {
                 </View>
                 <Pressable
                   onPress={() => router.push('/responder/(tabs)/profile' as never)}
-                  style={$.heroAvatar}
+                  style={({ pressed }) => [$.heroAvatar, pressed && { opacity: 0.8 }]}
                 >
                   {user?.avatarUrl ? (
                     <Image source={{ uri: user.avatarUrl }} style={$.heroAvatarImg} />
@@ -286,23 +405,6 @@ export default function HomeTab() {
                 </Pressable>
               </View>
 
-              {/* weather strip */}
-              <View style={$.weatherStrip}>
-                <View style={$.weatherStripLeft}>
-                  <Ionicons name={weatherIcon} size={18} color="rgba(255,255,255,0.85)" />
-                  <Text style={$.weatherStripTemp}>
-                    {weather ? `${Math.round(weather.current.temperature)}°C` : '--°'}
-                  </Text>
-                  <View style={$.weatherDivider} />
-                  <Text style={$.weatherStripDesc} numberOfLines={1}>
-                    {weather?.current.description ?? 'Loading...'}
-                  </Text>
-                </View>
-                <Text style={$.weatherStripCity} numberOfLines={1}>
-                  {weather?.current.city || '...'}
-                </Text>
-              </View>
-
               {/* wave transition */}
               <View style={$.waveWrap} pointerEvents="none">
                 <View style={[$.waveBack, { backgroundColor: bg, opacity: 0.3 }]} />
@@ -310,6 +412,78 @@ export default function HomeTab() {
               </View>
             </LinearGradient>
           </Animated.View>
+
+          {/* ═══ WEATHER CARD ═══ */}
+          <View style={[$.weatherCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <Pressable onPress={toggleWeather} style={[$.wStrip, { borderBottomColor: weatherExpanded ? (isDark ? colors.dark.border : colors.slate[100]) : 'transparent' }]}>
+              <Ionicons name={weatherIcon} size={16} color={colors.accent[500]} />
+              <Text style={[$.wTemp, { color: textPrimary }]}>
+                {weather ? `${Math.round(weather.current.temperature)}°C` : '--°'}
+              </Text>
+              <Text style={[$.wDesc, { color: textSecondary }]} numberOfLines={1}>
+                {weather?.current.description ?? 'Loading...'}
+              </Text>
+              {weather && weather.current.rainH > 0 && (
+                <>
+                  <View style={[$.wSep, { backgroundColor: isDark ? colors.dark.border : colors.slate[200] }]} />
+                  <Ionicons name="water" size={11} color={colors.accent[500]} />
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.accent[500] }}>{weather.current.rainH} mm/h</Text>
+                </>
+              )}
+              {hasStorm && (
+                <>
+                  <View style={[$.wSep, { backgroundColor: isDark ? colors.dark.border : colors.slate[200] }]} />
+                  <Ionicons name="warning" size={12} color={colors.severity.critical} />
+                </>
+              )}
+              <View style={{ flex: 1 }} />
+              <Animated.View style={{
+                transform: [{ rotate: expandAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }) }],
+              }}>
+                <Ionicons name="chevron-down" size={16} color={textSecondary} />
+              </Animated.View>
+            </Pressable>
+
+            {weatherExpanded && weather && (
+              <Animated.View style={[$.wPanel, { backgroundColor: isDark ? colors.dark.card : '#F8FAFC', opacity: expandAnim }]}>
+                <Text style={[$.wSectionTitle, { color: textSecondary }]}>Today's Weather</Text>
+                <View style={$.wTileGrid}>
+                  {weatherTiles.map(tile => (
+                    <View key={tile.label} style={[$.wTile, { backgroundColor: isDark ? tile.darkBg : tile.lightBg, borderColor: isDark ? colors.dark.border : colors.slate[100] }]}>
+                      <View style={[$.wTileIcon, { backgroundColor: tile.color + '20' }]}>
+                        <Ionicons name={tile.icon} size={15} color={tile.color} />
+                      </View>
+                      <Text style={[$.wTileValue, { color: textPrimary }]}>{tile.value}</Text>
+                      <Text style={[$.wTileLabel, { color: textSecondary }]}>{tile.label}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                <Text style={[$.wSectionTitle, { color: textSecondary, marginTop: 6 }]}>Weather Advisory</Text>
+                {hasStorm ? (
+                  <View style={[$.wAdvisory, { backgroundColor: colors.severity.critical + '10', borderColor: colors.severity.critical + '30' }]}>
+                    <View style={[$.wAdvisoryIcon, { backgroundColor: colors.severity.critical + '18' }]}>
+                      <Ionicons name="thunderstorm" size={18} color={colors.severity.critical} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[$.wAdvisoryTitle, { color: colors.severity.critical }]}>Severe Weather Alert</Text>
+                      <Text style={[$.wAdvisoryMsg, { color: textPrimary }]}>Stay alert for flooding and hazards</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={[$.wAdvisory, { backgroundColor: colors.severity.low + '10', borderColor: colors.severity.low + '30' }]}>
+                    <View style={[$.wAdvisoryIcon, { backgroundColor: colors.severity.low + '18' }]}>
+                      <Ionicons name="shield-checkmark" size={18} color={colors.severity.low} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[$.wAdvisoryTitle, { color: colors.severity.low }]}>No Severe Weather Advisory</Text>
+                      <Text style={[$.wAdvisoryMsg, { color: textSecondary }]}>Conditions are normal</Text>
+                    </View>
+                  </View>
+                )}
+              </Animated.View>
+            )}
+          </View>
 
           {/* ═══ STAT CHIPS ═══ */}
           <Animated.View
@@ -321,10 +495,10 @@ export default function HomeTab() {
               },
             ]}
           >
-            <StatChip icon="warning" label="Active" value={active.length} color={colors.severity.high} isDark={isDark} />
-            <StatChip icon="car" label="En Route" value={enRouteCount} color={colors.brand[500]} isDark={isDark} />
-            <StatChip icon="location" label="On Scene" value={onSceneCount} color={colors.accent[500]} isDark={isDark} />
-            <StatChip icon="checkmark-circle" label="Resolved" value={resolvedCount} color={colors.severity.low} isDark={isDark} />
+            <StatChip icon="warning" label="Active" value={active.length} gradient={['#EF4444', '#F97316']} isDark={isDark} />
+            <StatChip icon="car" label="En Route" value={enRouteCount} gradient={[colors.brand[500], '#6366F1']} isDark={isDark} />
+            <StatChip icon="location" label="On Scene" value={onSceneCount} gradient={[colors.accent[500], '#059669']} isDark={isDark} />
+            <StatChip icon="checkmark-circle" label="Done" value={resolvedCount} gradient={['#10B981', '#34D399']} isDark={isDark} />
           </Animated.View>
 
           {/* ═══ OVERVIEW CARDS ═══ */}
@@ -410,7 +584,7 @@ export default function HomeTab() {
                 <Text style={[$.glassCardLabel, { color: textSecondary }]}>
                   Resolve Rate
                 </Text>
-                {/* mini progress bar */}
+                {/* progress bar */}
                 <View style={[$.progressTrack, { backgroundColor: isDark ? colors.dark.border : colors.slate[100] }]}>
                   <LinearGradient
                     colors={resolveRate >= 50 ? ['#10B981', '#34D399'] : resolveRate >= 25 ? ['#F59E0B', '#FBBF24'] : ['#EF4444', '#F87171']}
@@ -422,49 +596,36 @@ export default function HomeTab() {
               </View>
             </View>
 
-            {/* Pending + quick actions */}
-            <View style={$.cardRow}>
-              <Pressable
+            {/* Quick Actions Row */}
+            <View style={$.quickActionsRow}>
+              <QuickAction
+                icon="time"
+                label="Pending"
+                gradient={['#F59E0B', '#EA580C']}
+                isDark={isDark}
                 onPress={() => setActiveTab('active')}
-                style={({ pressed }) => [
-                  $.miniCard,
-                  {
-                    backgroundColor: isDark ? colors.dark.card : colors.white,
-                    borderColor: cardBorder,
-                    flex: 1,
-                  },
-                  pressed && { transform: [{ scale: 0.97 }] },
-                ]}
-              >
-                <View style={[$.miniCardIcon, { backgroundColor: colors.severity.moderate + '14' }]}>
-                  <Ionicons name="time" size={18} color={colors.severity.moderate} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[$.miniCardValue, { color: textPrimary }]}>{pendingCount}</Text>
-                  <Text style={[$.miniCardLabel, { color: textTertiary }]}>Pending</Text>
-                </View>
-              </Pressable>
-
-              <Pressable
+              />
+              <QuickAction
+                icon="map"
+                label="Map"
+                gradient={[colors.accent[500], '#059669']}
+                isDark={isDark}
+                onPress={() => router.push('/responder/(tabs)/map' as never)}
+              />
+              <QuickAction
+                icon="book"
+                label="SOP"
+                gradient={['#A855F7', '#7C3AED']}
+                isDark={isDark}
                 onPress={() => router.push('/responder/protocols' as never)}
-                style={({ pressed }) => [
-                  $.miniCard,
-                  {
-                    backgroundColor: isDark ? colors.dark.card : colors.white,
-                    borderColor: cardBorder,
-                    flex: 1,
-                  },
-                  pressed && { transform: [{ scale: 0.97 }] },
-                ]}
-              >
-                <View style={[$.miniCardIcon, { backgroundColor: colors.iconAccents.purple + '14' }]}>
-                  <Ionicons name="book" size={18} color={colors.iconAccents.purple} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[$.miniCardValue, { color: textPrimary }]}>SOP</Text>
-                  <Text style={[$.miniCardLabel, { color: textTertiary }]}>Protocols</Text>
-                </View>
-              </Pressable>
+              />
+              <QuickAction
+                icon="notifications"
+                label="Alerts"
+                gradient={['#EF4444', '#DC2626']}
+                isDark={isDark}
+                onPress={() => router.push('/responder/(tabs)/alerts' as never)}
+              />
             </View>
           </Animated.View>
 
@@ -483,14 +644,15 @@ export default function HomeTab() {
                   <Pressable
                     key={t.key}
                     onPress={() => setActiveTab(t.key)}
-                    style={[
+                    style={({ pressed }) => [
                       $.tabPill,
                       {
                         backgroundColor: isActive
-                          ? (isDark ? colors.accent[500] : colors.accent[500])
+                          ? colors.accent[500]
                           : (isDark ? colors.dark.card : colors.white),
                         borderColor: isActive ? 'transparent' : cardBorder,
                       },
+                      pressed && !isActive && { opacity: 0.7 },
                     ]}
                   >
                     <Text
@@ -528,10 +690,20 @@ export default function HomeTab() {
             {/* incident list */}
             {filteredIncidents.length > 0 ? (
               <View style={$.incidentList}>
-                <Text style={[$.sectionTitle, { color: textPrimary }]}>
-                  {activeTab === 'critical' ? 'Critical Incidents' : activeTab === 'active' ? 'Active Incidents' : 'Recent Incidents'}
-                </Text>
-                {filteredIncidents.slice(0, 6).map((incident, idx) => {
+                <View style={$.sectionHeader}>
+                  <Text style={[$.sectionTitle, { color: textPrimary }]}>
+                    {activeTab === 'critical' ? 'Critical Incidents' : activeTab === 'active' ? 'Active Incidents' : 'Recent Incidents'}
+                  </Text>
+                  {filteredIncidents.length > 6 && (
+                    <Pressable
+                      onPress={() => router.push('/responder/(tabs)/map' as never)}
+                      style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+                    >
+                      <Text style={[$.seeAllText, { color: colors.accent[500] }]}>See all</Text>
+                    </Pressable>
+                  )}
+                </View>
+                {filteredIncidents.slice(0, 6).map((incident) => {
                   const sevColor = colors.severity[incident.severity];
                   const statusColor = STATUS_COLORS[incident.responderStatus];
                   const statusIcon = STATUS_ICONS[incident.responderStatus];
@@ -557,6 +729,13 @@ export default function HomeTab() {
                           <Text style={[$.incidentTitle, { color: textPrimary }]} numberOfLines={1}>
                             {incident.title}
                           </Text>
+                          {/* time ago */}
+                          <View style={[$.timePill, { backgroundColor: isDark ? colors.dark.border : colors.slate[50] }]}>
+                            <Ionicons name="time-outline" size={9} color={textTertiary} />
+                            <Text style={[$.timeText, { color: textTertiary }]}>
+                              {timeAgo(incident.reportedAt)}
+                            </Text>
+                          </View>
                         </View>
                         <View style={$.incidentMeta}>
                           <View style={[$.incidentStatusPill, { backgroundColor: statusColor + '14' }]}>
@@ -574,20 +753,36 @@ export default function HomeTab() {
                         </View>
                       </View>
 
-                      <Ionicons name="chevron-forward" size={16} color={textTertiary} />
+                      <Ionicons name="chevron-forward" size={16} color={textTertiary} style={{ marginRight: 12 }} />
                     </Pressable>
                   );
                 })}
               </View>
             ) : (
               <View style={$.emptyState}>
-                <View style={[$.emptyIcon, { backgroundColor: isDark ? colors.dark.card : colors.slate[50] }]}>
-                  <Ionicons name="checkmark-circle" size={36} color={colors.severity.low} />
-                </View>
+                <LinearGradient
+                  colors={isDark ? ['#1E293B', '#0F172A'] : [colors.slate[50], '#E2E8F0']}
+                  style={$.emptyIcon}
+                >
+                  <Ionicons name="checkmark-circle" size={40} color={colors.severity.low} />
+                </LinearGradient>
                 <Text style={[$.emptyTitle, { color: textPrimary }]}>All clear</Text>
                 <Text style={[$.emptySub, { color: textTertiary }]}>
                   No {activeTab === 'critical' ? 'critical' : activeTab === 'active' ? 'active' : ''} incidents right now
                 </Text>
+                <Pressable
+                  onPress={() => router.push('/responder/(tabs)/map' as never)}
+                  style={({ pressed }) => [
+                    $.emptyMapBtn,
+                    { borderColor: colors.accent[500] + '40' },
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <Ionicons name="map-outline" size={14} color={colors.accent[500]} />
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.accent[500] }}>
+                    Open Map
+                  </Text>
+                </Pressable>
               </View>
             )}
           </Animated.View>
@@ -619,23 +814,23 @@ const $ = StyleSheet.create({
     gap: 14,
   },
   heroDate: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.55)',
+    color: 'rgba(255,255,255,0.50)',
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    letterSpacing: 1,
     marginBottom: 4,
   },
   heroGreeting: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '800',
     color: colors.white,
     letterSpacing: -0.5,
   },
   heroSub: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
-    color: 'rgba(255,255,255,0.60)',
+    color: 'rgba(255,255,255,0.55)',
     marginTop: 2,
   },
   heroAvatar: {
@@ -643,7 +838,7 @@ const $ = StyleSheet.create({
     height: 52,
     borderRadius: 18,
     borderWidth: 2.5,
-    borderColor: 'rgba(255,255,255,0.30)',
+    borderColor: 'rgba(255,255,255,0.25)',
     overflow: 'hidden',
   },
   heroAvatarImg: {
@@ -659,48 +854,58 @@ const $ = StyleSheet.create({
     color: colors.white,
   },
 
-  /* weather strip */
-  weatherStrip: {
+  /* weather card */
+  weatherCard: {
+    marginHorizontal: H_PAD,
+    marginTop: -12,
+    marginBottom: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  wStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderRadius: 14,
+    gap: 6,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    marginTop: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  weatherStripLeft: {
-    flexDirection: 'row',
+  wTemp: { fontSize: 13, fontWeight: '700' },
+  wDesc: { fontSize: 12, flexShrink: 1 },
+  wSep: { width: StyleSheet.hairlineWidth, height: 12, marginHorizontal: 2 },
+  wPanel: { paddingHorizontal: 14, paddingTop: 4, paddingBottom: 14 },
+  wSectionTitle: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8 },
+  wTileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  wTile: {
+    width: '30%' as any,
+    flexGrow: 1,
     alignItems: 'center',
-    gap: 8,
-    flex: 1,
+    gap: 3,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
   },
-  weatherStripTemp: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.white,
+  wTileIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
+  wTileValue: { fontSize: 14, fontWeight: '800' },
+  wTileLabel: { fontSize: 10, fontWeight: '600' },
+  wAdvisory: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 6,
   },
-  weatherDivider: {
-    width: 1,
-    height: 14,
-    backgroundColor: 'rgba(255,255,255,0.20)',
-  },
-  weatherStripDesc: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.70)',
-    flex: 1,
-  },
-  weatherStripCity: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.50)',
-    maxWidth: 100,
-    textAlign: 'right',
-  },
+  wAdvisoryIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  wAdvisoryTitle: { fontSize: 13, fontWeight: '700', marginBottom: 3 },
+  wAdvisoryMsg: { fontSize: 12, lineHeight: 17 },
 
   /* wave */
   waveWrap: {
@@ -740,7 +945,7 @@ const $ = StyleSheet.create({
   statChip: {
     flex: 1,
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     paddingVertical: 12,
     borderRadius: 16,
     borderWidth: 1,
@@ -751,8 +956,8 @@ const $ = StyleSheet.create({
     elevation: 2,
   },
   statChipIcon: {
-    width: 32,
-    height: 32,
+    width: 30,
+    height: 30,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -794,9 +999,9 @@ const $ = StyleSheet.create({
     marginBottom: 8,
   },
   glassCardIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 13,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -839,13 +1044,20 @@ const $ = StyleSheet.create({
     borderRadius: 2,
   },
 
-  /* mini cards */
-  miniCard: {
+  /* ── quick actions ── */
+  quickActionsRow: {
     flexDirection: 'row',
+    paddingHorizontal: H_PAD,
+    gap: 10,
+    marginBottom: 20,
+  },
+  quickAction: {
+    flex: 1,
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
     borderRadius: 18,
-    padding: 16,
     borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -853,22 +1065,16 @@ const $ = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
-  miniCardIcon: {
-    width: 42,
-    height: 42,
+  quickActionIcon: {
+    width: 40,
+    height: 40,
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  miniCardValue: {
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  miniCardLabel: {
+  quickActionLabel: {
     fontSize: 11,
-    fontWeight: '600',
-    marginTop: 1,
+    fontWeight: '700',
   },
 
   /* ── tabs ── */
@@ -876,7 +1082,7 @@ const $ = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: H_PAD,
     gap: 8,
-    marginTop: 8,
+    marginTop: 4,
     marginBottom: 16,
   },
   tabPill: {
@@ -910,11 +1116,20 @@ const $ = StyleSheet.create({
     paddingHorizontal: H_PAD,
     gap: 10,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
   sectionTitle: {
     fontSize: 17,
     fontWeight: '800',
     letterSpacing: -0.2,
-    marginBottom: 4,
+  },
+  seeAllText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   incidentCard: {
     flexDirection: 'row',
@@ -950,8 +1165,20 @@ const $ = StyleSheet.create({
   },
   incidentTitle: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     flex: 1,
+  },
+  timePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  timeText: {
+    fontSize: 9,
+    fontWeight: '600',
   },
   incidentMeta: {
     flexDirection: 'row',
@@ -989,9 +1216,9 @@ const $ = StyleSheet.create({
     gap: 12,
   },
   emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 22,
+    width: 80,
+    height: 80,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
@@ -1003,5 +1230,16 @@ const $ = StyleSheet.create({
   emptySub: {
     fontSize: 13,
     textAlign: 'center',
+    maxWidth: 220,
+  },
+  emptyMapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    marginTop: 8,
   },
 });

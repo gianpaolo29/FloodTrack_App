@@ -338,7 +338,7 @@ function IncidentSheet({
   const statusIcon  = STATUS_ICONS[incident.responderStatus];
 
   return (
-    <View style={[sheetStyles.root, { backgroundColor: bg, paddingBottom: bottomInset + 16 }]}>
+    <View style={[sheetStyles.root, { backgroundColor: bg, paddingBottom: bottomInset + 100 }]}>
       <View style={[sheetStyles.accentBar, { backgroundColor: sevColor }]} />
       <View style={sheetStyles.handle} />
 
@@ -477,7 +477,7 @@ function EvacSheet({
   const meta     = EVAC_TYPE_META[center.type] ?? { icon: 'location' as const, label: center.type };
 
   return (
-    <View style={[evacSheet.sheet, { backgroundColor: bg, paddingBottom: bottomInset + 16 }]}>
+    <View style={[evacSheet.sheet, { backgroundColor: bg, paddingBottom: bottomInset + 100 }]}>
       <View style={evacSheet.accentBar} />
       <View style={evacSheet.handle} />
 
@@ -506,6 +506,42 @@ function EvacSheet({
         >
           <Ionicons name="close" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
         </Pressable>
+      </View>
+
+      {/* Mini map preview */}
+      <View style={evacSheet.miniMapWrap}>
+        <MapView
+          style={evacSheet.miniMap}
+          provider={PROVIDER_GOOGLE}
+          initialRegion={{
+            latitude: center.latitude,
+            longitude: center.longitude,
+            latitudeDelta: 0.006,
+            longitudeDelta: 0.006,
+          }}
+          scrollEnabled={false}
+          zoomEnabled={false}
+          rotateEnabled={false}
+          pitchEnabled={false}
+          liteMode
+        >
+          <Marker
+            coordinate={{ latitude: center.latitude, longitude: center.longitude }}
+            anchor={{ x: 0.5, y: 0.5 }}
+          >
+            <View style={{
+              width: 32, height: 32, borderRadius: 10,
+              backgroundColor: EVAC_COLOR,
+              alignItems: 'center', justifyContent: 'center',
+              borderWidth: 2, borderColor: '#fff',
+              shadowColor: EVAC_COLOR,
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.4, shadowRadius: 4, elevation: 5,
+            }}>
+              <Ionicons name="shield-checkmark" size={14} color="#fff" />
+            </View>
+          </Marker>
+        </MapView>
       </View>
 
       <View style={[evacSheet.divider, { backgroundColor: sepColor }]} />
@@ -573,6 +609,11 @@ const evacSheet = StyleSheet.create({
     width: 30, height: 30, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
+  miniMapWrap: {
+    marginHorizontal: 16, marginBottom: 14, borderRadius: 14,
+    overflow: 'hidden', height: 120, borderWidth: 1, borderColor: colors.slate[100],
+  },
+  miniMap: { width: '100%', height: '100%' },
   divider:   { height: StyleSheet.hairlineWidth, marginBottom: 14 },
   statsRow:  { flexDirection: 'row', gap: 10, paddingHorizontal: 16, flexWrap: 'wrap' },
   statPill: {
@@ -584,6 +625,120 @@ const evacSheet = StyleSheet.create({
   dirBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, backgroundColor: EVAC_COLOR,
+    paddingVertical: 14, borderRadius: 14,
+  },
+  dirBtnText: { color: colors.white, fontWeight: '700', fontSize: 15 },
+});
+
+/* ───────────── Search Pin Detail Sheet ───────────── */
+
+function SearchPinSheet({
+  pin, onClose, onGetDirections, isDark, bottomInset, distanceKm,
+}: {
+  pin: { name: string; latitude: number; longitude: number };
+  onClose: () => void;
+  onGetDirections: () => void;
+  isDark: boolean;
+  bottomInset: number;
+  distanceKm: number | null;
+}) {
+  const bg       = isDark ? colors.dark.elevated : colors.white;
+  const textMain = isDark ? colors.white         : colors.slate[900];
+  const textSub  = isDark ? colors.slate[400]    : colors.slate[500];
+
+  return (
+    <View style={[spSheet.sheet, { backgroundColor: bg, paddingBottom: bottomInset + 100 }]}>
+      <View style={spSheet.accentBar} />
+      <View style={spSheet.handle} />
+
+      <View style={spSheet.header}>
+        <View style={spSheet.iconWrap}>
+          <Ionicons name="location" size={24} color={colors.white} />
+        </View>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text style={[spSheet.typeLabel, { color: colors.accent[500] }]}>
+            PLACE
+          </Text>
+          <Text style={[spSheet.title, { color: textMain }]} numberOfLines={2}>
+            {pin.name}
+          </Text>
+          <Text style={[spSheet.coords, { color: textSub }]}>
+            {pin.latitude.toFixed(5)}, {pin.longitude.toFixed(5)}
+          </Text>
+        </View>
+        <Pressable
+          onPress={onClose}
+          style={[spSheet.closeBtn, { backgroundColor: isDark ? colors.dark.card : colors.slate[100] }]}
+          hitSlop={8}
+          accessibilityLabel="Close"
+        >
+          <Ionicons name="close" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
+        </Pressable>
+      </View>
+
+      <View style={spSheet.statsRow}>
+        {distanceKm !== null && (
+          <View style={[spSheet.statPill, { backgroundColor: colors.accent[500] + '18' }]}>
+            <Ionicons name="walk" size={14} color={colors.accent[500]} />
+            <Text style={[spSheet.statText, { color: colors.accent[500] }]}>
+              ~{fmtDist(distanceKm)} away
+            </Text>
+          </View>
+        )}
+      </View>
+
+      <View style={spSheet.actions}>
+        <Pressable
+          style={({ pressed }) => [spSheet.dirBtn, { opacity: pressed ? 0.85 : 1 }]}
+          onPress={onGetDirections}
+          accessibilityLabel="Get directions"
+        >
+          <Ionicons name="navigate" size={16} color={colors.white} />
+          <Text style={spSheet.dirBtnText}>Get Directions</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const spSheet = StyleSheet.create({
+  sheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15, shadowRadius: 20, elevation: 16,
+  },
+  accentBar: { height: 4, backgroundColor: colors.accent[500] },
+  handle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: colors.slate[200],
+    alignSelf: 'center', marginTop: 10, marginBottom: 14,
+  },
+  header:    { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, marginBottom: 14 },
+  iconWrap: {
+    width: 48, height: 48, borderRadius: 14,
+    backgroundColor: colors.accent[500],
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  typeLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
+  title:     { fontSize: 16, fontWeight: '700', lineHeight: 22 },
+  coords:    { fontSize: 12 },
+  closeBtn: {
+    width: 30, height: 30, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  statsRow:  { flexDirection: 'row', gap: 10, paddingHorizontal: 16 },
+  statPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
+  },
+  statText:  { fontSize: 13, fontWeight: '600' },
+  actions:   { paddingHorizontal: 16, paddingTop: 12 },
+  dirBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: colors.accent[500],
     paddingVertical: 14, borderRadius: 14,
   },
   dirBtnText: { color: colors.white, fontWeight: '700', fontSize: 15 },
@@ -610,6 +765,9 @@ export default function ResponderMapScreen() {
   const [userLocation,   setUserLocation]   = useState<{ latitude: number; longitude: number } | null>(null);
   const [timeScrubHours, setTimeScrubHours] = useState(0);
   const [zoneSummary,    setZoneSummary]    = useState<{ latitude: number; longitude: number } | null>(null);
+  const [searchPin,      setSearchPin]      = useState<{ name: string; latitude: number; longitude: number } | null>(null);
+  const [googlePlaces, setGooglePlaces] = useState<{ placeId: string; main: string; secondary: string }[]>([]);
+  const [googlePlaceLoading, setGooglePlaceLoading] = useState<string | null>(null);
   const [topCardHeight,  setTopCardHeight]  = useState(0);
   const [searchQuery,    setSearchQuery]    = useState('');
   const [searchFocused,  setSearchFocused]  = useState(false);
@@ -674,14 +832,63 @@ export default function ResponderMapScreen() {
     if (text.trim().length >= 2) {
       setSearchLoading(true);
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-      searchDebounceRef.current = setTimeout(() => {
+      searchDebounceRef.current = setTimeout(async () => {
+        try {
+          const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID;
+          if (key) {
+            const loc = userLocation ?? { latitude: INITIAL_REGION.latitude, longitude: INITIAL_REGION.longitude };
+            const url =
+              `https://maps.googleapis.com/maps/api/place/autocomplete/json` +
+              `?input=${encodeURIComponent(text.trim() + ' Nasugbu')}` +
+              `&location=${loc.latitude},${loc.longitude}` +
+              `&radius=15000` +
+              `&strictbounds=true` +
+              `&key=${key}`;
+            const res = await fetch(url);
+            const json = await res.json();
+            if (json.status === 'OK' && json.predictions) {
+              setGooglePlaces(
+                json.predictions.slice(0, 5).map((p: any) => ({
+                  placeId: p.place_id,
+                  main: p.structured_formatting?.main_text ?? p.description,
+                  secondary: p.structured_formatting?.secondary_text ?? '',
+                })),
+              );
+            } else {
+              setGooglePlaces([]);
+            }
+          }
+        } catch {
+          setGooglePlaces([]);
+        }
         setSearchLoading(false);
         animateResultItems();
       }, 400);
     } else {
       setSearchLoading(false);
+      setGooglePlaces([]);
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     }
+  }
+
+  async function handleGooglePlacePress(placeId: string, name: string) {
+    setGooglePlaceLoading(placeId);
+    try {
+      const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID;
+      if (!key) return;
+      const url =
+        `https://maps.googleapis.com/maps/api/place/details/json` +
+        `?place_id=${placeId}` +
+        `&fields=geometry` +
+        `&key=${key}`;
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.status === 'OK' && json.result?.geometry?.location) {
+        const { lat, lng } = json.result.geometry.location;
+        handlePlacePress({ name, latitude: lat, longitude: lng });
+      }
+    } catch {}
+    setGooglePlaceLoading(null);
   }
 
   function animateResultItems() {
@@ -706,6 +913,7 @@ export default function ResponderMapScreen() {
   function handleClearSearch() {
     setSearchQuery('');
     setSearchLoading(false);
+    setGooglePlaces([]);
     searchInputRef.current?.focus();
   }
 
@@ -829,20 +1037,69 @@ export default function ResponderMapScreen() {
   }
 
   const trimmed = searchQuery.trim().toLowerCase();
+  const isGenericEvacQuery = ['evacuation', 'center', 'shelter', 'evac'].some(kw => kw.includes(trimmed) || trimmed.includes(kw));
   const searchResults: EvacCenter[] = trimmed.length >= 2
     ? evacCenters.filter(c =>
         c.name.toLowerCase().includes(trimmed) ||
         c.address.toLowerCase().includes(trimmed) ||
         (EVAC_TYPE_META[c.type]?.label ?? c.type).toLowerCase().includes(trimmed) ||
-        'evacuation'.includes(trimmed) ||
-        'center'.includes(trimmed) ||
-        'shelter'.includes(trimmed)
+        isGenericEvacQuery
       )
     : [];
+
+  // Nasugbu place suggestions with coordinates for map pinning
+  const nasugbuPlaces: { name: string; latitude: number; longitude: number }[] = [
+    { name: 'Poblacion',        latitude: 14.0735, longitude: 120.6340 },
+    { name: 'Bucana',           latitude: 14.0620, longitude: 120.6260 },
+    { name: 'Wawa',             latitude: 14.0850, longitude: 120.6420 },
+    { name: 'Lian',             latitude: 14.0375, longitude: 120.6491 },
+    { name: 'Calatagan',        latitude: 13.8325, longitude: 120.6322 },
+    { name: 'Balayan',          latitude: 13.9370, longitude: 120.7314 },
+    { name: 'Calaca',           latitude: 13.9306, longitude: 120.8131 },
+    { name: 'Tuy',              latitude: 14.0175, longitude: 120.7269 },
+    { name: 'Nasugbu',          latitude: 14.0771, longitude: 120.6361 },
+    { name: 'Pantalan',         latitude: 14.0690, longitude: 120.6290 },
+    { name: 'Putat',            latitude: 14.0880, longitude: 120.6500 },
+    { name: 'Dayap',            latitude: 14.0960, longitude: 120.6530 },
+    { name: 'Cogunan',          latitude: 14.0810, longitude: 120.6480 },
+    { name: 'Lumbangan',        latitude: 14.0780, longitude: 120.6270 },
+    { name: 'San Diego',        latitude: 14.0640, longitude: 120.6390 },
+    { name: 'Bilaran',          latitude: 14.0550, longitude: 120.6350 },
+    { name: 'Natipuan',         latitude: 14.0480, longitude: 120.6240 },
+    { name: 'Kaylaway',         latitude: 14.1020, longitude: 120.6570 },
+    { name: 'Papaya',           latitude: 14.0920, longitude: 120.6600 },
+    { name: 'Tumalim',          latitude: 14.1080, longitude: 120.6350 },
+    { name: 'Banilad',          latitude: 14.0670, longitude: 120.6450 },
+    { name: 'Malapad na Bato',  latitude: 14.0430, longitude: 120.6280 },
+    { name: 'Looc',             latitude: 14.0700, longitude: 120.6200 },
+    { name: 'Aga',              latitude: 14.0820, longitude: 120.6550 },
+    { name: 'Bunducan',         latitude: 14.0600, longitude: 120.6180 },
+    { name: 'Catandaan',        latitude: 14.0530, longitude: 120.6310 },
+    { name: 'Calayo',           latitude: 14.0410, longitude: 120.6200 },
+  ];
+  const placeSuggestions = trimmed.length >= 2
+    ? nasugbuPlaces.filter(p => p.name.toLowerCase().includes(trimmed)).slice(0, 4)
+    : [];
+
+  function handlePlacePress(place: { name: string; latitude: number; longitude: number }) {
+    Keyboard.dismiss();
+    setSearchQuery('');
+    setSearchPin(place);
+    setSelected(null);
+    setSelectedEvac(null);
+    handleSearchBlur();
+    mapRef.current?.animateToRegion({
+      latitude:       place.latitude - 0.005,
+      longitude:      place.longitude,
+      latitudeDelta:  0.015,
+      longitudeDelta: 0.015,
+    }, 500);
+  }
 
   function handleEvacResultPress(center: EvacCenter) {
     Keyboard.dismiss();
     setSearchQuery('');
+    setSearchPin(null);
     setSelectedEvac(center);
     setSelected(null);
     mapRef.current?.animateToRegion({
@@ -888,6 +1145,7 @@ export default function ResponderMapScreen() {
         onPress={(e: any) => {
           setSelected(null);
           setSelectedEvac(null);
+          setSearchPin(null);
           if (showFloodHeatmap && e?.nativeEvent?.coordinate) {
             const { latitude, longitude } = e.nativeEvent.coordinate;
             const nearbyCount = active.filter(i =>
@@ -1006,6 +1264,57 @@ export default function ResponderMapScreen() {
             <EvacuationMarker />
           </Marker>
         )}
+
+        {searchPin && (
+          <Marker
+            key={`search-pin-${searchPin.name}`}
+            coordinate={{ latitude: searchPin.latitude, longitude: searchPin.longitude }}
+            tracksViewChanges={false}
+            anchor={{ x: 0.5, y: 1 }}
+            zIndex={12}
+          >
+            <View style={{ alignItems: 'center' }}>
+              <View style={{
+                backgroundColor: colors.accent[500],
+                borderRadius: 20,
+                width: 36,
+                height: 36,
+                alignItems: 'center',
+                justifyContent: 'center',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.3,
+                shadowRadius: 4,
+                elevation: 6,
+              }}>
+                <Ionicons name="location" size={20} color="#fff" />
+              </View>
+              <View style={{
+                width: 0, height: 0,
+                borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8,
+                borderLeftColor: 'transparent', borderRightColor: 'transparent',
+                borderTopColor: colors.accent[500],
+                marginTop: -1,
+              }} />
+              <View style={{
+                backgroundColor: isDark ? '#1E293B' : '#fff',
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                borderRadius: 8,
+                marginTop: 2,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.15,
+                shadowRadius: 2,
+                elevation: 3,
+              }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#fff' : colors.slate[800] }}>
+                  {searchPin.name}
+                </Text>
+              </View>
+            </View>
+          </Marker>
+        )}
       </MapView>
 
       <View
@@ -1069,7 +1378,7 @@ export default function ResponderMapScreen() {
             <TextInput
               ref={searchInputRef}
               style={[s.searchInput, { color: isDark ? colors.white : colors.slate[900] }]}
-              placeholder="Search evacuation centers..."
+              placeholder="Search places & evacuation centers..."
               placeholderTextColor={textSub}
               value={searchQuery}
               onChangeText={handleSearchChange}
@@ -1079,8 +1388,15 @@ export default function ResponderMapScreen() {
               clearButtonMode="never"
               autoCorrect={false}
             />
-            {searchQuery.length > 0 && (
-              <Pressable onPress={handleClearSearch} hitSlop={8}>
+            {(searchFocused || searchQuery.length > 0) && (
+              <Pressable onPress={() => {
+                if (searchQuery.length > 0) {
+                  handleClearSearch();
+                } else {
+                  Keyboard.dismiss();
+                  handleSearchBlur();
+                }
+              }} hitSlop={8}>
                 <Animated.View style={{
                   transform: [{ rotate: searchFocusAnim.interpolate({
                     inputRange: [0, 1],
@@ -1254,7 +1570,45 @@ export default function ResponderMapScreen() {
                 </Text>
               </View>
             </View>
-          ) : searchResults.length === 0 ? (
+          ) : (
+            <>
+              {/* Place suggestions */}
+              {placeSuggestions.length > 0 && (
+                <View style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }}>
+                  <View style={[s.dropdownSuggestHeader, { borderBottomColor: 'transparent' }]}>
+                    <Ionicons name="location" size={12} color={colors.iconAccents?.amber ?? '#F59E0B'} />
+                    <Text style={[s.dropdownSuggestTitle, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
+                      Places in Nasugbu
+                    </Text>
+                  </View>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 10, gap: 8 }}>
+                    {placeSuggestions.map(place => (
+                      <Pressable
+                        key={place.name}
+                        onPress={() => handlePlacePress(place)}
+                        style={({ pressed }) => [{
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 16,
+                          backgroundColor: pressed
+                            ? (isDark ? colors.dark.elevated : colors.accent[100])
+                            : (isDark ? colors.dark.card : colors.slate[50]),
+                          borderWidth: 1,
+                          borderColor: isDark ? colors.dark.border : colors.slate[200],
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                        }]}
+                      >
+                        <Ionicons name="navigate-outline" size={11} color={colors.accent[500]} />
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? colors.slate[300] : colors.slate[600] }}>{place.name}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+              {searchResults.length === 0 && googlePlaces.length === 0 && placeSuggestions.length === 0 ? (
             <View style={s.dropdownEmpty}>
               <View style={s.emptyIconWrap}>
                 <Ionicons name="search-outline" size={28} color={isDark ? colors.slate[600] : colors.slate[300]} />
@@ -1263,7 +1617,7 @@ export default function ResponderMapScreen() {
                 No results found
               </Text>
               <Text style={[s.dropdownEmptyText, { color: isDark ? colors.slate[600] : colors.slate[400] }]}>
-                Try searching for "evacuation" or "school"
+                Try searching for a place or "evacuation"
               </Text>
             </View>
           ) : (
@@ -1334,6 +1688,55 @@ export default function ResponderMapScreen() {
                   </Animated.View>
                 );
               })}
+            </>
+          )}
+
+              {/* ── Google Places results ── */}
+              {googlePlaces.length > 0 && (
+                <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: isDark ? colors.dark.border : colors.slate[100] }}>
+                  <View style={[s.dropdownSuggestHeader, { borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
+                    <Ionicons name="globe-outline" size={12} color={colors.accent[500]} />
+                    <Text style={[s.dropdownSuggestTitle, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
+                      Google Places
+                    </Text>
+                  </View>
+                  {googlePlaces.map((place, idx) => (
+                    <Pressable
+                      key={place.placeId}
+                      style={({ pressed }) => [
+                        s.dropdownItem,
+                        idx < googlePlaces.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] },
+                        pressed && { backgroundColor: isDark ? colors.dark.card : colors.accent[500] + '08', transform: [{ scale: 0.98 }] },
+                      ]}
+                      onPress={() => handleGooglePlacePress(place.placeId, place.main)}
+                      accessibilityLabel={place.main}
+                    >
+                      <LinearGradient
+                        colors={[colors.accent[500], '#6366F1']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={s.dropdownIconGradient}
+                      >
+                        {googlePlaceLoading === place.placeId
+                          ? <ActivityIndicator size={13} color={colors.white} />
+                          : <Ionicons name="location" size={15} color={colors.white} />
+                        }
+                      </LinearGradient>
+                      <View style={s.dropdownText}>
+                        <Text style={[s.dropdownName, { color: isDark ? colors.white : colors.slate[900] }]} numberOfLines={1}>
+                          {place.main}
+                        </Text>
+                        {place.secondary ? (
+                          <Text style={[s.dropdownAddr, { color: isDark ? colors.slate[400] : colors.slate[500] }]} numberOfLines={1}>
+                            {place.secondary}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Ionicons name="chevron-forward" size={14} color={isDark ? colors.slate[600] : colors.slate[300]} />
+                    </Pressable>
+                  ))}
+                </View>
+              )}
             </>
           )}
         </Animated.View>
@@ -1431,6 +1834,34 @@ export default function ResponderMapScreen() {
           distanceKm={
             userLocation
               ? haversineKm(userLocation.latitude, userLocation.longitude, selectedEvac.latitude, selectedEvac.longitude)
+              : null
+          }
+        />
+      )}
+
+      {searchPin && !selected && !selectedEvac && (
+        <SearchPinSheet
+          pin={searchPin}
+          onClose={() => setSearchPin(null)}
+          onGetDirections={() => {
+            const { latitude: lat, longitude: lng, name } = searchPin;
+            const label = encodeURIComponent(name);
+            const url = Platform.OS === 'ios'
+              ? `maps://?daddr=${lat},${lng}&dirflg=d`
+              : `google.navigation:q=${lat},${lng}&mode=d`;
+            Linking.canOpenURL(url).then(supported => {
+              if (supported) {
+                Linking.openURL(url);
+              } else {
+                Linking.openURL(`geo:${lat},${lng}?q=${lat},${lng}(${label})`);
+              }
+            });
+          }}
+          isDark={isDark}
+          bottomInset={insets.bottom}
+          distanceKm={
+            userLocation
+              ? haversineKm(userLocation.latitude, userLocation.longitude, searchPin.latitude, searchPin.longitude)
               : null
           }
         />

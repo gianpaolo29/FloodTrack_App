@@ -20,7 +20,8 @@ import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useNetworkStatus } from '@/hooks/use-network-status';
-import { getIncidentMessages, sendIncidentMessage, markMessagesRead, sendTypingEvent, getTypingUsers } from '@/services/api';
+import { getIncidentMessages, sendIncidentMessage, markMessagesRead } from '@/services/api';
+import { socketService, adaptSocketMessage, type RawSocketMessage, type TypingUser } from '@/services/socket';
 import type { IncidentMessage } from '@/types';
 
 const QUICK_REPLIES = [
@@ -31,8 +32,6 @@ const QUICK_REPLIES = [
   'Evacuating residents',
   'Awaiting instructions',
 ];
-
-const POLL_INTERVAL = 10_000;
 
 function TypingDots() {
   const dot1 = useRef(new Animated.Value(0)).current;
@@ -74,19 +73,37 @@ function TypingDots() {
 
 function AnimatedBubble({ children }: { children: React.ReactNode }) {
   const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(12)).current;
+  const translateY = useRef(new Animated.Value(10)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 250, useNativeDriver: true }),
     ]).start();
-  }, [opacity, translateY]);
+  }, []);
 
   return (
     <Animated.View style={{ opacity, transform: [{ translateY }] }}>
       {children}
     </Animated.View>
+  );
+}
+
+function RoleBadge({ role }: { role: string }) {
+  const isAdmin = role === 'admin';
+  const isResponder = role === 'responder';
+  const color = isAdmin ? colors.iconAccents.admin : isResponder ? colors.accent[500] : colors.brand[500];
+  const label = isAdmin ? 'Dispatch' : isResponder ? 'Responder' : 'Resident';
+
+  return (
+    <View style={[s.roleBadge, { backgroundColor: color + '18' }]}>
+      <Ionicons
+        name={isAdmin ? 'headset' : isResponder ? 'shield-checkmark' : 'person'}
+        size={9}
+        color={color}
+      />
+      <Text style={[s.roleBadgeText, { color }]}>{label}</Text>
+    </View>
   );
 }
 
@@ -111,29 +128,56 @@ export default function IncidentChatScreen() {
     status: 'sending' | 'failed';
   }>>([]);
 
-  const [typingUsers, setTypingUsers] = useState<Array<{ name: string }>>([]);
+  const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingClearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
 
   useEffect(() => {
-    if (!isConnected || !token) return;
-    const interval = setInterval(async () => {
-      try {
-        const users = await getTypingUsers(id, token);
-        setTypingUsers(users);
-      } catch {}
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [id, token, isConnected]);
+    if (!token || !user) return;
+    socketService.connect(token);
+    socketService.joinReport(id);
+
+    const handleNewMessage = (raw: RawSocketMessage) => {
+      const msg = adaptSocketMessage(raw, id);
+      if (msg.userId === user.id) return;
+      setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
+      markMessagesRead(id, token).catch(() => {});
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    };
+
+    const handleTypingUpdate = (data: TypingUser) => {
+      if (String(data.id) === user.id) return;
+      const key = String(data.id);
+      const old = typingClearTimers.current.get(key);
+      if (old) clearTimeout(old);
+      setTypingUsers(prev => [...prev.filter(u => String(u.id) !== key), data]);
+      const timer = setTimeout(() => {
+        setTypingUsers(prev => prev.filter(u => String(u.id) !== key));
+        typingClearTimers.current.delete(key);
+      }, 4000);
+      typingClearTimers.current.set(key, timer);
+    };
+
+    socketService.on<RawSocketMessage>('new-message', handleNewMessage);
+    socketService.on<TypingUser>('typing-update', handleTypingUpdate);
+
+    return () => {
+      socketService.leaveReport(id);
+      socketService.off<RawSocketMessage>('new-message', handleNewMessage);
+      socketService.off<TypingUser>('typing-update', handleTypingUpdate);
+      typingClearTimers.current.forEach(t => clearTimeout(t));
+      typingClearTimers.current.clear();
+    };
+  }, [id, token, user]);
 
   function handleTextChange(value: string) {
     setText(value);
-    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-    if (value.trim()) {
-      sendTypingEvent(id, token!);
-      typingTimerRef.current = setTimeout(() => { typingTimerRef.current = null; }, 3000);
-    }
+    if (!value.trim()) return;
+    if (typingTimerRef.current) return;
+    socketService.emitTyping(id);
+    typingTimerRef.current = setTimeout(() => { typingTimerRef.current = null; }, 2000);
   }
 
   const loadMessages = useCallback(async (silent = false) => {
@@ -151,12 +195,6 @@ export default function IncidentChatScreen() {
   }, [id, token]);
 
   useEffect(() => { loadMessages(); }, [loadMessages]);
-
-  useEffect(() => {
-    if (!isConnected) return;
-    const interval = setInterval(() => loadMessages(true), POLL_INTERVAL);
-    return () => clearInterval(interval);
-  }, [loadMessages, isConnected]);
 
   async function handleSend(body?: string, quickReply = false) {
     const msg = body ?? text.trim();
@@ -214,27 +252,21 @@ export default function IncidentChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
     >
-      <View
-        style={[
-          s.headerBg,
-          { paddingTop: insets.top + 8, backgroundColor: isDark ? colors.dark.surface : colors.accent[700] },
-        ]}
-      >
-        <View style={s.headerContent}>
-          <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
-            <Ionicons name="chevron-back" size={20} color={colors.white} />
-          </Pressable>
-          <View style={{ flex: 1 }}>
-            <View style={s.headerTitleRow}>
-              <Text style={s.headerTitle}>Incident Chat</Text>
-              <View style={s.onlineDot} />
-            </View>
-            <Text style={s.headerSub}>Communicate with dispatch</Text>
+      <View style={[s.header, { paddingTop: insets.top + 8 }]}>
+        <View style={[s.headerBg, { backgroundColor: isDark ? colors.dark.surface : colors.accent[700] }]} />
+        <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
+          <Ionicons name="chevron-back" size={20} color={colors.white} />
+        </Pressable>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={s.headerTitle}>Incident Chat</Text>
+            <View style={s.onlineDot} />
           </View>
-          <Pressable onPress={() => setShowQuickReplies(v => !v)} style={s.quickBtn} hitSlop={8}>
-            <Ionicons name="flash" size={18} color={colors.white} />
-          </Pressable>
+          <Text style={s.headerSub}>Communicate with dispatch</Text>
         </View>
+        <Pressable onPress={() => setShowQuickReplies(v => !v)} style={s.quickBtn} hitSlop={8}>
+          <Ionicons name="flash" size={18} color={colors.white} />
+        </Pressable>
       </View>
 
       {showQuickReplies && (
@@ -284,14 +316,14 @@ export default function IncidentChatScreen() {
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
           ListEmptyComponent={
             <View style={s.emptyChat}>
-              <View style={s.emptyIconBg}>
-                <Ionicons name="chatbubbles-outline" size={64} color={colors.accent[500]} />
+              <View style={[s.emptyIconBg, isDark && { backgroundColor: colors.dark.card }]}>
+                <Ionicons name="chatbubbles-outline" size={40} color={colors.accent[300]} />
               </View>
-              <Text style={[s.emptyChatTitle, isDark && { color: colors.slate[300] }]}>
+              <Text style={[s.emptyChatTitle, isDark && { color: colors.white }]}>
                 No messages yet
               </Text>
               <Text style={[s.emptyChatSub, isDark && { color: colors.slate[500] }]}>
-                Messages with dispatch appear here
+                Messages with dispatch and team members appear here.
               </Text>
             </View>
           }
@@ -304,30 +336,27 @@ export default function IncidentChatScreen() {
               <AnimatedBubble>
                 <View style={[s.bubble, mine ? s.bubbleMine : s.bubbleTheirs]}>
                   {!mine && (
-                    <Text style={[s.bubbleName, isDark && { color: colors.slate[400] }]}>
-                      {item.userName} ({item.userRole})
-                    </Text>
+                    <View style={s.bubbleHeader}>
+                      <Text style={[s.bubbleName, isDark && { color: colors.slate[400] }]}>
+                        {item.userName}
+                      </Text>
+                      <RoleBadge role={item.userRole} />
+                    </View>
                   )}
-                  <View
-                    style={[
-                      s.bubbleBody,
-                      mine
-                        ? [
-                            s.bubbleBodyMine,
-                            {
-                              backgroundColor: isFailed ? colors.severity.critical : colors.accent[500],
-                              borderBottomColor: isFailed ? colors.severity.critical : colors.accent[700],
-                            },
-                          ]
-                        : [
-                            s.bubbleBodyTheirs,
-                            {
-                              backgroundColor: isDark ? colors.dark.card : colors.white,
-                              borderLeftColor: colors.accent[500],
-                            },
-                          ],
-                    ]}
-                  >
+                  <View style={[
+                    s.bubbleBody,
+                    mine
+                      ? {
+                          backgroundColor: isFailed ? colors.severity.critical : colors.accent[500],
+                          borderBottomRightRadius: 4,
+                        }
+                      : {
+                          backgroundColor: isDark ? colors.dark.card : colors.white,
+                          borderBottomLeftRadius: 4,
+                          borderLeftWidth: 3,
+                          borderLeftColor: item.userRole === 'admin' ? colors.iconAccents.admin : colors.accent[500],
+                        },
+                  ]}>
                     {item.isQuickReply && (
                       <Ionicons
                         name="flash"
@@ -336,12 +365,10 @@ export default function IncidentChatScreen() {
                         style={{ marginBottom: 2 }}
                       />
                     )}
-                    <Text
-                      style={[
-                        s.bubbleText,
-                        { color: mine ? colors.white : isDark ? colors.slate[200] : colors.slate[800] },
-                      ]}
-                    >
+                    <Text style={[
+                      s.bubbleText,
+                      { color: mine ? colors.white : isDark ? colors.slate[200] : colors.slate[800] },
+                    ]}>
                       {item.body}
                     </Text>
                   </View>
@@ -424,46 +451,23 @@ const s = StyleSheet.create({
   root: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
+  header: {
+    position: 'relative', flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingBottom: 20, zIndex: 10,
+  },
   headerBg: {
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 6,
-    overflow: 'hidden',
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingBottom: 18,
-  },
-  headerTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    ...StyleSheet.absoluteFillObject,
+    borderBottomLeftRadius: 24, borderBottomRightRadius: 24,
   },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 18,
+    width: 38, height: 38, borderRadius: 18,
     backgroundColor: colors.overlay.whiteSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.overlay.whiteAccent,
   },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.white },
+  headerTitle: { fontSize: 18, fontWeight: '800', color: colors.white },
   headerSub: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 1 },
-  onlineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.iconAccents.online,
-    borderWidth: 1.5,
-    borderColor: colors.overlay.whiteFirm,
-  },
+  onlineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.severity.low },
   quickBtn: {
     width: 38,
     height: 38,
@@ -507,70 +511,35 @@ const s = StyleSheet.create({
   },
   quickChipText: { fontSize: 12, fontWeight: '600', color: colors.slate[600] },
 
-  messageList: { padding: 16, gap: 12 },
-  emptyChat: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 80,
-    gap: 8,
-  },
+  messageList: { padding: 16, gap: 14 },
+  emptyChat: { alignItems: 'center', justifyContent: 'center', paddingTop: 60, gap: 12, paddingHorizontal: 40 },
   emptyIconBg: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 80, height: 80, borderRadius: 24,
     backgroundColor: 'rgba(15,168,150,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 4,
   },
-  emptyChatTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: colors.slate[700],
-    textAlign: 'center',
-  },
-  emptyChatSub: {
-    fontSize: 13,
-    color: colors.slate[400],
-    textAlign: 'center',
-  },
+  emptyChatTitle: { fontSize: 18, fontWeight: '800', color: colors.slate[900] },
+  emptyChatSub: { fontSize: 13, color: colors.slate[400], textAlign: 'center', lineHeight: 20 },
 
-  bubble: { maxWidth: '80%' },
+  bubble: { maxWidth: '82%' },
   bubbleMine: { alignSelf: 'flex-end', alignItems: 'flex-end' },
   bubbleTheirs: { alignSelf: 'flex-start', alignItems: 'flex-start' },
-  bubbleName: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.slate[400],
-    marginBottom: 3,
-    marginLeft: 4,
+
+  bubbleHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4, marginLeft: 4 },
+  bubbleName: { fontSize: 11, fontWeight: '700', color: colors.slate[500] },
+  roleBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
   },
+  roleBadgeText: { fontSize: 9, fontWeight: '700' },
+
   bubbleBody: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
   },
-  bubbleBodyMine: {
-    borderRadius: 18,
-    borderBottomRightRadius: 4,
-    borderBottomWidth: 1.5,
-  },
-  bubbleBodyTheirs: {
-    borderRadius: 18,
-    borderBottomLeftRadius: 4,
-    borderLeftWidth: 3,
-  },
-  bubbleText: { fontSize: 14, lineHeight: 20 },
-  bubbleTime: {
-    fontSize: 10,
-    color: colors.slate[400],
-    marginTop: 3,
-    marginHorizontal: 4,
-  },
+  bubbleText: { fontSize: 14, lineHeight: 21 },
+  bubbleTime: { fontSize: 10, color: colors.slate[400], marginTop: 4, marginHorizontal: 4 },
 
   inputBar: {
     paddingHorizontal: 16,

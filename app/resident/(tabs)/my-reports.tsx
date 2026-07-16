@@ -24,6 +24,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { getMyReports } from '@/services/api';
+import { socketService } from '@/services/socket';
 import type { Report, ReportStatus } from '@/types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -276,6 +277,12 @@ export default function MyReportsScreen() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    const refresh = () => load(true);
+    socketService.on('report-status', refresh);
+    return () => socketService.off('report-status', refresh);
+  }, [load]);
+
   function handleRefresh() {
     setRefreshing(true);
     load(true);
@@ -369,7 +376,6 @@ export default function MyReportsScreen() {
       <Animated.View
         style={[
           styles.tabRow,
-          isDark && { backgroundColor: colors.dark.surface },
           {
             opacity: tabsAnim,
             transform: [
@@ -547,14 +553,14 @@ const styles = StyleSheet.create({
 
   header: {
     paddingHorizontal: 22,
-    paddingBottom: 44,
+    paddingBottom: 28,
     overflow: 'hidden',
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 4,
+    marginTop: 0,
   },
   headerTitle: {
     fontSize: 26,
@@ -587,7 +593,7 @@ const styles = StyleSheet.create({
   orb2: { width: 110, height: 110, bottom: 0, left: -30, backgroundColor: 'rgba(255,255,255,0.04)' },
 
   waveWrap: {
-    height: 48,
+    height: 24,
     position: 'relative',
     marginTop: -1,
   },
@@ -596,17 +602,18 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: -12,
     right: -12,
-    height: 52,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
+    height: 28,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
   },
 
   tabRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 4,
+    paddingBottom: 10,
     gap: 10,
-    backgroundColor: colors.white,
+    backgroundColor: 'transparent',
   },
   tabItemWrap: { flex: 1 },
   tabChip: {
@@ -672,7 +679,7 @@ const styles = StyleSheet.create({
     color: colors.slate[500],
   },
 
-  list:      { padding: 16, gap: 14 },
+  list:      { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 16, gap: 12 },
   listEmpty: { flex: 1 },
 
   card: {
@@ -687,7 +694,7 @@ const styles = StyleSheet.create({
   },
   photoHeader: {
     position: 'relative',
-    height: 160,
+    height: 150,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     overflow: 'hidden',
@@ -711,7 +718,7 @@ const styles = StyleSheet.create({
 
   cardRow:  { flexDirection: 'row' },
   cardBar:  { width: 4 },
-  cardBody: { flex: 1, padding: 16, gap: 10 },
+  cardBody: { flex: 1, padding: 14, gap: 8 },
   cardTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -743,8 +750,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: colors.slate[100],
-    paddingTop: 10,
-    marginTop: 2,
+    paddingTop: 8,
+    marginTop: 0,
   },
   cardRef:  { fontSize: 11, color: colors.slate[400], fontWeight: '600', letterSpacing: 0.2 },
   cardTime: { fontSize: 11, color: colors.slate[400] },

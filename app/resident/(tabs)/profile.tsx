@@ -476,7 +476,7 @@ export default function ProfileScreen() {
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
         showsVerticalScrollIndicator={false}
       >
 

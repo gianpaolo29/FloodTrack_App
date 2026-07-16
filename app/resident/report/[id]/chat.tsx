@@ -24,10 +24,9 @@ import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useNetworkStatus } from '@/hooks/use-network-status';
-import { getReportMessages, sendReportMessage, markMessagesRead, sendTypingEvent, getTypingUsers } from '@/services/api';
+import { getReportMessages, sendReportMessage, markMessagesRead } from '@/services/api';
+import { socketService, adaptSocketMessage, type RawSocketMessage, type TypingUser } from '@/services/socket';
 import type { IncidentMessage } from '@/types';
-
-const POLL_INTERVAL = 10_000;
 
 // ─── Typing dots ───────────────────────────────────────────────────────────
 
@@ -127,30 +126,56 @@ export default function ResidentChatScreen() {
     body: string;
     status: 'sending' | 'failed';
   }>>([]);
-  const [typingUsers, setTypingUsers] = useState<Array<{ name: string }>>([]);
+  const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingClearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
 
-  // Poll typing status
   useEffect(() => {
-    if (!isConnected || !token) return;
-    const interval = setInterval(async () => {
-      try {
-        const users = await getTypingUsers(id, token);
-        setTypingUsers(users);
-      } catch { /* ignore */ }
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [id, token, isConnected]);
+    if (!token || !user) return;
+    socketService.connect(token);
+    socketService.joinReport(id);
+
+    const handleNewMessage = (raw: RawSocketMessage) => {
+      const msg = adaptSocketMessage(raw, id);
+      if (msg.userId === user.id) return;
+      setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
+      markMessagesRead(id, token).catch(() => {});
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    };
+
+    const handleTypingUpdate = (data: TypingUser) => {
+      if (String(data.id) === user.id) return;
+      const key = String(data.id);
+      const old = typingClearTimers.current.get(key);
+      if (old) clearTimeout(old);
+      setTypingUsers(prev => [...prev.filter(u => String(u.id) !== key), data]);
+      const timer = setTimeout(() => {
+        setTypingUsers(prev => prev.filter(u => String(u.id) !== key));
+        typingClearTimers.current.delete(key);
+      }, 4000);
+      typingClearTimers.current.set(key, timer);
+    };
+
+    socketService.on<RawSocketMessage>('new-message', handleNewMessage);
+    socketService.on<TypingUser>('typing-update', handleTypingUpdate);
+
+    return () => {
+      socketService.leaveReport(id);
+      socketService.off<RawSocketMessage>('new-message', handleNewMessage);
+      socketService.off<TypingUser>('typing-update', handleTypingUpdate);
+      typingClearTimers.current.forEach(t => clearTimeout(t));
+      typingClearTimers.current.clear();
+    };
+  }, [id, token, user]);
 
   function handleTextChange(value: string) {
     setText(value);
-    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-    if (value.trim()) {
-      sendTypingEvent(id, token!);
-      typingTimerRef.current = setTimeout(() => { typingTimerRef.current = null; }, 3000);
-    }
+    if (!value.trim()) return;
+    if (typingTimerRef.current) return;
+    socketService.emitTyping(id);
+    typingTimerRef.current = setTimeout(() => { typingTimerRef.current = null; }, 2000);
   }
 
   const loadMessages = useCallback(async (silent = false) => {
@@ -168,12 +193,6 @@ export default function ResidentChatScreen() {
   }, [id, token]);
 
   useEffect(() => { loadMessages(); }, [loadMessages]);
-
-  useEffect(() => {
-    if (!isConnected) return;
-    const interval = setInterval(() => loadMessages(true), POLL_INTERVAL);
-    return () => clearInterval(interval);
-  }, [loadMessages, isConnected]);
 
   async function handleSend() {
     const msg = text.trim();

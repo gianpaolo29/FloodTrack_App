@@ -4,6 +4,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { AlertProvider } from '@/context/AlertContext';
@@ -96,12 +97,14 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <AlertBadgeProvider>
-        <AlertProvider>
-          <RootLayoutInner />
-        </AlertProvider>
-      </AlertBadgeProvider>
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <AlertBadgeProvider>
+          <AlertProvider>
+            <RootLayoutInner />
+          </AlertProvider>
+        </AlertBadgeProvider>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
