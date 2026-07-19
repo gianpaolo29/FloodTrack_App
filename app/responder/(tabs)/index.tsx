@@ -22,9 +22,9 @@ import * as Location from 'expo-location';
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getAssignedIncidents, getWeather, type WeatherData } from '@/services/api';
+import { getAssignedIncidents, getResponderStats, getWeather, type WeatherData } from '@/services/api';
 import { socketService } from '@/services/socket';
-import type { Incident, ResponderStatus } from '@/types';
+import type { Incident, ResponderStats, ResponderStatus } from '@/types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CARD_GAP = 12;
@@ -183,6 +183,7 @@ export default function HomeTab() {
 
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [stats, setStats] = useState<ResponderStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
@@ -262,10 +263,19 @@ export default function HomeTab() {
     } catch {}
   }, [token]);
 
+  const loadStats = useCallback(async () => {
+    if (!token) return;
+    try {
+      const s = await getResponderStats(token);
+      setStats(s);
+    } catch {}
+  }, [token]);
+
   useEffect(() => {
     loadIncidents();
     loadWeather();
-  }, [loadIncidents, loadWeather]);
+    loadStats();
+  }, [loadIncidents, loadWeather, loadStats]);
 
   useEffect(() => {
     socketService.on('new-notification', loadIncidents);
@@ -352,7 +362,7 @@ export default function HomeTab() {
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => { setRefreshing(true); loadIncidents(true); loadWeather(); }}
+              onRefresh={() => { setRefreshing(true); loadIncidents(true); loadWeather(); loadStats(); }}
               tintColor={colors.accent[500]}
               colors={[colors.accent[500]]}
             />
@@ -628,6 +638,78 @@ export default function HomeTab() {
               />
             </View>
           </Animated.View>
+
+          {/* ═══ MY PERFORMANCE ═══ */}
+          {stats && (
+            <Animated.View
+              style={{
+                opacity: cardsAnim,
+                transform: [{ translateY: cardsAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
+              }}
+            >
+              <View style={$.perfSection}>
+                <View style={$.sectionHeader}>
+                  <Text style={[$.sectionTitle, { color: textPrimary }]}>My Performance</Text>
+                </View>
+                <View style={$.perfGrid}>
+                  <View style={[$.perfCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                    <LinearGradient
+                      colors={['#10B981', '#059669']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={$.perfIconWrap}
+                    >
+                      <Ionicons name="checkmark-done" size={16} color="#fff" />
+                    </LinearGradient>
+                    <Text style={[$.perfValue, { color: textPrimary }]}>{stats.resolvedTotal}</Text>
+                    <Text style={[$.perfLabel, { color: textSecondary }]}>Total Resolved</Text>
+                  </View>
+                  <View style={[$.perfCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                    <LinearGradient
+                      colors={[colors.brand[500], '#6366F1']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={$.perfIconWrap}
+                    >
+                      <Ionicons name="calendar" size={16} color="#fff" />
+                    </LinearGradient>
+                    <Text style={[$.perfValue, { color: textPrimary }]}>{stats.resolvedThisWeek}</Text>
+                    <Text style={[$.perfLabel, { color: textSecondary }]}>This Week</Text>
+                  </View>
+                  <View style={[$.perfCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                    <LinearGradient
+                      colors={['#A855F7', '#7C3AED']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={$.perfIconWrap}
+                    >
+                      <Ionicons name="stats-chart" size={16} color="#fff" />
+                    </LinearGradient>
+                    <Text style={[$.perfValue, { color: textPrimary }]}>{stats.resolvedThisMonth}</Text>
+                    <Text style={[$.perfLabel, { color: textSecondary }]}>This Month</Text>
+                  </View>
+                  <View style={[$.perfCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                    <LinearGradient
+                      colors={['#F59E0B', '#EA580C']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={$.perfIconWrap}
+                    >
+                      <Ionicons name="timer" size={16} color="#fff" />
+                    </LinearGradient>
+                    <Text style={[$.perfValue, { color: textPrimary }]}>
+                      {stats.avgResponseMinutes > 0
+                        ? stats.avgResponseMinutes < 60
+                          ? `${Math.round(stats.avgResponseMinutes)}m`
+                          : `${(stats.avgResponseMinutes / 60).toFixed(1)}h`
+                        : '--'}
+                    </Text>
+                    <Text style={[$.perfLabel, { color: textSecondary }]}>Avg Response</Text>
+                  </View>
+                </View>
+              </View>
+            </Animated.View>
+          )}
 
           {/* ═══ TABS + INCIDENT LIST ═══ */}
           <Animated.View
@@ -1042,6 +1124,50 @@ const $ = StyleSheet.create({
   progressFill: {
     height: '100%',
     borderRadius: 2,
+  },
+
+  /* ── performance ── */
+  perfSection: {
+    paddingHorizontal: H_PAD,
+    marginBottom: 20,
+  },
+  perfGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 8,
+  },
+  perfCard: {
+    width: (SCREEN_W - H_PAD * 2 - 10) / 2,
+    flexGrow: 1,
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  perfIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  perfValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  perfLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
 
   /* ── quick actions ── */

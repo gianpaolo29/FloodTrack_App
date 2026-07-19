@@ -1402,7 +1402,7 @@ export default function MapScreen() {
   const scheme  = useColorScheme();
   const isDark  = scheme === 'dark';
   const mapRef  = useRef<MapView>(null);
-  const { token } = useAuth();
+  const { token, user, setHomeAddress } = useAuth();
 
   const [reports,            setReports]            = useState<Report[]>([]);
   const [adminHazards,       setAdminHazards]       = useState<Hazard[]>([]);
@@ -1425,10 +1425,13 @@ export default function MapScreen() {
   const [advisoryDismissed,  setAdvisoryDismissed]  = useState(false);
   const [zoneSummary, setZoneSummary] = useState<{ latitude: number; longitude: number } | null>(null);
   const [searchPin, setSearchPin] = useState<{ name: string; latitude: number; longitude: number } | null>(null);
-  const [googlePlaces, setGooglePlaces] = useState<{ placeId: string; main: string; secondary: string }[]>([]);
+  const [googlePlaces, setGooglePlaces] = useState<{ placeId: string; main: string; secondary: string; latitude?: number; longitude?: number }[]>([]);
   const [googlePlaceLoading, setGooglePlaceLoading] = useState<string | null>(null);
   const [weather,        setWeather]        = useState<WeatherData | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
+  const [showHomeSetup,   setShowHomeSetup]   = useState(false);
+  const [homeSetupLoading, setHomeSetupLoading] = useState(false);
+  const [homeSetupDone,   setHomeSetupDone]   = useState(false);
   const heatmapOpacity = useRef(new Animated.Value(0)).current;
 
   // ── Search animations ─────────────────────────────────────────
@@ -1439,6 +1442,43 @@ export default function MapScreen() {
   const searchInputRef    = useRef<TextInput>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resultAnims       = useRef<Animated.Value[]>([]).current;
+
+  // Prompt for home address if not configured
+  useEffect(() => {
+    if (user?.role === 'Resident' && !user?.homeAddress) {
+      setShowHomeSetup(true);
+    }
+  }, []);
+
+  async function handleHomeSetupUseLocation() {
+    setHomeSetupLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setShowHomeSetup(false);
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const [geo] = await Location.reverseGeocodeAsync({
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      });
+      const parts = [geo.street, geo.district, geo.city, geo.region]
+        .filter(Boolean)
+        .filter((v, i, a) => a.indexOf(v) === i);
+      const address = parts.join(', ');
+      await setHomeAddress(address || `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`);
+      setHomeSetupDone(true);
+      setTimeout(() => {
+        setShowHomeSetup(false);
+        setHomeSetupDone(false);
+      }, 1800);
+    } catch {
+      setShowHomeSetup(false);
+    } finally {
+      setHomeSetupLoading(false);
+    }
+  }
 
   // shimmer loop for loading skeleton
   useEffect(() => {
@@ -1508,13 +1548,30 @@ export default function MapScreen() {
             const res = await fetch(url);
             const json = await res.json();
             if (json.status === 'OK' && json.predictions) {
-              setGooglePlaces(
-                json.predictions.slice(0, 5).map((p: any) => ({
-                  placeId: p.place_id,
-                  main: p.structured_formatting?.main_text ?? p.description,
-                  secondary: p.structured_formatting?.secondary_text ?? '',
-                })),
+              const predictions = json.predictions.slice(0, 5);
+              // Fetch coordinates for each result before showing (enables proximity dedup)
+              const withCoords = await Promise.all(
+                predictions.map(async (p: any) => {
+                  const entry = {
+                    placeId: p.place_id,
+                    main: p.structured_formatting?.main_text ?? p.description,
+                    secondary: p.structured_formatting?.secondary_text ?? '',
+                    latitude: undefined as number | undefined,
+                    longitude: undefined as number | undefined,
+                  };
+                  try {
+                    const detailUrl =
+                      `https://maps.googleapis.com/maps/api/place/details/json` +
+                      `?place_id=${p.place_id}&fields=geometry&key=${key}`;
+                    const dRes = await fetch(detailUrl);
+                    const dJson = await dRes.json();
+                    const loc = dJson.result?.geometry?.location;
+                    if (loc) { entry.latitude = loc.lat; entry.longitude = loc.lng; }
+                  } catch {}
+                  return entry;
+                }),
               );
+              setGooglePlaces(withCoords);
             } else {
               setGooglePlaces([]);
             }
@@ -1724,6 +1781,32 @@ export default function MapScreen() {
   const placeSuggestions = trimmed.length >= 2
     ? nasugbuPlaces.filter(p => p.name.toLowerCase().includes(trimmed)).slice(0, 4)
     : [];
+
+  // Deduplicate: remove Google Places that match an evac center or place suggestion
+  const filteredGooglePlaces = googlePlaces.filter(gp => {
+    const gpLower = gp.main.toLowerCase();
+    const gpSecondary = (gp.secondary ?? '').toLowerCase();
+    for (const c of searchResults) {
+      const cLower = c.name.toLowerCase();
+      // Full name containment
+      if (gpLower.includes(cLower) || cLower.includes(gpLower)) return false;
+      // Search query appears in both names — likely same place
+      if (trimmed.length >= 3 && gpLower.includes(trimmed) && cLower.includes(trimmed)) return false;
+      // Proximity check — within 300m
+      if (gp.latitude != null && gp.longitude != null) {
+        if (haversineKm(gp.latitude, gp.longitude, c.latitude, c.longitude) < 0.3) return false;
+      }
+    }
+    for (const p of placeSuggestions) {
+      const pLower = p.name.toLowerCase();
+      if (gpLower.includes(pLower) || pLower.includes(gpLower)) return false;
+      if (trimmed.length >= 3 && gpLower.includes(trimmed) && pLower.includes(trimmed)) return false;
+      if (gp.latitude != null && gp.longitude != null) {
+        if (haversineKm(gp.latitude, gp.longitude, p.latitude, p.longitude) < 0.3) return false;
+      }
+    }
+    return true;
+  });
 
   function handlePlacePress(place: { name: string; latitude: number; longitude: number }) {
     Keyboard.dismiss();
@@ -2178,7 +2261,7 @@ export default function MapScreen() {
                 </View>
               )}
 
-              {searchResults.length === 0 && googlePlaces.length === 0 && placeSuggestions.length === 0 ? (
+              {searchResults.length === 0 && filteredGooglePlaces.length === 0 && placeSuggestions.length === 0 ? (
                 /* ── Empty state ── */
                 <View style={s.dropdownEmpty}>
                   <View style={s.emptyIconWrap}>
@@ -2196,10 +2279,12 @@ export default function MapScreen() {
                 <>
                   <View style={[s.resultCountHeader, { borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
                     <View style={s.resultCountBadge}>
-                      <Text style={s.resultCountText}>{searchResults.length}</Text>
+                      <Text style={s.resultCountText}>
+                        {searchResults.length + placeSuggestions.length + filteredGooglePlaces.length}
+                      </Text>
                     </View>
                     <Text style={[s.resultCountLabel, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
-                      {searchResults.length === 1 ? 'center found' : 'centers found'}
+                      {searchResults.length + placeSuggestions.length + filteredGooglePlaces.length === 1 ? 'result found' : 'results found'}
                     </Text>
                   </View>
               {searchResults.map((center, idx) => {
@@ -2252,7 +2337,7 @@ export default function MapScreen() {
               )}
 
               {/* ── Google Places results ── */}
-              {googlePlaces.length > 0 && (
+              {filteredGooglePlaces.length > 0 && (
                 <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: isDark ? colors.dark.border : colors.slate[100] }}>
                   <View style={[s.dropdownSuggestHeader, { borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
                     <Ionicons name="globe-outline" size={12} color={colors.brand[500]} />
@@ -2260,12 +2345,12 @@ export default function MapScreen() {
                       Google Places
                     </Text>
                   </View>
-                  {googlePlaces.map((place, idx) => (
+                  {filteredGooglePlaces.map((place, idx) => (
                     <Pressable
                       key={place.placeId}
                       style={({ pressed }) => [
                         s.dropdownItem,
-                        idx < googlePlaces.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] },
+                        idx < filteredGooglePlaces.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] },
                         pressed && { backgroundColor: isDark ? colors.dark.card : colors.brand[500] + '08', transform: [{ scale: 0.98 }] },
                       ]}
                       onPress={() => handleGooglePlacePress(place.placeId, place.main)}
@@ -2427,6 +2512,84 @@ export default function MapScreen() {
         onClose={() => setLayersVisible(false)}
         isDark={isDark}
       />
+
+      <Modal visible={showHomeSetup} transparent animationType="fade" onRequestClose={() => !homeSetupLoading && setShowHomeSetup(false)}>
+        <View style={homeSetupStyles.overlay}>
+          <View style={[homeSetupStyles.sheet, isDark && { backgroundColor: colors.dark.elevated }]}>
+            {homeSetupDone ? (
+              <LinearGradient
+                colors={['#22c55e', '#16a34a']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={homeSetupStyles.successWrap}
+              >
+                <View style={homeSetupStyles.successIconWrap}>
+                  <Ionicons name="checkmark-circle" size={56} color={colors.white} />
+                </View>
+                <Text style={homeSetupStyles.successTitle}>Home address saved!</Text>
+                <Text style={homeSetupStyles.successSub}>You'll now receive alerts relevant to your home area.</Text>
+              </LinearGradient>
+            ) : (
+              <>
+                <LinearGradient
+                  colors={colors.gradients.hero}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={homeSetupStyles.header}
+                >
+                  <View style={homeSetupStyles.iconWrap}>
+                    <Ionicons name="home" size={28} color={colors.white} />
+                  </View>
+                  <Text style={homeSetupStyles.headerTitle}>Set Home Address</Text>
+                  <Text style={homeSetupStyles.headerSub}>
+                    We'll use your location to give you faster flood alerts near your home.
+                  </Text>
+                </LinearGradient>
+
+                <View style={homeSetupStyles.body}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      homeSetupStyles.primaryBtn,
+                      pressed && { opacity: 0.85 },
+                      homeSetupLoading && { opacity: 0.7 },
+                    ]}
+                    onPress={handleHomeSetupUseLocation}
+                    disabled={homeSetupLoading}
+                    accessibilityRole="button"
+                    accessibilityLabel="Use my current location"
+                  >
+                    <LinearGradient
+                      colors={colors.gradients.cta}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={homeSetupStyles.primaryBtnGrad}
+                    >
+                      {homeSetupLoading ? (
+                        <ActivityIndicator size="small" color={colors.white} />
+                      ) : (
+                        <>
+                          <Ionicons name="locate" size={18} color={colors.white} />
+                          <Text style={homeSetupStyles.primaryBtnText}>Use My Location</Text>
+                        </>
+                      )}
+                    </LinearGradient>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [homeSetupStyles.skipBtn, pressed && { opacity: 0.7 }]}
+                    onPress={() => setShowHomeSetup(false)}
+                    disabled={homeSetupLoading}
+                    accessibilityRole="button"
+                    accessibilityLabel="Skip"
+                  >
+                    <Text style={[homeSetupStyles.skipText, isDark && { color: colors.slate[400] }]}>Skip for now</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2604,5 +2767,106 @@ const s = StyleSheet.create({
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     marginTop: -1,
+  },
+});
+
+const homeSetupStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  sheet: {
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 28,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  header: {
+    alignItems: 'center',
+    paddingTop: 32,
+    paddingBottom: 28,
+    paddingHorizontal: 24,
+    gap: 10,
+  },
+  iconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.white,
+    letterSpacing: -0.3,
+    textAlign: 'center',
+  },
+  headerSub: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.85)',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  body: {
+    padding: 20,
+    gap: 10,
+  },
+  primaryBtn: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  primaryBtnGrad: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 52,
+  },
+  primaryBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  skipBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  skipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.slate[500],
+  },
+  successWrap: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+    gap: 12,
+    borderRadius: 28,
+  },
+  successIconWrap: {
+    marginBottom: 4,
+  },
+  successTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.white,
+    textAlign: 'center',
+  },
+  successSub: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.85)',
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });

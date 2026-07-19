@@ -25,7 +25,7 @@ import { AppAlert, AlertConfig } from '@/components/AppAlert';
 import { colors } from '@/theme/colors';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const HERO_H = SCREEN_H * 0.30;
+const HERO_H = SCREEN_H * 0.27;
 
 function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: number; size?: number }) {
   const translateY = useRef(new Animated.Value(0)).current;
@@ -398,7 +398,7 @@ export default function LoginScreen() {
                   </View>
                   <Text style={s.rememberLabel}>Remember me</Text>
                 </Pressable>
-                <Pressable hitSlop={6}>
+                <Pressable hitSlop={6} onPress={() => router.push('/forgot-password')}>
                   <Text style={s.forgotLink}>Forgot password?</Text>
                 </Pressable>
               </View>
@@ -564,7 +564,7 @@ const s = StyleSheet.create({
   },
 
   waveWrap: {
-    height: 55, position: 'relative', marginTop: -1,
+    height: 44, position: 'relative', marginTop: -1,
   },
   waveShape: {
     position: 'absolute', bottom: 0,
@@ -579,16 +579,16 @@ const s = StyleSheet.create({
     flex: 1, backgroundColor: colors.auth.pageBg, marginTop: -2,
   },
   formScroll: {
-    paddingHorizontal: 28, paddingTop: 16,
+    paddingHorizontal: 28, paddingTop: 8,
   },
 
   titleRow: {
     flexDirection: 'row', alignItems: 'baseline',
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  titleBold: { fontSize: 30, fontWeight: '800', color: colors.auth.heading },
-  titleLight: { fontSize: 30, fontWeight: '300', color: colors.auth.heading },
-  titleSub: { fontSize: 14, color: colors.auth.muted, marginBottom: 24 },
+  titleBold: { fontSize: 26, fontWeight: '800', color: colors.auth.heading },
+  titleLight: { fontSize: 26, fontWeight: '300', color: colors.auth.heading },
+  titleSub: { fontSize: 13, color: colors.auth.muted, marginBottom: 18 },
 
   fieldWrap: { marginBottom: 14 },
   inputRow: {

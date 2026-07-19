@@ -42,6 +42,7 @@ interface RawUser {
   contact_number: string | null;
   avatar_url: string | null;
   created_at: string;
+  home_address?: string | null;
 }
 
 interface RawMedia {
@@ -131,14 +132,15 @@ function adaptUser(raw: RawUser): User {
     admin: 'Responder',
   };
   return {
-    id:        String(raw.id),
+    id:          String(raw.id),
     firstName,
     lastName,
-    email:     raw.email,
-    contact:   raw.contact_number ?? '',
-    role:      roleMap[raw.role] ?? 'Resident',
-    joinedAt:  raw.created_at,
-    avatarUrl: raw.avatar_url ?? null,
+    email:       raw.email,
+    contact:     raw.contact_number ?? '',
+    role:        roleMap[raw.role] ?? 'Resident',
+    joinedAt:    raw.created_at,
+    avatarUrl:   raw.avatar_url ?? null,
+    homeAddress: raw.home_address ?? null,
   };
 }
 
@@ -207,7 +209,7 @@ function adaptReportDetail(raw: RawReport): ReportDetail {
   };
 }
 
-function adaptAlert(raw: RawAlert): AlertItem {
+export function adaptAlert(raw: RawAlert): AlertItem {
   const kindMap: Record<string, AlertItem['kind']> = {
     critical: 'critical',
     advisory: 'advisory',
@@ -367,6 +369,27 @@ export async function apiRegister(
 export async function apiLogout(token: string): Promise<void> {
   await post('/logout', {}, token).catch(() => {
   });
+}
+
+export async function apiCheckEmail(email: string): Promise<boolean> {
+  try {
+    const data = await post<{ exists: boolean }>('/check-email', { email });
+    return data.exists;
+  } catch {
+    return false;
+  }
+}
+
+export async function apiForgotPassword(email: string): Promise<void> {
+  await post('/forgot-password', { email });
+}
+
+export async function apiResetPassword(
+  email: string,
+  token: string,
+  password: string,
+): Promise<void> {
+  await post('/reset-password', { email, token, password });
 }
 
 export async function getMyReports(token: string): Promise<Report[]> {

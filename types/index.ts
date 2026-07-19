@@ -13,6 +13,7 @@ export interface User {
   role: UserRole;
   joinedAt: string;
   avatarUrl?: string | null;
+  homeAddress?: string | null;
 }
 
 export interface LoginPayload {

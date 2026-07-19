@@ -22,6 +22,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/context/AuthContext';
 import { AppAlert, AlertConfig } from '@/components/AppAlert';
 import { colors } from '@/theme/colors';
+import { apiCheckEmail } from '@/services/api';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const HERO_H = SCREEN_H * 0.30;
@@ -165,6 +166,18 @@ export default function SignUpScreen() {
     if (!email.trim() || !EMAIL_RE.test(email.trim())) {
       setAlertConfig({ type: 'warning', title: 'Invalid Email', message: 'Please enter a valid email address.', confirmText: 'OK' });
       return;
+    }
+    setIsLoading(true);
+    try {
+      const emailTaken = await apiCheckEmail(email.trim());
+      if (emailTaken) {
+        setAlertConfig({ type: 'error', title: 'Email Already Registered', message: 'An account with this email already exists. Please log in or use a different email.', confirmText: 'OK' });
+        return;
+      }
+    } catch {
+      // network error — let the server catch it on submit
+    } finally {
+      setIsLoading(false);
     }
     const phone = contact.replace(/\s/g, '');
     if (!phone || !PH_MOBILE_RE.test(phone)) {

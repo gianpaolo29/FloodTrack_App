@@ -1,14 +1,15 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import * as Storage from '@/utils/storage';
 
-import { apiLogin, apiLogout, apiRegister, registerPushToken, removePushToken } from '@/services/api';
+import { apiLogin, apiLogout, apiRegister, getCurrentUser, registerPushToken, removePushToken } from '@/services/api';
 import { getExpoPushToken } from '@/services/notifications';
 import { socketService } from '@/services/socket';
 import type { LoginPayload, RegisterPayload, User } from '@/types';
 
-const TOKEN_KEY      = 'floodtrack_token';
-const USER_KEY       = 'floodtrack_user';
-const PUSH_TOKEN_KEY = 'floodtrack_push_token';
+const TOKEN_KEY        = 'floodtrack_token';
+const USER_KEY         = 'floodtrack_user';
+const PUSH_TOKEN_KEY   = 'floodtrack_push_token';
+const HOME_ADDRESS_KEY = 'floodtrack_home_address';
 
 interface AuthContextValue {
   user: User | null;
@@ -18,6 +19,7 @@ interface AuthContextValue {
   register: (payload: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (user: User) => Promise<void>;
+  setHomeAddress: (address: string | null) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -30,14 +32,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const [storedToken, storedUser] = await Promise.all([
+        const [storedToken, storedUser, storedHomeAddress] = await Promise.all([
           Storage.getItem(TOKEN_KEY),
           Storage.getItem(USER_KEY),
+          Storage.getItem(HOME_ADDRESS_KEY),
         ]);
         if (storedToken && storedUser) {
+          // Validate token before connecting socket
+          try {
+            await getCurrentUser(storedToken);
+          } catch {
+            // Token is expired/invalid — clear stored credentials
+            await Storage.deleteItem(TOKEN_KEY);
+            await Storage.deleteItem(USER_KEY);
+            return;
+          }
+
           socketService.connect(storedToken);
           setToken(storedToken);
-          setUser(JSON.parse(storedUser) as User);
+          const u = JSON.parse(storedUser) as User;
+          if (storedHomeAddress) u.homeAddress = storedHomeAddress;
+          setUser(u);
 
           getExpoPushToken().then(async (pushToken) => {
             if (pushToken) {
@@ -78,9 +93,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await Promise.all([
       Storage.deleteItem(TOKEN_KEY),
       Storage.deleteItem(USER_KEY),
+      Storage.deleteItem(HOME_ADDRESS_KEY),
     ]);
     setToken(null);
     setUser(null);
+  }
+
+  async function setHomeAddress(address: string | null) {
+    if (address) {
+      await Storage.setItem(HOME_ADDRESS_KEY, address);
+    } else {
+      await Storage.deleteItem(HOME_ADDRESS_KEY);
+    }
+    setUser(prev => prev ? { ...prev, homeAddress: address } : prev);
   }
 
   async function updateUser(u: User) {
@@ -89,6 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function persist(t: string, u: User) {
+    const storedHomeAddress = await Storage.getItem(HOME_ADDRESS_KEY);
+    if (storedHomeAddress) u.homeAddress = storedHomeAddress;
     await Promise.all([
       Storage.setItem(TOKEN_KEY, t),
       Storage.setItem(USER_KEY, JSON.stringify(u)),
@@ -106,7 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout, updateUser, setHomeAddress }}>
       {children}
     </AuthContext.Provider>
   );

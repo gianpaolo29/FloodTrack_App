@@ -20,7 +20,11 @@ function AuthGuard() {
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthScreen = segments[0] === 'login' || segments[0] === 'signup';
+    const inAuthScreen =
+      segments[0] === 'login' ||
+      segments[0] === 'signup' ||
+      segments[0] === 'forgot-password' ||
+      segments[0] === 'reset-password';
 
     if (!user && !inAuthScreen) {
       router.replace('/login');
@@ -81,8 +85,10 @@ function RootLayoutInner() {
       <AuthGuard />
       <Stack>
         <Stack.Screen name="index"     options={{ headerShown: false }} />
-        <Stack.Screen name="login"     options={{ headerShown: false }} />
-        <Stack.Screen name="signup"    options={{ headerShown: false }} />
+        <Stack.Screen name="login"            options={{ headerShown: false }} />
+        <Stack.Screen name="signup"           options={{ headerShown: false }} />
+        <Stack.Screen name="forgot-password"  options={{ headerShown: false }} />
+        <Stack.Screen name="reset-password"   options={{ headerShown: false }} />
         <Stack.Screen name="resident"  options={{ headerShown: false }} />
         <Stack.Screen name="responder" options={{ headerShown: false }} />
       </Stack>

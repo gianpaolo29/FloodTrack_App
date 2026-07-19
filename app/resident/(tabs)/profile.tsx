@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import * as Storage from '@/utils/storage';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -124,6 +125,7 @@ const ICON_COLORS: Record<string, string> = {
   'person-outline':             colors.iconAccents.blue,
   'lock-closed-outline':        colors.iconAccents.purple,
   'call-outline':               colors.iconAccents.green,
+  'home-outline':               colors.iconAccents.amber,
   'alert-circle-outline':       colors.severity.critical,
   'information-circle-outline': colors.iconAccents.amber,
   'document-text-outline':      colors.brand[500],
@@ -293,18 +295,20 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
-  const { user, token, logout, updateUser } = useAuth();
+  const { user, token, logout, updateUser, setHomeAddress } = useAuth();
   const { showAlert } = useAlert();
 
   const [notifCritical,    setNotifCritical]    = useState(true);
   const [notifAdvisory,    setNotifAdvisory]    = useState(true);
   const [notifMyReports,   setNotifMyReports]   = useState(true);
 
-  const [showEditProfile, setShowEditProfile] = useState(false);
-  const [editFirstName, setEditFirstName]     = useState('');
-  const [editLastName, setEditLastName]       = useState('');
-  const [editContact, setEditContact]         = useState('');
-  const [editSaving, setEditSaving]           = useState(false);
+  const [showEditProfile, setShowEditProfile]     = useState(false);
+  const [editFirstName, setEditFirstName]         = useState('');
+  const [editLastName, setEditLastName]           = useState('');
+  const [editContact, setEditContact]             = useState('');
+  const [editHomeAddress, setEditHomeAddress]     = useState('');
+  const [editAddressLoading, setEditAddressLoading] = useState(false);
+  const [editSaving, setEditSaving]               = useState(false);
 
   const [avatarUploading, setAvatarUploading] = useState(false);
 
@@ -377,7 +381,32 @@ export default function ProfileScreen() {
     setEditFirstName(user?.firstName ?? '');
     setEditLastName(user?.lastName ?? '');
     setEditContact(user?.contact ?? '');
+    setEditHomeAddress(user?.homeAddress ?? '');
     setShowEditProfile(true);
+  }
+
+  async function handleUseLocationForAddress() {
+    setEditAddressLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        showAlert({ type: 'error', title: 'Permission denied', message: 'Location access is required to use this feature.' });
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const [geo] = await Location.reverseGeocodeAsync({
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      });
+      const parts = [geo.street, geo.district, geo.city, geo.region]
+        .filter(Boolean)
+        .filter((v, i, a) => a.indexOf(v) === i);
+      setEditHomeAddress(parts.join(', ') || `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`);
+    } catch {
+      showAlert({ type: 'error', title: 'Failed', message: 'Could not retrieve your location.' });
+    } finally {
+      setEditAddressLoading(false);
+    }
   }
 
   async function handleSaveProfile() {
@@ -391,7 +420,9 @@ export default function ProfileScreen() {
         name: `${editFirstName.trim()} ${editLastName.trim()}`,
         contact_number: editContact.trim() || undefined,
       }, token!);
-      await updateUser(updated);
+      const newAddress = editHomeAddress.trim() || null;
+      await setHomeAddress(newAddress);
+      await updateUser({ ...updated, homeAddress: newAddress });
       showAlert({ type: 'success', title: 'Updated', message: 'Your profile has been updated.' });
       setShowEditProfile(false);
     } catch (e: any) {
@@ -590,7 +621,7 @@ export default function ProfileScreen() {
             <SettingRow
               icon="person-outline"
               label="Edit profile"
-              description="Name, contact number"
+              description="Name, contact, home address"
               onPress={openEditProfile}
               isDark={isDark}
             />
@@ -601,6 +632,12 @@ export default function ProfileScreen() {
               isDark={isDark}
             />
             <SettingRow icon="call-outline" label="Mobile number" description={user?.contact ?? '—'} isDark={isDark} />
+            <SettingRow
+              icon="home-outline"
+              label="Home address"
+              description={user?.homeAddress ?? 'Not set — edit profile to add'}
+              isDark={isDark}
+            />
             <SettingRow
               icon="people-outline"
               label="Family safety group"
@@ -759,6 +796,22 @@ export default function ProfileScreen() {
                     placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                     keyboardType="phone-pad"
                   />
+                </GlassInput>
+                <GlassInput icon="home-outline" isDark={isDark}>
+                  <TextInput
+                    style={[styles.modalInput, isDark && { color: colors.white }]}
+                    value={editHomeAddress}
+                    onChangeText={setEditHomeAddress}
+                    placeholder="Home address"
+                    placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
+                    autoCapitalize="words"
+                  />
+                  <Pressable onPress={handleUseLocationForAddress} hitSlop={8} disabled={editAddressLoading}>
+                    {editAddressLoading
+                      ? <ActivityIndicator size="small" color={colors.brand[500]} />
+                      : <Ionicons name="locate" size={18} color={colors.brand[500]} />
+                    }
+                  </Pressable>
                 </GlassInput>
               </View>
 

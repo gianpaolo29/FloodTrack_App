@@ -20,7 +20,7 @@ import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useAlertBadge } from '@/context/AlertBadgeContext';
-import { getAlertsWithReadState, markAlertRead, markAllAlertsRead } from '@/services/api';
+import { getAlertsWithReadState, markAlertRead, markAllAlertsRead, adaptAlert } from '@/services/api';
 import { socketService } from '@/services/socket';
 import type { AlertItem } from '@/types';
 
@@ -321,14 +321,40 @@ export default function AlertsScreen() {
       if (state === 'active') load(true);
     });
 
+    const handleNew = (raw: any) => {
+      if (!raw?.id) return;
+      const item = adaptAlert(raw);
+      setAlerts(prev => {
+        if (prev.some(a => a.id === item.id)) return prev;
+        const updated = [item, ...prev];
+        setUnreadCount(updated.filter(a => !a.read).length);
+        return updated;
+      });
+    };
+
+    const handleUpdated = (raw: any) => {
+      if (!raw?.id) return;
+      const item = adaptAlert(raw);
+      setAlerts(prev => {
+        const idx = prev.findIndex(a => a.id === item.id);
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        updated[idx] = { ...item, read: prev[idx].read };
+        return updated;
+      });
+    };
+
     const refresh = () => load(true);
-    socketService.on('new-alert', refresh);
+
+    socketService.on('new-alert', handleNew);
+    socketService.on('alert-updated', handleUpdated);
     socketService.on('new-notification', refresh);
 
     return () => {
       clearInterval(interval);
       sub.remove();
-      socketService.off('new-alert', refresh);
+      socketService.off('new-alert', handleNew);
+      socketService.off('alert-updated', handleUpdated);
       socketService.off('new-notification', refresh);
     };
   }, [load]);
