@@ -70,7 +70,7 @@ export default function AdminReports() {
     if (!token) return;
     const pending   = data.filter(r => r.status === 'pending');
     const toVerify  = pending.filter(r => r.aiImageVerified === true && !r.aiFlagged && !r.aiHasDuplicate);
-    const toReject  = pending.filter(r => r.aiImageVerified === false && !r.aiHasDuplicate);
+    const toReject  = pending.filter(r => r.aiImageVerified === false || r.aiExifStatus === 'fail');
 
     if (toVerify.length === 0 && toReject.length === 0) return;
 
@@ -211,18 +211,22 @@ export default function AdminReports() {
             {filtered.map(report => {
               const isDuplicate = report.aiHasDuplicate;
               const imageFailed = report.aiImageVerified === false;
-              const textFlagged = report.aiFlagged && !isDuplicate && !imageFailed;
-              const imageOk     = report.aiImageVerified === true && !report.aiFlagged;
+              const exifFailed  = report.aiExifStatus === 'fail';
+              const exifNoData  = report.aiExifStatus === 'no_data';
+              const textFlagged = report.aiFlagged && !isDuplicate && !imageFailed && !exifFailed;
+              const imageOk     = report.aiImageVerified === true && !report.aiFlagged && !exifFailed;
               const isPending   = report.status === 'pending';
 
-              const aiBadgeColor = isDuplicate || imageFailed || textFlagged
+              const aiBadgeColor = isDuplicate || imageFailed || textFlagged || exifFailed || exifNoData
                 ? colors.severity.moderate
                 : imageOk
                 ? colors.severity.low
                 : null;
 
-              const aiBadgeLabel = isDuplicate ? 'Duplicate report'
+              const aiBadgeLabel = exifFailed   ? 'Possible internet photo'
                 : imageFailed    ? 'No flood in photo'
+                : isDuplicate    ? 'Duplicate report'
+                : exifNoData     ? 'No EXIF data'
                 : textFlagged    ? 'Suspicious text'
                 : imageOk        ? 'AI verified'
                 : null;

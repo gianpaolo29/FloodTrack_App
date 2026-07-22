@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  AppState,
   Easing,
   Image,
   Keyboard,
@@ -33,7 +34,7 @@ import { SeverityChip, type Severity } from '@/components/SeverityChip';
 import { StatusBadge, type ReportStatus } from '@/components/StatusBadge';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getAllReports, getReportDetail, getEvacuationCenters, getActiveHazards, getWeather } from '@/services/api';
+import { getAllReports, getReportDetail, getEvacuationCenters, getActiveHazards, getWeatherWithFallback, updateProfile } from '@/services/api';
 import type { WeatherData } from '@/services/api';
 import type { Report as ApiReport, Hazard } from '@/types';
 import { HeatmapZoneSummary } from '@/components/HeatmapZoneSummary';
@@ -1257,7 +1258,7 @@ function WeatherStrip({
                 <View style={[ws.tileIcon, { backgroundColor: isDark ? '#3A1A3A' : '#F9A8D4' }]}>
                   <Ionicons name="umbrella-outline" size={15} color={isDark ? '#F472B6' : '#DB2777'} />
                 </View>
-                <Text style={[ws.tileValue, { color: textMain }]}>{Math.round(today.pop * 100)}%</Text>
+                <Text style={[ws.tileValue, { color: textMain }]}>{Math.round(today.pop > 1 ? today.pop : today.pop * 100)}%</Text>
                 <Text style={[ws.tileLabel, { color: textSub }]}>Rain Chance</Text>
               </View>
             )}
@@ -1466,8 +1467,11 @@ export default function MapScreen() {
       const parts = [geo.street, geo.district, geo.city, geo.region]
         .filter(Boolean)
         .filter((v, i, a) => a.indexOf(v) === i);
-      const address = parts.join(', ');
-      await setHomeAddress(address || `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`);
+      const address = parts.join(', ') || `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+      await setHomeAddress(address);
+      if (token) {
+        await updateProfile({ home_address: address }, token).catch(() => {});
+      }
       setHomeSetupDone(true);
       setTimeout(() => {
         setShowHomeSetup(false);
@@ -1512,7 +1516,6 @@ export default function MapScreen() {
 
   function handleSearchFocus() {
     setSearchFocused(true);
-    fetchUserLocation();
     Animated.parallel([
       Animated.spring(searchFocusAnim, { toValue: 1, tension: 80, friction: 12, useNativeDriver: false }),
       Animated.timing(dropdownAnim, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
@@ -1666,21 +1669,52 @@ export default function MapScreen() {
     getActiveHazards(token)
       .then(setAdminHazards)
       .catch(() => {});
-    // Fetch weather with area default on mount
+    // Fetch weather with area default immediately, then re-fetch with real location
     setWeatherLoading(true);
-    getWeather(INITIAL_REGION.latitude, INITIAL_REGION.longitude, token)
-      .then(setWeather)
+    getWeatherWithFallback(INITIAL_REGION.latitude, INITIAL_REGION.longitude, token)
+      .then(w => { if (w) setWeather(w); })
       .catch(() => {})
       .finally(() => setWeatherLoading(false));
+
+    // Real-time location tracking
+    let locationSub: Location.LocationSubscription | null = null;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        locationSub = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, distanceInterval: 10, timeInterval: 5000 },
+          (loc) => {
+            setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+          },
+        );
+      } catch {}
+    })();
+
+    return () => { locationSub?.remove(); };
   }, [token]);
 
   // Re-fetch weather with precise user location once known
-  useEffect(() => {
-    if (!token || !userLocation) return;
-    getWeather(userLocation.latitude, userLocation.longitude, token)
-      .then(setWeather)
+  const refreshWeather = useCallback(() => {
+    if (!token) return;
+    const coords = userLocation ?? { latitude: INITIAL_REGION.latitude, longitude: INITIAL_REGION.longitude };
+    getWeatherWithFallback(coords.latitude, coords.longitude, token)
+      .then(w => { if (w) setWeather(w); })
       .catch(() => {});
-  }, [userLocation, token]);
+  }, [token, userLocation]);
+
+  useEffect(() => {
+    refreshWeather();
+  }, [refreshWeather]);
+
+  // Auto-refresh weather every 15 min + when app returns to foreground
+  useEffect(() => {
+    const interval = setInterval(refreshWeather, 15 * 60 * 1000);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshWeather();
+    });
+    return () => { clearInterval(interval); sub.remove(); };
+  }, [refreshWeather]);
 
   const filtered = filter === 'all'
     ? reports
@@ -1711,14 +1745,18 @@ export default function MapScreen() {
     if (locating) return;
     setLocating(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
+      // Use real-time tracked location if available, otherwise fetch fresh
+      let coords = userLocation;
+      if (!coords) {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+        setUserLocation(coords);
+      }
       mapRef.current?.animateToRegion({
-        latitude:       loc.coords.latitude,
-        longitude:      loc.coords.longitude,
+        latitude:       coords.latitude,
+        longitude:      coords.longitude,
         latitudeDelta:  0.008,
         longitudeDelta: 0.008,
       }, 600);
@@ -1727,15 +1765,6 @@ export default function MapScreen() {
     }
   }
 
-  async function fetchUserLocation() {
-    if (userLocation) return;
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-    } catch {}
-  }
 
   const trimmed = searchQuery.trim().toLowerCase();
   const isGenericEvacQuery = ['evacuation', 'center', 'shelter', 'evac'].some(kw => kw.includes(trimmed) || trimmed.includes(kw));

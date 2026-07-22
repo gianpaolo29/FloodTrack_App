@@ -38,14 +38,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           Storage.getItem(HOME_ADDRESS_KEY),
         ]);
         if (storedToken && storedUser) {
-          // Validate token before connecting socket
+          // Validate token — only clear credentials on 401 (invalid/revoked token).
+          // Network errors or server downtime should NOT log the user out.
           try {
             await getCurrentUser(storedToken);
-          } catch {
-            // Token is expired/invalid — clear stored credentials
-            await Storage.deleteItem(TOKEN_KEY);
-            await Storage.deleteItem(USER_KEY);
-            return;
+          } catch (e: any) {
+            if (e?.status === 401) {
+              await Storage.deleteItem(TOKEN_KEY);
+              await Storage.deleteItem(USER_KEY);
+              return;
+            }
+            // Network/server error — keep the stored credentials and proceed
           }
 
           socketService.connect(storedToken);

@@ -105,27 +105,11 @@ export default function ForgotPasswordScreen() {
     ]).start();
   }, []);
 
-  const [email, setEmail]           = useState('');
-  const [emailFocus, setEmailFocus] = useState(false);
+  const [email, setEmail]               = useState('');
+  const [emailFocus, setEmailFocus]     = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
-  const [isLoading, setIsLoading]   = useState(false);
-  const [sent, setSent]             = useState(false);
-  const [alertConfig, setAlertConfig] = useState<AlertConfig | null>(null);
-
-  const successScale   = useRef(new Animated.Value(0)).current;
-  const successOpacity = useRef(new Animated.Value(0)).current;
-  const successTransY  = useRef(new Animated.Value(30)).current;
-
-  useEffect(() => {
-    if (!sent) return;
-    Animated.stagger(60, [
-      Animated.spring(successScale, { toValue: 1, friction: 5, tension: 70, useNativeDriver: true }),
-      Animated.parallel([
-        Animated.timing(successOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-        Animated.spring(successTransY,  { toValue: 0, friction: 8, tension: 60, useNativeDriver: true }),
-      ]),
-    ]).start();
-  }, [sent]);
+  const [isLoading, setIsLoading]       = useState(false);
+  const [alertConfig, setAlertConfig]   = useState<AlertConfig | null>(null);
 
   const emailGlow = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -168,7 +152,13 @@ export default function ForgotPasswordScreen() {
         setItem(OTP_EXPIRY_KEY, expiry),
       ]);
       await sendPasswordResetEmail(email.trim(), otp);
-      setSent(true);
+      setAlertConfig({
+        type: 'success',
+        title: 'Email Sent!',
+        message: `A 6-digit reset code was sent to ${email.trim()}. Check your inbox and spam folder.`,
+        confirmText: 'Enter Code',
+        onConfirm: () => router.push('/reset-password'),
+      });
     } catch (e: any) {
       setAlertConfig({
         type: 'error',
@@ -240,129 +230,79 @@ export default function ForgotPasswordScreen() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {sent ? (
-              /* ── Success state ── */
-              <View style={s.successWrap}>
-                <Animated.View style={[s.successIconCircle, { transform: [{ scale: successScale }] }]}>
-                  <LinearGradient
-                    colors={['#48BB78', '#38A169']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={s.successIconGradient}
-                  >
-                    <Ionicons name="checkmark" size={40} color={colors.white} />
-                  </LinearGradient>
-                </Animated.View>
+            <Text style={s.titleBold}>Reset your{'\n'}password</Text>
+            <Text style={s.titleSub}>
+              Enter your registered email address and we'll send you a 6-digit code to reset your password.
+            </Text>
 
-                <Animated.View style={{ opacity: successOpacity, transform: [{ translateY: successTransY }], alignItems: 'center' }}>
-                  <Text style={s.successTitle}>Email Sent!</Text>
-                  <Text style={s.successBody}>
-                    We sent a 6-digit reset code to{'\n'}
-                    <Text style={s.successEmail}>{email.trim()}</Text>
-                  </Text>
-                  <Text style={s.successHint}>Check your inbox and spam folder.</Text>
+            <Animated.View style={[s.fieldWrap, { opacity: fieldOpacity, transform: [{ translateX: fieldTransX }] }]}>
+              <Text style={s.fieldLabel}>Email address</Text>
+              <Animated.View style={[s.inputRow, { borderColor: emailBorder }, emailFocus && s.inputFocused]}>
+                <View style={[s.inputIconWrap, emailFocus && s.inputIconActive]}>
+                  <Ionicons name="mail-outline" size={18} color={emailFocus ? colors.auth.primary : colors.auth.muted} />
+                </View>
+                <TextInput
+                  style={s.input}
+                  placeholder="you@example.com"
+                  placeholderTextColor={colors.auth.placeholder}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  textContentType="emailAddress"
+                  value={email}
+                  onChangeText={setEmail}
+                  onFocus={() => setEmailFocus(true)}
+                  onBlur={() => { setEmailFocus(false); setEmailTouched(true); }}
+                />
+              </Animated.View>
+              {emailTouched && email.length > 0 && !emailValid && (
+                <View style={s.errorRow}>
+                  <Ionicons name="alert-circle-outline" size={13} color={colors.feedback.error} />
+                  <Text style={s.errorText}>Please enter a valid email address.</Text>
+                </View>
+              )}
+              {emailTouched && email.length === 0 && (
+                <View style={s.errorRow}>
+                  <Ionicons name="alert-circle-outline" size={13} color={colors.feedback.error} />
+                  <Text style={s.errorText}>Email address is required.</Text>
+                </View>
+              )}
+            </Animated.View>
 
-                  <Pressable
-                    onPress={() => router.push('/reset-password')}
-                    style={({ pressed }) => [{ width: '100%', marginTop: 32 }, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
-                    accessibilityRole="button"
-                  >
-                    <LinearGradient
-                      colors={colors.gradients.cta}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={s.actionBtn}
-                    >
-                      <Text style={s.actionBtnText}>Enter Code</Text>
+            <Animated.View style={{ opacity: btnOpacity, transform: [{ scale: btnScale }], marginTop: 10 }}>
+              <Pressable
+                onPress={handleSend}
+                disabled={isLoading}
+                style={({ pressed }) => [pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
+                accessibilityRole="button"
+                accessibilityLabel="Send reset code"
+              >
+                <LinearGradient
+                  colors={isLoading ? colors.gradients.ctaDisabled : colors.gradients.cta}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={s.actionBtn}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator size="small" color={colors.white} />
+                  ) : (
+                    <>
+                      <Text style={s.actionBtnText}>Send Reset Code</Text>
                       <View style={s.actionBtnArrow}>
                         <Ionicons name="arrow-forward" size={16} color={colors.gradients.cta[0]} />
                       </View>
-                    </LinearGradient>
-                  </Pressable>
-
-                  <Pressable onPress={() => setSent(false)} style={s.retrySendBtn} hitSlop={8}>
-                    <Text style={s.retrySendText}>Try a different email</Text>
-                  </Pressable>
-                </Animated.View>
-              </View>
-            ) : (
-              /* ── Form ── */
-              <>
-                <Text style={s.titleBold}>Reset your{'\n'}password</Text>
-                <Text style={s.titleSub}>
-                  Enter your registered email address and we'll send you a 6-digit code to reset your password.
-                </Text>
-
-                <Animated.View style={[s.fieldWrap, { opacity: fieldOpacity, transform: [{ translateX: fieldTransX }] }]}>
-                  <Text style={s.fieldLabel}>Email address</Text>
-                  <Animated.View style={[s.inputRow, { borderColor: emailBorder }, emailFocus && s.inputFocused]}>
-                    <View style={[s.inputIconWrap, emailFocus && s.inputIconActive]}>
-                      <Ionicons name="mail-outline" size={18} color={emailFocus ? colors.auth.primary : colors.auth.muted} />
-                    </View>
-                    <TextInput
-                      style={s.input}
-                      placeholder="you@example.com"
-                      placeholderTextColor={colors.auth.placeholder}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      keyboardType="email-address"
-                      textContentType="emailAddress"
-                      value={email}
-                      onChangeText={setEmail}
-                      onFocus={() => setEmailFocus(true)}
-                      onBlur={() => { setEmailFocus(false); setEmailTouched(true); }}
-                    />
-                  </Animated.View>
-                  {emailTouched && email.length > 0 && !emailValid && (
-                    <View style={s.errorRow}>
-                      <Ionicons name="alert-circle-outline" size={13} color={colors.feedback.error} />
-                      <Text style={s.errorText}>Please enter a valid email address.</Text>
-                    </View>
+                    </>
                   )}
-                  {emailTouched && email.length === 0 && (
-                    <View style={s.errorRow}>
-                      <Ionicons name="alert-circle-outline" size={13} color={colors.feedback.error} />
-                      <Text style={s.errorText}>Email address is required.</Text>
-                    </View>
-                  )}
-                </Animated.View>
+                </LinearGradient>
+              </Pressable>
+            </Animated.View>
 
-                <Animated.View style={{ opacity: btnOpacity, transform: [{ scale: btnScale }], marginTop: 10 }}>
-                  <Pressable
-                    onPress={handleSend}
-                    disabled={isLoading}
-                    style={({ pressed }) => [pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Send reset code"
-                  >
-                    <LinearGradient
-                      colors={isLoading ? colors.gradients.ctaDisabled : colors.gradients.cta}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={s.actionBtn}
-                    >
-                      {isLoading ? (
-                        <ActivityIndicator size="small" color={colors.white} />
-                      ) : (
-                        <>
-                          <Text style={s.actionBtnText}>Send Reset Code</Text>
-                          <View style={s.actionBtnArrow}>
-                            <Ionicons name="arrow-forward" size={16} color={colors.gradients.cta[0]} />
-                          </View>
-                        </>
-                      )}
-                    </LinearGradient>
-                  </Pressable>
-                </Animated.View>
-
-                <View style={s.footer}>
-                  <Text style={s.footerText}>Remember your password?</Text>
-                  <Pressable onPress={() => router.back()} hitSlop={8}>
-                    <Text style={s.footerLink}> Sign In</Text>
-                  </Pressable>
-                </View>
-              </>
-            )}
+            <View style={s.footer}>
+              <Text style={s.footerText}>Remember your password?</Text>
+              <Pressable onPress={() => router.back()} hitSlop={8}>
+                <Text style={s.footerLink}> Sign In</Text>
+              </Pressable>
+            </View>
           </ScrollView>
         </Animated.View>
       </KeyboardAvoidingView>
@@ -410,15 +350,15 @@ const s = StyleSheet.create({
   heroTitle: { fontSize: 22, fontWeight: '900', color: colors.white, letterSpacing: 1 },
   heroSub:   { fontSize: 12, color: colors.overlay.whiteSub, marginTop: 5, letterSpacing: 0.5 },
 
-  waveWrap: { height: 44, position: 'relative', marginTop: -1 },
+  waveWrap: { height: 20, position: 'relative', marginTop: -1 },
   waveShape: {
-    position: 'absolute', bottom: 0, left: -12, right: -12, height: 55,
+    position: 'absolute', bottom: 0, left: -12, right: -12, height: 32,
     backgroundColor: colors.auth.pageBg,
     borderTopLeftRadius: 36, borderTopRightRadius: 36,
   },
 
   formArea: { flex: 1, backgroundColor: colors.auth.pageBg, marginTop: -2 },
-  formScroll: { paddingHorizontal: 28, paddingTop: 10 },
+  formScroll: { paddingHorizontal: 28, paddingTop: 4 },
 
   titleBold: { fontSize: 24, fontWeight: '800', color: colors.auth.heading, marginBottom: 8, lineHeight: 32 },
   titleSub:  { fontSize: 13, color: colors.auth.muted, marginBottom: 20, lineHeight: 19 },
@@ -462,34 +402,6 @@ const s = StyleSheet.create({
   footerText: { fontSize: 14, color: colors.auth.muted },
   footerLink: { fontSize: 14, fontWeight: '800', color: colors.auth.primary },
 
-  // ── Success ───────────────────────────────────────────────────────────────
-  successWrap: { alignItems: 'center', paddingTop: 12 },
-  successIconCircle: {
-    width: 88, height: 88, borderRadius: 44,
-    marginBottom: 24,
-    shadowColor: '#48BB78',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35, shadowRadius: 20, elevation: 10,
-  },
-  successIconGradient: {
-    width: 88, height: 88, borderRadius: 44,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  successTitle: {
-    fontSize: 26, fontWeight: '900', color: colors.auth.heading,
-    marginBottom: 12, textAlign: 'center',
-  },
-  successBody: {
-    fontSize: 15, color: colors.auth.muted,
-    textAlign: 'center', lineHeight: 22, marginBottom: 6,
-  },
-  successEmail: { fontWeight: '700', color: colors.auth.primary },
-  successHint: {
-    fontSize: 13, color: colors.auth.placeholder,
-    textAlign: 'center',
-  },
-  retrySendBtn: { marginTop: 16, alignSelf: 'center' },
-  retrySendText: { fontSize: 13, color: colors.auth.muted, fontWeight: '600', textDecorationLine: 'underline' },
 
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, marginLeft: 2 },
   errorText: { fontSize: 12, color: colors.feedback.error, fontWeight: '500' },

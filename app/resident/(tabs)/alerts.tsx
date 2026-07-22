@@ -197,7 +197,7 @@ export default function AlertsScreen() {
       setError(null);
       const data = await getAlertsWithReadState(token);
       setAlerts(data);
-      setUnreadCount(data.filter(a => !a.read).length);
+      queueMicrotask(() => setUnreadCount(data.filter(a => !a.read).length));
     } catch {
       setError('Could not load alerts. Pull down to retry.');
     } finally {
@@ -220,10 +220,9 @@ export default function AlertsScreen() {
       const item = adaptAlert(raw);
       setAlerts(prev => {
         if (prev.some(a => a.id === item.id)) return prev;
-        const updated = [item, ...prev];
-        setUnreadCount(updated.filter(a => !a.read).length);
-        return updated;
+        return [item, ...prev];
       });
+      // Badge increment is already handled by AlertBadgeProvider's own socket listener
     };
 
     const handleUpdated = (raw: any) => {
@@ -258,11 +257,10 @@ export default function AlertsScreen() {
         } else {
           await markAlertRead(alert.id, token!);
         }
-        setAlerts(prev => {
-          const next = prev.map(a => a.id === alert.id ? { ...a, read: true } : a);
-          setUnreadCount(next.filter(a => !a.read).length);
-          return next;
-        });
+        setAlerts(prev =>
+          prev.map(a => a.id === alert.id ? { ...a, read: true } : a)
+        );
+        queueMicrotask(() => setUnreadCount(c => Math.max(0, c - 1)));
       }
     } catch {}
     setSelectedAlert(alert);
@@ -292,11 +290,6 @@ export default function AlertsScreen() {
           <View style={styles.headerLeft}>
             <View style={styles.headerIconWrap}>
               <Ionicons name="notifications" size={22} color="rgba(255,255,255,0.92)" />
-              {unreadCount > 0 && (
-                <View style={styles.headerBadge}>
-                  <Text style={styles.headerBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-                </View>
-              )}
             </View>
             <Text style={styles.headerTitle}>Alerts</Text>
           </View>
@@ -307,9 +300,6 @@ export default function AlertsScreen() {
             </Pressable>
           )}
         </View>
-        <Text style={styles.headerSub}>
-          {loading ? 'Loading notifications…' : unreadCount > 0 ? `${unreadCount} unread notification${unreadCount !== 1 ? 's' : ''}` : "You're all caught up"}
-        </Text>
       </LinearGradient>
       <View style={[styles.waveWrap, { backgroundColor: screenBg }]}>
         <LinearGradient colors={colors.gradients.wave as [string, string]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFillObject} />

@@ -50,7 +50,7 @@ const STATUS_LABELS: Record<ResponderStatus, string> = {
 const STATUS_COLORS: Record<ResponderStatus, string> = {
   pending:  colors.slate[400],
   en_route: colors.brand[500],
-  on_scene: colors.accent[500],
+  on_scene: colors.brand[500],
   resolved: colors.severity.low,
 };
 
@@ -128,8 +128,8 @@ function UpdateModal({
           <View style={ms.handle} />
 
           <View style={ms.titleRow}>
-            <View style={[ms.titleIcon, { backgroundColor: colors.accent[500] + '18' }]}>
-              <Ionicons name="swap-vertical" size={18} color={colors.accent[500]} />
+            <View style={[ms.titleIcon, { backgroundColor: colors.brand[500] + '18' }]}>
+              <Ionicons name="swap-vertical" size={18} color={colors.brand[500]} />
             </View>
             <View>
               <Text style={[ms.title, isDark && { color: colors.white }]}>Update status</Text>
@@ -250,7 +250,7 @@ function UpdateModal({
                     accessibilityRole="button"
                     accessibilityLabel="Take photo"
                   >
-                    <Ionicons name="camera" size={20} color={colors.accent[500]} />
+                    <Ionicons name="camera" size={20} color={colors.brand[500]} />
                     <Text style={[ms.mediaAddText, isDark && { color: colors.slate[400] }]}>Camera</Text>
                   </Pressable>
                   <Pressable
@@ -259,7 +259,7 @@ function UpdateModal({
                     accessibilityRole="button"
                     accessibilityLabel="Choose from gallery"
                   >
-                    <Ionicons name="images" size={20} color={colors.accent[500]} />
+                    <Ionicons name="images" size={20} color={colors.brand[500]} />
                     <Text style={[ms.mediaAddText, isDark && { color: colors.slate[400] }]}>Gallery</Text>
                   </Pressable>
                 </View>
@@ -517,7 +517,7 @@ export default function IncidentDetailScreen() {
     <View style={[styles.root, { backgroundColor: screenBg }]}>
 
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <View style={[styles.headerBg, { backgroundColor: isDark ? colors.dark.surface : colors.accent[700] }]} />
+        <View style={[styles.headerBg, { backgroundColor: isDark ? colors.dark.surface : colors.brand[700] }]} />
 
         <View style={styles.headerContent}>
           <Pressable
@@ -548,7 +548,7 @@ export default function IncidentDetailScreen() {
 
       {loading && (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.accent[500]} />
+          <ActivityIndicator size="large" color={colors.brand[500]} />
         </View>
       )}
 
@@ -584,7 +584,7 @@ export default function IncidentDetailScreen() {
                     </View>
                   </View>
                   <View style={styles.addressRow}>
-                    <Ionicons name="location" size={13} color={colors.accent[500]} />
+                    <Ionicons name="location" size={13} color={colors.brand[500]} />
                     <Text style={[styles.addressText, isDark && { color: colors.slate[400] }]}>
                       {incident.address}
                     </Text>
@@ -601,8 +601,8 @@ export default function IncidentDetailScreen() {
 
             <View style={[styles.card, { backgroundColor: cardBg }]}>
               <View style={styles.cardHeader}>
-                <View style={[styles.cardHeaderIcon, { backgroundColor: colors.accent[500] + '18' }]}>
-                  <Ionicons name="git-branch-outline" size={16} color={colors.accent[500]} />
+                <View style={[styles.cardHeaderIcon, { backgroundColor: colors.brand[500] + '18' }]}>
+                  <Ionicons name="git-branch-outline" size={16} color={colors.brand[500]} />
                 </View>
                 <Text style={[styles.cardHeaderTitle, isDark && { color: colors.white }]}>
                   Response progress
@@ -613,8 +613,8 @@ export default function IncidentDetailScreen() {
 
             <View style={[styles.card, { backgroundColor: cardBg }]}>
               <View style={styles.cardHeader}>
-                <View style={[styles.cardHeaderIcon, { backgroundColor: colors.accent[500] + '18' }]}>
-                  <Ionicons name="navigate" size={16} color={colors.accent[500]} />
+                <View style={[styles.cardHeaderIcon, { backgroundColor: colors.brand[500] + '18' }]}>
+                  <Ionicons name="navigate" size={16} color={colors.brand[500]} />
                 </View>
                 <Text style={[styles.cardHeaderTitle, isDark && { color: colors.white }]}>
                   Route to incident
@@ -633,9 +633,9 @@ export default function IncidentDetailScreen() {
               <View style={[styles.routeBlock, isDark && { backgroundColor: colors.dark.elevated }]}>
                 <View style={styles.routeVisual}>
                   <View style={styles.routeStart}>
-                    <Ionicons name="car" size={20} color={colors.accent[500]} />
+                    <Ionicons name="car" size={20} color={colors.brand[500]} />
                   </View>
-                  <View style={[styles.routeLine, { backgroundColor: colors.accent[500] + '40' }]} />
+                  <View style={[styles.routeLine, { backgroundColor: colors.brand[500] + '40' }]} />
                   <View style={[styles.routeEnd, { borderColor: colors.severity[incident.severity] }]}>
                     <View style={[styles.routeEndDot, { backgroundColor: colors.severity[incident.severity] }]} />
                   </View>
@@ -646,9 +646,9 @@ export default function IncidentDetailScreen() {
                   {isEnRoute && (eta || distanceKm !== null) && (
                     <View style={styles.etaRow}>
                       {eta && (
-                        <View style={[styles.etaPill, { backgroundColor: colors.accent[500] + '18' }]}>
-                          <Ionicons name="time" size={11} color={colors.accent[500]} />
-                          <Text style={[styles.etaText, { color: colors.accent[500] }]}>ETA {eta}</Text>
+                        <View style={[styles.etaPill, { backgroundColor: colors.brand[500] + '18' }]}>
+                          <Ionicons name="time" size={11} color={colors.brand[500]} />
+                          <Text style={[styles.etaText, { color: colors.brand[500] }]}>ETA {eta}</Text>
                         </View>
                       )}
                       {distanceKm !== null && (
@@ -719,15 +719,15 @@ export default function IncidentDetailScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={`Call ${incident.reportedBy}`}
                 >
-                  <Ionicons name="call" size={16} color={colors.accent[500]} />
+                  <Ionicons name="call" size={16} color={colors.brand[500]} />
                 </Pressable>
               </View>
             </View>
 
             <View style={[styles.card, { backgroundColor: cardBg }]}>
               <View style={styles.cardHeader}>
-                <View style={[styles.cardHeaderIcon, { backgroundColor: colors.accent[500] + '18' }]}>
-                  <Ionicons name="apps" size={16} color={colors.accent[500]} />
+                <View style={[styles.cardHeaderIcon, { backgroundColor: colors.brand[500] + '18' }]}>
+                  <Ionicons name="apps" size={16} color={colors.brand[500]} />
                 </View>
                 <Text style={[styles.cardHeaderTitle, isDark && { color: colors.white }]}>
                   Quick actions
@@ -797,7 +797,7 @@ export default function IncidentDetailScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Navigate to incident"
                 >
-                  <Ionicons name="navigate" size={18} color={colors.accent[500]} />
+                  <Ionicons name="navigate" size={18} color={colors.brand[500]} />
                 </Pressable>
                 <Pressable
                   onPress={callReporter}
@@ -893,7 +893,7 @@ const styles = StyleSheet.create({
 
   navChipBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: colors.accent[500],
+    backgroundColor: colors.brand[500],
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
   },
   navChipText: { fontSize: 11, color: colors.white, fontWeight: '700' },
@@ -905,7 +905,7 @@ const styles = StyleSheet.create({
   routeVisual: { alignItems: 'center', gap: 4 },
   routeStart: {
     width: 40, height: 40, borderRadius: 12,
-    backgroundColor: colors.accent[100],
+    backgroundColor: colors.brand[100],
     alignItems: 'center', justifyContent: 'center',
   },
   routeLine: { width: 2, height: 16, borderRadius: 1 },
@@ -949,7 +949,7 @@ const styles = StyleSheet.create({
   reporterTime: { fontSize: 12, color: colors.slate[400] },
   callBtn: {
     width: 44, height: 44, borderRadius: 14,
-    backgroundColor: colors.accent[100],
+    backgroundColor: colors.brand[100],
     alignItems: 'center', justifyContent: 'center',
   },
 
@@ -963,7 +963,7 @@ const styles = StyleSheet.create({
   },
   navActionBtn: {
     width: 52, height: 52, borderRadius: 14,
-    borderWidth: 1.5, borderColor: colors.accent[500],
+    borderWidth: 1.5, borderColor: colors.brand[500],
     alignItems: 'center', justifyContent: 'center',
   },
   callActionBtn: {
@@ -1007,7 +1007,7 @@ const styles = StyleSheet.create({
   errorBody:  { fontSize: 13, color: colors.slate[500], textAlign: 'center', lineHeight: 20 },
   retryBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.accent[500],
+    backgroundColor: colors.brand[500],
     paddingHorizontal: 20, paddingVertical: 11, borderRadius: 12, marginTop: 4,
   },
   retryText: { color: colors.white, fontWeight: '700', fontSize: 14 },

@@ -32,7 +32,7 @@ const CHECKLISTS: Record<string, string[]> = {
 };
 
 const CARD_ACCENTS = {
-  checklist: colors.accent[500],
+  checklist: colors.brand[500],
   actions: colors.brand[500],
   resources: '#F59E0B',
   people: colors.severity.low,
@@ -63,15 +63,15 @@ function ProgressRing({ progress, size = 32 }: { progress: number; size?: number
           height: size,
           borderRadius: size / 2,
           borderWidth: strokeWidth,
-          borderColor: colors.accent[500],
-          borderTopColor: progress >= 0.25 ? colors.accent[500] : 'transparent',
-          borderRightColor: progress >= 0.5 ? colors.accent[500] : 'transparent',
-          borderBottomColor: progress >= 0.75 ? colors.accent[500] : 'transparent',
-          borderLeftColor: progress >= 1 ? colors.accent[500] : 'transparent',
+          borderColor: colors.brand[500],
+          borderTopColor: progress >= 0.25 ? colors.brand[500] : 'transparent',
+          borderRightColor: progress >= 0.5 ? colors.brand[500] : 'transparent',
+          borderBottomColor: progress >= 0.75 ? colors.brand[500] : 'transparent',
+          borderLeftColor: progress >= 1 ? colors.brand[500] : 'transparent',
           transform: [{ rotate: '-90deg' }],
         }}
       />
-      <Text style={{ fontSize: 9, fontWeight: '800', color: colors.accent[500] }}>
+      <Text style={{ fontSize: 9, fontWeight: '800', color: colors.brand[500] }}>
         {Math.round(progress * 100)}%
       </Text>
     </View>
@@ -119,7 +119,7 @@ function ChecklistRow({
       <View
         style={[
           s.checkBox,
-          checked && { backgroundColor: colors.accent[500], borderColor: colors.accent[500] },
+          checked && { backgroundColor: colors.brand[500], borderColor: colors.brand[500] },
           isDark && !checked && { borderColor: colors.dark.border },
         ]}
       >
@@ -154,7 +154,7 @@ function FocusableInput({
       onBlur={(e) => { setFocused(false); props.onBlur?.(e); }}
       style={[
         style,
-        focused && { borderColor: colors.accent[500] },
+        focused && { borderColor: colors.brand[500] },
       ]}
     />
   );
@@ -264,7 +264,7 @@ export default function FieldReportScreen() {
   if (loading) {
     return (
       <View style={[s.root, s.centered, { backgroundColor: screenBg }]}>
-        <ActivityIndicator size="large" color={colors.accent[500]} />
+        <ActivityIndicator size="large" color={colors.brand[500]} />
       </View>
     );
   }
@@ -280,7 +280,7 @@ export default function FieldReportScreen() {
         <View
           style={[
             s.headerBg,
-            { backgroundColor: isDark ? colors.dark.surface : colors.accent[700] },
+            { backgroundColor: isDark ? colors.dark.surface : colors.brand[700] },
           ]}
         />
         <View style={s.headerContent}>
@@ -310,8 +310,8 @@ export default function FieldReportScreen() {
           <View style={[s.cardAccentBar, { backgroundColor: CARD_ACCENTS.checklist }]} />
           <View style={s.cardInner}>
             <View style={s.cardHeader}>
-              <View style={[s.cardIcon, { backgroundColor: colors.accent[500] + '18' }]}>
-                <Ionicons name="checkbox-outline" size={16} color={colors.accent[500]} />
+              <View style={[s.cardIcon, { backgroundColor: colors.brand[500] + '18' }]}>
+                <Ionicons name="checkbox-outline" size={16} color={colors.brand[500]} />
               </View>
               <Text style={[s.cardTitle, isDark && { color: colors.white }]}>Response checklist</Text>
               <ProgressRing progress={progressRatio} />
@@ -495,7 +495,7 @@ const s = StyleSheet.create({
   progressBarFill: {
     height: 4,
     borderRadius: 2,
-    backgroundColor: colors.accent[500],
+    backgroundColor: colors.brand[500],
   },
 
   scroll: { padding: 16, gap: 14 },
@@ -553,8 +553,8 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   circleBtnAccent: {
-    backgroundColor: colors.accent[500],
-    borderColor: colors.accent[500],
+    backgroundColor: colors.brand[500],
+    borderColor: colors.brand[500],
   },
   peopleCount: {
     fontSize: 28,
@@ -575,10 +575,10 @@ const s = StyleSheet.create({
   },
   saveBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: colors.accent[500], borderRadius: 18,
+    backgroundColor: colors.brand[500], borderRadius: 18,
     paddingVertical: 16,
     overflow: 'hidden',
-    shadowColor: colors.accent[500],
+    shadowColor: colors.brand[500],
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 12,

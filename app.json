@@ -18,6 +18,8 @@
       }
     },
     "android": {
+      "package": "com.floodtrack.app",
+      "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
           "apiKey": "YOUR_ANDROID_GOOGLE_MAPS_API_KEY"
@@ -38,6 +40,7 @@
     },
     "plugins": [
       "expo-router",
+      "@react-native-google-signin/google-signin",
       [
         "expo-splash-screen",
         {

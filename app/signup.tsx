@@ -76,20 +76,6 @@ export default function SignUpScreen() {
   const formOpacity  = useRef(new Animated.Value(0)).current;
   const formTransY   = useRef(new Animated.Value(50)).current;
 
-  // Per-field slide-in (6 fields)
-  const f1Opacity = useRef(new Animated.Value(0)).current;
-  const f1TransX  = useRef(new Animated.Value(-30)).current;
-  const f2Opacity = useRef(new Animated.Value(0)).current;
-  const f2TransX  = useRef(new Animated.Value(-30)).current;
-  const f3Opacity = useRef(new Animated.Value(0)).current;
-  const f3TransX  = useRef(new Animated.Value(-30)).current;
-  const f4Opacity = useRef(new Animated.Value(0)).current;
-  const f4TransX  = useRef(new Animated.Value(-30)).current;
-  const f5Opacity = useRef(new Animated.Value(0)).current;
-  const f5TransX  = useRef(new Animated.Value(-30)).current;
-  const f6Opacity = useRef(new Animated.Value(0)).current;
-  const f6TransX  = useRef(new Animated.Value(-30)).current;
-
   const btnOpacity    = useRef(new Animated.Value(0)).current;
   const btnScale      = useRef(new Animated.Value(0.85)).current;
   const socialOpacity = useRef(new Animated.Value(0)).current;
@@ -97,11 +83,6 @@ export default function SignUpScreen() {
   const footerOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const fieldPairs = [
-      [f1Opacity, f1TransX], [f2Opacity, f2TransX], [f3Opacity, f3TransX],
-      [f4Opacity, f4TransX], [f5Opacity, f5TransX], [f6Opacity, f6TransX],
-    ] as [Animated.Value, Animated.Value][];
-
     Animated.stagger(60, [
       Animated.parallel([
         Animated.timing(heroOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
@@ -111,12 +92,6 @@ export default function SignUpScreen() {
         Animated.timing(formOpacity, { toValue: 1, duration: 450, useNativeDriver: true }),
         Animated.spring(formTransY,  { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }),
       ]),
-      ...fieldPairs.map(([op, tx]) =>
-        Animated.parallel([
-          Animated.timing(op, { toValue: 1, duration: 340, useNativeDriver: true }),
-          Animated.spring(tx,  { toValue: 0, friction: 8, tension: 65, useNativeDriver: true }),
-        ]),
-      ),
       Animated.parallel([
         Animated.timing(btnOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
         Animated.spring(btnScale,   { toValue: 1, friction: 5, tension: 80, useNativeDriver: true }),
@@ -140,12 +115,6 @@ export default function SignUpScreen() {
   const [showPassword, setShowPassword]   = useState(false);
   const [showConfirm, setShowConfirm]     = useState(false);
 
-  const [fnFocus, setFnFocus]   = useState(false);
-  const [lnFocus, setLnFocus]   = useState(false);
-  const [emFocus, setEmFocus]   = useState(false);
-  const [ctFocus, setCtFocus]   = useState(false);
-  const [pwFocus, setPwFocus]   = useState(false);
-  const [cpFocus, setCpFocus]   = useState(false);
 
   const [isLoading, setIsLoading]               = useState(false);
   const [isGoogleLoading, setIsGoogleLoading]   = useState(false);
@@ -184,8 +153,8 @@ export default function SignUpScreen() {
       setAlertConfig({ type: 'warning', title: 'Invalid Number', message: 'Enter a valid PH mobile number (09XX or +639XX).', confirmText: 'OK' });
       return;
     }
-    if (!password || password.length < 8) {
-      setAlertConfig({ type: 'warning', title: 'Weak Password', message: 'Password must be at least 8 characters.', confirmText: 'OK' });
+    if (!password || password.length < 8 || password.length > 16) {
+      setAlertConfig({ type: 'warning', title: 'Invalid Password', message: 'Password must be between 8 and 16 characters.', confirmText: 'OK' });
       return;
     }
     if (confirmPassword !== password) {
@@ -219,18 +188,13 @@ export default function SignUpScreen() {
     }
   }, []);
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-  function focusStyle(focused: boolean) {
-    return focused ? s.inputFocused : undefined;
-  }
-
   return (
     <View style={s.root}>
       <StatusBar style="light" />
 
       <KeyboardAvoidingView
         style={s.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         {/* ── Hero ─────────────────────────────────────────────────────── */}
         <Animated.View style={{ opacity: heroOpacity, transform: [{ scale: heroScale }] }}>
@@ -285,50 +249,44 @@ export default function SignUpScreen() {
 
             {/* First + Last name */}
             <View style={s.nameRow}>
-              <Animated.View style={[s.nameHalf, { opacity: f1Opacity, transform: [{ translateX: f1TransX }] }]}>
-                <View style={[s.inputRow, fnFocus && s.inputFocused]}>
-                  <View style={[s.inputIconWrap, fnFocus && s.inputIconActive]}>
-                    <Ionicons name="person-outline" size={18} color={fnFocus ? colors.auth.primary : colors.auth.muted} />
+              <View style={s.nameHalf}>
+                <View style={s.inputRow}>
+                  <View style={s.inputIconWrap}>
+                    <Ionicons name="person-outline" size={18} color={colors.auth.muted} />
                   </View>
                   <TextInput
                     style={s.input}
                     placeholder="First name"
                     placeholderTextColor={colors.auth.placeholder}
                     autoCapitalize="words"
-                    textContentType="givenName"
                     value={firstName}
                     onChangeText={setFirstName}
-                    onFocus={() => setFnFocus(true)}
-                    onBlur={() => setFnFocus(false)}
                   />
                 </View>
-              </Animated.View>
+              </View>
 
-              <Animated.View style={[s.nameHalf, { opacity: f2Opacity, transform: [{ translateX: f2TransX }] }]}>
-                <View style={[s.inputRow, lnFocus && s.inputFocused]}>
-                  <View style={[s.inputIconWrap, lnFocus && s.inputIconActive]}>
-                    <Ionicons name="person-outline" size={18} color={lnFocus ? colors.auth.primary : colors.auth.muted} />
+              <View style={s.nameHalf}>
+                <View style={s.inputRow}>
+                  <View style={s.inputIconWrap}>
+                    <Ionicons name="person-outline" size={18} color={colors.auth.muted} />
                   </View>
                   <TextInput
                     style={s.input}
                     placeholder="Last name"
                     placeholderTextColor={colors.auth.placeholder}
                     autoCapitalize="words"
-                    textContentType="familyName"
                     value={lastName}
                     onChangeText={setLastName}
-                    onFocus={() => setLnFocus(true)}
-                    onBlur={() => setLnFocus(false)}
                   />
                 </View>
-              </Animated.View>
+              </View>
             </View>
 
             {/* Email */}
-            <Animated.View style={[s.fieldWrap, { opacity: f3Opacity, transform: [{ translateX: f3TransX }] }]}>
-              <View style={[s.inputRow, emFocus && s.inputFocused]}>
-                <View style={[s.inputIconWrap, emFocus && s.inputIconActive]}>
-                  <Ionicons name="mail-outline" size={18} color={emFocus ? colors.auth.primary : colors.auth.muted} />
+            <View style={s.fieldWrap}>
+              <View style={s.inputRow}>
+                <View style={s.inputIconWrap}>
+                  <Ionicons name="mail-outline" size={18} color={colors.auth.muted} />
                 </View>
                 <TextInput
                   style={s.input}
@@ -337,52 +295,44 @@ export default function SignUpScreen() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="email-address"
-                  textContentType="emailAddress"
                   value={email}
                   onChangeText={setEmail}
-                  onFocus={() => setEmFocus(true)}
-                  onBlur={() => setEmFocus(false)}
                 />
               </View>
-            </Animated.View>
+            </View>
 
             {/* Mobile */}
-            <Animated.View style={[s.fieldWrap, { opacity: f4Opacity, transform: [{ translateX: f4TransX }] }]}>
-              <View style={[s.inputRow, ctFocus && s.inputFocused]}>
-                <View style={[s.inputIconWrap, ctFocus && s.inputIconActive]}>
-                  <Ionicons name="call-outline" size={18} color={ctFocus ? colors.auth.primary : colors.auth.muted} />
+            <View style={s.fieldWrap}>
+              <View style={s.inputRow}>
+                <View style={s.inputIconWrap}>
+                  <Ionicons name="call-outline" size={18} color={colors.auth.muted} />
                 </View>
                 <TextInput
                   style={s.input}
                   placeholder="Mobile number (09XX)"
                   placeholderTextColor={colors.auth.placeholder}
                   keyboardType="phone-pad"
-                  textContentType="telephoneNumber"
                   value={contact}
                   onChangeText={setContact}
                   maxLength={16}
-                  onFocus={() => setCtFocus(true)}
-                  onBlur={() => setCtFocus(false)}
                 />
               </View>
-            </Animated.View>
+            </View>
 
             {/* Password */}
-            <Animated.View style={[s.fieldWrap, { opacity: f5Opacity, transform: [{ translateX: f5TransX }] }]}>
-              <View style={[s.inputRow, pwFocus && s.inputFocused]}>
-                <View style={[s.inputIconWrap, pwFocus && s.inputIconActive]}>
-                  <Ionicons name="lock-closed-outline" size={18} color={pwFocus ? colors.auth.primary : colors.auth.muted} />
+            <View style={s.fieldWrap}>
+              <View style={s.inputRow}>
+                <View style={s.inputIconWrap}>
+                  <Ionicons name="lock-closed-outline" size={18} color={colors.auth.muted} />
                 </View>
                 <TextInput
                   style={s.input}
-                  placeholder="Password (min. 8 chars)"
+                  placeholder="Password (8–16 chars)"
                   placeholderTextColor={colors.auth.placeholder}
                   secureTextEntry={!showPassword}
-                  textContentType="newPassword"
+                  maxLength={16}
                   value={password}
                   onChangeText={setPassword}
-                  onFocus={() => setPwFocus(true)}
-                  onBlur={() => setPwFocus(false)}
                 />
                 <Pressable onPress={() => setShowPassword(v => !v)} style={s.eyeBtn} hitSlop={8} accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}>
                   <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.auth.muted} />
@@ -399,30 +349,28 @@ export default function SignUpScreen() {
                   <Text style={[s.strengthLabel, { color: strengthColors[strength] }]}>{strengthLabels[strength]}</Text>
                 </View>
               )}
-            </Animated.View>
+            </View>
 
             {/* Confirm password */}
-            <Animated.View style={[s.fieldWrap, { opacity: f6Opacity, transform: [{ translateX: f6TransX }] }]}>
-              <View style={[s.inputRow, cpFocus && s.inputFocused]}>
-                <View style={[s.inputIconWrap, cpFocus && s.inputIconActive]}>
-                  <Ionicons name="lock-closed-outline" size={18} color={cpFocus ? colors.auth.primary : colors.auth.muted} />
+            <View style={s.fieldWrap}>
+              <View style={s.inputRow}>
+                <View style={s.inputIconWrap}>
+                  <Ionicons name="lock-closed-outline" size={18} color={colors.auth.muted} />
                 </View>
                 <TextInput
                   style={s.input}
                   placeholder="Confirm password"
                   placeholderTextColor={colors.auth.placeholder}
                   secureTextEntry={!showConfirm}
-                  textContentType="newPassword"
+                  maxLength={16}
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
-                  onFocus={() => setCpFocus(true)}
-                  onBlur={() => setCpFocus(false)}
                 />
                 <Pressable onPress={() => setShowConfirm(v => !v)} style={s.eyeBtn} hitSlop={8} accessibilityLabel={showConfirm ? 'Hide password' : 'Show password'}>
                   <Ionicons name={showConfirm ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.auth.muted} />
                 </Pressable>
               </View>
-            </Animated.View>
+            </View>
 
             {/* CTA */}
             <Animated.View style={{ opacity: btnOpacity, transform: [{ scale: btnScale }] }}>
@@ -530,16 +478,16 @@ const s = StyleSheet.create({
   logoTitle: { fontSize: 24, fontWeight: '900', color: colors.white, letterSpacing: 5 },
   logoSub: { fontSize: 12, color: colors.overlay.whiteSub, marginTop: 6, letterSpacing: 1 },
 
-  waveWrap: { height: 55, position: 'relative', marginTop: -1 },
+  waveWrap: { height: 20, position: 'relative', marginTop: -1 },
   waveShape: {
     position: 'absolute', bottom: 0,
-    left: -12, right: -12, height: 60,
+    left: -12, right: -12, height: 32,
     backgroundColor: colors.auth.pageBg,
     borderTopLeftRadius: 36, borderTopRightRadius: 36,
   },
 
   formArea: { flex: 1, backgroundColor: colors.auth.pageBg, marginTop: -2 },
-  formScroll: { paddingHorizontal: 28, paddingTop: 8 },
+  formScroll: { paddingHorizontal: 28, paddingTop: 4 },
 
   titleRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 },
   titleBold: { fontSize: 30, fontWeight: '800', color: colors.auth.heading },
@@ -556,12 +504,13 @@ const s = StyleSheet.create({
     backgroundColor: colors.auth.inputBg,
     borderWidth: 1.5, borderColor: 'transparent',
     paddingHorizontal: 4,
+    elevation: 0,
   },
   inputFocused: {
     backgroundColor: colors.white,
     shadowColor: colors.auth.primary,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.12, shadowRadius: 12, elevation: 4,
+    shadowOpacity: 0.12, shadowRadius: 12, elevation: 0,
   },
   inputIconWrap: {
     width: 40, height: 40, borderRadius: 12,

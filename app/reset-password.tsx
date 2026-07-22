@@ -141,9 +141,10 @@ export default function ResetPasswordScreen() {
 
   // OTP step
   const [digits, setDigits]             = useState<string[]>(['', '', '', '', '', '']);
-  const [otpTouched, setOtpTouched]     = useState(false);
   const [isVerifying, setIsVerifying]   = useState(false);
   const [isResending, setIsResending]   = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(60);
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [activeOtpIdx, setActiveOtpIdx] = useState<number | null>(null);
 
   // Password step
@@ -157,7 +158,6 @@ export default function ResetPasswordScreen() {
   const [confirmFocus, setConfirmFocus] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [success, setSuccess]           = useState(false);
   const [alertConfig, setAlertConfig]   = useState<AlertConfig | null>(null);
 
   const otpRefs     = useRef<(TextInput | null)[]>([]);
@@ -173,10 +173,9 @@ export default function ResetPasswordScreen() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const otpComplete    = digits.join('').length === OTP_LENGTH;
-  const pwdValid       = password.length >= 6;
+  const pwdValid       = password.length >= 8 && password.length <= 16;
   const confirmValid   = confirmPwd === password && confirmPwd.length > 0;
 
-  const showOtpErr     = otpTouched && !otpComplete;
   const showPwdErr     = pwdTouched && !pwdValid;
   const showConfirmErr = confirmTouched && !confirmValid;
 
@@ -192,10 +191,25 @@ export default function ResetPasswordScreen() {
   const strengthColors  = ['', colors.feedback.error, colors.feedback.passwordMedium, colors.feedback.success];
   const strengthLabels  = ['', 'Weak', 'Medium', 'Strong'];
 
+  const startCooldown = () => {
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+    setResendCooldown(60);
+    cooldownRef.current = setInterval(() => {
+      setResendCooldown(prev => {
+        if (prev <= 1) { clearInterval(cooldownRef.current!); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
   useEffect(() => {
     getItem(OTP_EMAIL_KEY).then(e => { if (e) setStoredEmail(e); });
     const t = setTimeout(() => { otpRefs.current[0]?.focus(); }, 600);
-    return () => clearTimeout(t);
+    startCooldown();
+    return () => {
+      clearTimeout(t);
+      if (cooldownRef.current) clearInterval(cooldownRef.current);
+    };
   }, []);
 
   // ── OTP box handlers ──────────────────────────────────────────────────────
@@ -231,8 +245,8 @@ export default function ResetPasswordScreen() {
       ]);
       await sendPasswordResetEmail(storedEmail, otp);
       setDigits(['', '', '', '', '', '']);
-      setOtpTouched(false);
       otpRefs.current[0]?.focus();
+      startCooldown();
       setAlertConfig({ type: 'info', title: 'Code Resent', message: `A new code was sent to ${maskEmail(storedEmail)}.`, confirmText: 'OK' });
     } catch (e: any) {
       setAlertConfig({ type: 'error', title: 'Resend Failed', message: e?.message ?? 'Could not resend code. Try again.', confirmText: 'OK' });
@@ -244,8 +258,6 @@ export default function ResetPasswordScreen() {
   // ── Step 1: Verify OTP ────────────────────────────────────────────────────
   const handleVerifyOtp = useCallback(async () => {
     const enteredOtp = digits.join('');
-    setOtpTouched(true);
-
     if (enteredOtp.length < OTP_LENGTH) {
       setAlertConfig({ type: 'warning', title: 'Code Incomplete', message: 'Please enter the full 6-digit code.', confirmText: 'OK' });
       return;
@@ -307,58 +319,19 @@ export default function ResetPasswordScreen() {
         deleteItem(OTP_EMAIL_KEY),
         deleteItem(OTP_EXPIRY_KEY),
       ]);
-      setSuccess(true);
+      setAlertConfig({
+        type: 'success',
+        title: 'Password Reset!',
+        message: 'Your password has been updated successfully.',
+        timer: 2000,
+        onConfirm: () => router.replace('/login'),
+      });
     } catch (e: any) {
       setAlertConfig({ type: 'error', title: 'Reset Failed', message: e?.message ?? 'Could not reset your password. Please try again.', confirmText: 'OK' });
     } finally {
       setIsSubmitting(false);
     }
   }, [password, confirmPwd, pwdValid, confirmValid, storedEmail]);
-
-  // ── Success screen ────────────────────────────────────────────────────────
-  if (success) {
-    return (
-      <View style={s.root}>
-        <StatusBar style="light" />
-        <LinearGradient
-          colors={colors.gradients.hero}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[s.successHero, { paddingTop: insets.top }]}
-        >
-          <View style={s.successIconWrap}>
-            <Ionicons name="checkmark-circle" size={64} color={colors.white} />
-          </View>
-          <Text style={s.successHeroTitle}>Password Reset!</Text>
-          <Text style={s.successHeroSub}>Your password has been updated successfully.</Text>
-        </LinearGradient>
-
-        <View style={[s.successBody, { paddingBottom: insets.bottom + 32 }]}>
-          <Ionicons name="shield-checkmark-outline" size={44} color={colors.auth.primary} style={{ marginBottom: 16 }} />
-          <Text style={s.successBodyTitle}>You're all set</Text>
-          <Text style={s.successBodyText}>
-            Sign in with your new password to continue accessing FloodTrack.
-          </Text>
-          <Pressable
-            onPress={() => router.replace('/login')}
-            style={({ pressed }) => [pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
-          >
-            <LinearGradient
-              colors={colors.gradients.cta}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={s.actionBtn}
-            >
-              <Text style={s.actionBtnText}>Back to Sign In</Text>
-              <View style={s.actionBtnArrow}>
-                <Ionicons name="arrow-forward" size={16} color={colors.gradients.cta[0]} />
-              </View>
-            </LinearGradient>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
 
   // ── Main screen ───────────────────────────────────────────────────────────
   return (
@@ -454,7 +427,7 @@ export default function ResetPasswordScreen() {
                           onChangeText={t => handleDigitChange(t, i)}
                           onKeyPress={({ nativeEvent }) => handleDigitKeyPress(nativeEvent.key, i)}
                           onFocus={() => setActiveOtpIdx(i)}
-                          onBlur={() => { setActiveOtpIdx(null); setOtpTouched(true); }}
+                          onBlur={() => setActiveOtpIdx(null)}
                           keyboardType="number-pad"
                           maxLength={1}
                           selectTextOnFocus
@@ -465,21 +438,17 @@ export default function ResetPasswordScreen() {
                     ))}
                   </Animated.View>
 
-                  {showOtpErr && (
-                    <View style={s.errorRow}>
-                      <Ionicons name="alert-circle-outline" size={13} color={colors.feedback.error} />
-                      <Text style={s.errorText}>Please enter the complete 6-digit code.</Text>
-                    </View>
-                  )}
-
                   <View style={s.resendRow}>
                     <Text style={s.resendLabel}>Didn't receive a code?</Text>
-                    <Pressable onPress={handleResend} disabled={isResending} hitSlop={8}>
-                      {isResending
-                        ? <ActivityIndicator size="small" color={colors.auth.primary} style={{ marginLeft: 6 }} />
-                        : <Text style={s.resendLink}> Resend</Text>
-                      }
-                    </Pressable>
+                    {isResending ? (
+                      <ActivityIndicator size="small" color={colors.auth.primary} style={{ marginLeft: 6 }} />
+                    ) : resendCooldown > 0 ? (
+                      <Text style={s.resendCooldown}> Resend in {resendCooldown}s</Text>
+                    ) : (
+                      <Pressable onPress={handleResend} hitSlop={8}>
+                        <Text style={s.resendLink}> Resend</Text>
+                      </Pressable>
+                    )}
                   </View>
 
                   <Animated.View style={{ opacity: btnOpacity, transform: [{ scale: btnScale }], marginTop: 4 }}>
@@ -526,10 +495,11 @@ export default function ResetPasswordScreen() {
                       </View>
                       <TextInput
                         style={s.input}
-                        placeholder="New password"
+                        placeholder="New password (8–16 chars)"
                         placeholderTextColor={colors.auth.placeholder}
                         secureTextEntry={!showPwd}
                         textContentType="newPassword"
+                        maxLength={16}
                         value={password}
                         onChangeText={setPassword}
                         onFocus={() => setPwdFocus(true)}
@@ -544,7 +514,7 @@ export default function ResetPasswordScreen() {
                       <View style={s.errorRow}>
                         <Ionicons name="alert-circle-outline" size={13} color={colors.feedback.error} />
                         <Text style={s.errorText}>
-                          {password.length === 0 ? 'Password is required.' : 'Password must be at least 6 characters.'}
+                          {password.length === 0 ? 'Password is required.' : 'Password must be between 8 and 16 characters.'}
                         </Text>
                       </View>
                     )}
@@ -573,6 +543,7 @@ export default function ResetPasswordScreen() {
                         placeholderTextColor={colors.auth.placeholder}
                         secureTextEntry={!showConfirm}
                         textContentType="newPassword"
+                        maxLength={16}
                         value={confirmPwd}
                         onChangeText={setConfirmPwd}
                         onFocus={() => setConfirmFocus(true)}
@@ -684,16 +655,16 @@ const s = StyleSheet.create({
   heroTitle: { fontSize: 22, fontWeight: '900', color: colors.white, letterSpacing: 1 },
   heroSub:   { fontSize: 12, color: colors.overlay.whiteSub, marginTop: 5, letterSpacing: 0.3 },
 
-  waveWrap: { height: 44, position: 'relative', marginTop: -1 },
+  waveWrap: { height: 20, position: 'relative', marginTop: -1 },
   waveShape: {
-    position: 'absolute', bottom: 0, left: -12, right: -12, height: 55,
+    position: 'absolute', bottom: 0, left: -12, right: -12, height: 32,
     backgroundColor: colors.auth.pageBg,
     borderTopLeftRadius: 36, borderTopRightRadius: 36,
   },
 
   // ── Form ──────────────────────────────────────────────────────────────────
   formArea:   { flex: 1, backgroundColor: colors.auth.pageBg, marginTop: -2 },
-  formScroll: { paddingHorizontal: 28, paddingTop: 10 },
+  formScroll: { paddingHorizontal: 28, paddingTop: 4 },
 
   sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.auth.heading, marginBottom: 3 },
   sectionSub:   { fontSize: 13, color: colors.auth.muted, marginBottom: 16 },
@@ -732,8 +703,9 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     marginBottom: 20,
   },
-  resendLabel: { fontSize: 13, color: colors.auth.muted },
-  resendLink:  { fontSize: 13, fontWeight: '700', color: colors.auth.primary },
+  resendLabel:    { fontSize: 13, color: colors.auth.muted },
+  resendLink:     { fontSize: 13, fontWeight: '700', color: colors.auth.primary },
+  resendCooldown: { fontSize: 13, fontWeight: '600', color: colors.auth.placeholder },
 
   // ── Fields ────────────────────────────────────────────────────────────────
   fieldWrap:  { marginBottom: 14 },
@@ -787,25 +759,4 @@ const s = StyleSheet.create({
   footerText: { fontSize: 14, color: colors.auth.muted },
   footerLink: { fontSize: 14, fontWeight: '800', color: colors.auth.primary },
 
-  // ── Success ───────────────────────────────────────────────────────────────
-  successHero: {
-    flex: 0.45, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32,
-  },
-  successIconWrap: {
-    width: 100, height: 100, borderRadius: 50,
-    backgroundColor: colors.overlay.whiteSoft,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 20,
-  },
-  successHeroTitle: { fontSize: 26, fontWeight: '900', color: colors.white, marginBottom: 8 },
-  successHeroSub:   { fontSize: 14, color: colors.overlay.whiteSub, textAlign: 'center', lineHeight: 20 },
-
-  successBody: {
-    flex: 0.55, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 32, backgroundColor: colors.auth.pageBg,
-    borderTopLeftRadius: 36, borderTopRightRadius: 36,
-    marginTop: -20, paddingTop: 36,
-  },
-  successBodyTitle: { fontSize: 22, fontWeight: '800', color: colors.auth.heading, marginBottom: 10 },
-  successBodyText:  { fontSize: 14, color: colors.auth.muted, textAlign: 'center', lineHeight: 22, marginBottom: 32 },
 });

@@ -24,6 +24,20 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AppAlert, AlertConfig } from '@/components/AppAlert';
 import { colors } from '@/theme/colors';
 
+let GoogleSignin: any = null;
+let statusCodes: any = {};
+try {
+  const mod = require('@react-native-google-signin/google-signin');
+  GoogleSignin = mod.GoogleSignin;
+  statusCodes = mod.statusCodes;
+  GoogleSignin.configure({
+    webClientId: '777585497819-ihl5mc9l1r97kh0updk6u40fm3b09scj.apps.googleusercontent.com',
+    offlineAccess: true,
+  });
+} catch {
+  // Native module not available — requires a dev build (npx expo run:android)
+}
+
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const HERO_H = SCREEN_H * 0.27;
 
@@ -211,19 +225,31 @@ export default function LoginScreen() {
   }, [email, password, login]);
 
   const handleGoogleLogin = useCallback(async () => {
+    if (!GoogleSignin) {
+      setAlertConfig({ type: 'info', title: 'Not Available', message: 'Google Sign-In requires a native build. Run: npx expo run:android', confirmText: 'OK' });
+      return;
+    }
     setIsGoogleLoading(true);
     try {
-      await new Promise(r => setTimeout(r, 1500));
-      setAlertConfig({
-        type: 'info',
-        title: 'Coming Soon',
-        message: 'Google sign-in is not yet configured.',
-        confirmText: 'OK',
-      });
+      await GoogleSignin.hasPlayServices();
+      const response = await GoogleSignin.signIn();
+      if (response.data?.idToken) {
+        await login({ googleIdToken: response.data.idToken });
+      } else {
+        throw new Error('No ID token returned from Google.');
+      }
+    } catch (e: any) {
+      if (e.code === statusCodes.SIGN_IN_CANCELLED) return;
+      if (e.code === statusCodes.IN_PROGRESS) return;
+      if (e.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        setAlertConfig({ type: 'error', title: 'Not Available', message: 'Google Play Services is not available on this device.', confirmText: 'OK' });
+        return;
+      }
+      setAlertConfig({ type: 'error', title: 'Google Sign-In Failed', message: e?.message ?? 'Could not sign in with Google.', confirmText: 'OK' });
     } finally {
       setIsGoogleLoading(false);
     }
-  }, []);
+  }, [login]);
 
   const emailValid = email.trim().length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const shimmerX = splashShimmer.interpolate({ inputRange: [0, 1], outputRange: [-120, 220] });
@@ -564,12 +590,12 @@ const s = StyleSheet.create({
   },
 
   waveWrap: {
-    height: 44, position: 'relative', marginTop: -1,
+    height: 20, position: 'relative', marginTop: -1,
   },
   waveShape: {
     position: 'absolute', bottom: 0,
     left: -12, right: -12,
-    height: 60,
+    height: 32,
     backgroundColor: colors.auth.pageBg,
     borderTopLeftRadius: 36,
     borderTopRightRadius: 36,
@@ -579,15 +605,15 @@ const s = StyleSheet.create({
     flex: 1, backgroundColor: colors.auth.pageBg, marginTop: -2,
   },
   formScroll: {
-    paddingHorizontal: 28, paddingTop: 8,
+    paddingHorizontal: 28, paddingTop: 4,
   },
 
   titleRow: {
     flexDirection: 'row', alignItems: 'baseline',
     marginBottom: 2,
   },
-  titleBold: { fontSize: 26, fontWeight: '800', color: colors.auth.heading },
-  titleLight: { fontSize: 26, fontWeight: '300', color: colors.auth.heading },
+  titleBold: { fontSize: 30, fontWeight: '800', color: colors.auth.heading },
+  titleLight: { fontSize: 30, fontWeight: '300', color: colors.auth.heading },
   titleSub: { fontSize: 13, color: colors.auth.muted, marginBottom: 18 },
 
   fieldWrap: { marginBottom: 14 },

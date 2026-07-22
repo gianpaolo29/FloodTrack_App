@@ -298,7 +298,9 @@ export default function AlertsScreen() {
       setError(null);
       const data = await getAlertsWithReadState(token);
       setAlerts(data);
-      setUnreadCount(data.filter(a => !a.read).length);
+      // Update badge count outside of any state updater to avoid
+      // "Cannot update a component while rendering a different component"
+      queueMicrotask(() => setUnreadCount(data.filter(a => !a.read).length));
       if (!isRefresh) {
         setTimeout(() => runEntranceAnims(data.length), 50);
       } else {
@@ -315,8 +317,7 @@ export default function AlertsScreen() {
   useEffect(() => {
     load();
 
-    const interval = setInterval(() => load(true), 30_000);
-
+    // Re-fetch when app returns to foreground (handles background missed events)
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') load(true);
     });
@@ -326,10 +327,9 @@ export default function AlertsScreen() {
       const item = adaptAlert(raw);
       setAlerts(prev => {
         if (prev.some(a => a.id === item.id)) return prev;
-        const updated = [item, ...prev];
-        setUnreadCount(updated.filter(a => !a.read).length);
-        return updated;
+        return [item, ...prev];
       });
+      // Badge increment is already handled by AlertBadgeProvider's own socket listener
     };
 
     const handleUpdated = (raw: any) => {
@@ -351,7 +351,6 @@ export default function AlertsScreen() {
     socketService.on('new-notification', refresh);
 
     return () => {
-      clearInterval(interval);
       sub.remove();
       socketService.off('new-alert', handleNew);
       socketService.off('alert-updated', handleUpdated);
@@ -374,11 +373,11 @@ export default function AlertsScreen() {
     try {
       if (!alert.read) {
         await markAlertRead(alert.id, token!);
-        setAlerts((prev) => {
-          const next = prev.map((a) => (a.id === alert.id ? { ...a, read: true } : a));
-          setUnreadCount(next.filter(a => !a.read).length);
-          return next;
-        });
+        setAlerts((prev) =>
+          prev.map((a) => (a.id === alert.id ? { ...a, read: true } : a))
+        );
+        // Update badge count outside the updater
+        queueMicrotask(() => setUnreadCount(c => Math.max(0, c - 1)));
       }
     } catch {}
     openDetail(alert);
@@ -429,13 +428,6 @@ export default function AlertsScreen() {
             <View style={styles.headerLeft}>
               <View style={styles.headerIconWrap}>
                 <Ionicons name="notifications" size={22} color="rgba(255,255,255,0.92)" />
-                {unreadCount > 0 && (
-                  <View style={styles.headerBadge}>
-                    <Text style={styles.headerBadgeText}>
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </Text>
-                  </View>
-                )}
               </View>
               <View>
                 <Text style={styles.headerTitle}>Alerts</Text>
@@ -458,7 +450,6 @@ export default function AlertsScreen() {
             )}
           </View>
 
-          <Text style={styles.headerSub}>{headerSubtitle}</Text>
         </LinearGradient>
 
         {/* Wave transition */}
@@ -746,7 +737,7 @@ const styles = StyleSheet.create({
   iconDot: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   cardContent: { flex: 1, gap: 3 },
   cardTitle: { fontSize: 14, lineHeight: 19 },
-  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent[500], marginRight: 2 },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.brand[500], marginRight: 2 },
   cardMetaLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   kindTag: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
   metaDividerDot: { width: 3, height: 3, borderRadius: 2, backgroundColor: colors.slate[300] },

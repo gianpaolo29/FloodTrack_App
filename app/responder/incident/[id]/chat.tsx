@@ -92,7 +92,7 @@ function AnimatedBubble({ children }: { children: React.ReactNode }) {
 function RoleBadge({ role }: { role: string }) {
   const isAdmin = role === 'admin';
   const isResponder = role === 'responder';
-  const color = isAdmin ? colors.iconAccents.admin : isResponder ? colors.accent[500] : colors.brand[500];
+  const color = isAdmin ? colors.iconAccents.admin : isResponder ? colors.brand[500] : colors.brand[500];
   const label = isAdmin ? 'Dispatch' : isResponder ? 'Responder' : 'Resident';
 
   return (
@@ -253,7 +253,7 @@ export default function IncidentChatScreen() {
       keyboardVerticalOffset={0}
     >
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
-        <View style={[s.headerBg, { backgroundColor: isDark ? colors.dark.surface : colors.accent[700] }]} />
+        <View style={[s.headerBg, { backgroundColor: isDark ? colors.dark.surface : colors.brand[700] }]} />
         <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
           <Ionicons name="chevron-back" size={20} color={colors.white} />
         </Pressable>
@@ -286,7 +286,7 @@ export default function IncidentChatScreen() {
                 <Ionicons
                   name="flash"
                   size={11}
-                  color={isDark ? colors.accent[500] : colors.accent[700]}
+                  color={isDark ? colors.brand[500] : colors.brand[700]}
                   style={{ marginRight: 4 }}
                 />
                 <Text style={[s.quickChipText, isDark && { color: colors.slate[300] }]}>{qr}</Text>
@@ -305,7 +305,7 @@ export default function IncidentChatScreen() {
 
       {loading ? (
         <View style={s.centered}>
-          <ActivityIndicator size="large" color={colors.accent[500]} />
+          <ActivityIndicator size="large" color={colors.brand[500]} />
         </View>
       ) : (
         <FlatList
@@ -317,7 +317,7 @@ export default function IncidentChatScreen() {
           ListEmptyComponent={
             <View style={s.emptyChat}>
               <View style={[s.emptyIconBg, isDark && { backgroundColor: colors.dark.card }]}>
-                <Ionicons name="chatbubbles-outline" size={40} color={colors.accent[300]} />
+                <Ionicons name="chatbubbles-outline" size={40} color={colors.brand[300]} />
               </View>
               <Text style={[s.emptyChatTitle, isDark && { color: colors.white }]}>
                 No messages yet
@@ -347,21 +347,21 @@ export default function IncidentChatScreen() {
                     s.bubbleBody,
                     mine
                       ? {
-                          backgroundColor: isFailed ? colors.severity.critical : colors.accent[500],
+                          backgroundColor: isFailed ? colors.severity.critical : colors.brand[500],
                           borderBottomRightRadius: 4,
                         }
                       : {
                           backgroundColor: isDark ? colors.dark.card : colors.white,
                           borderBottomLeftRadius: 4,
                           borderLeftWidth: 3,
-                          borderLeftColor: item.userRole === 'admin' ? colors.iconAccents.admin : colors.accent[500],
+                          borderLeftColor: item.userRole === 'admin' ? colors.iconAccents.admin : colors.brand[500],
                         },
                   ]}>
                     {item.isQuickReply && (
                       <Ionicons
                         name="flash"
                         size={12}
-                        color={mine ? colors.overlay.whiteHigh : colors.accent[500]}
+                        color={mine ? colors.overlay.whiteHigh : colors.brand[500]}
                         style={{ marginBottom: 2 }}
                       />
                     )}
@@ -573,10 +573,10 @@ const s = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: colors.accent[500],
+    backgroundColor: colors.brand[500],
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.accent[500],
+    shadowColor: colors.brand[500],
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -608,7 +608,7 @@ const s = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.accent[500],
+    backgroundColor: colors.brand[500],
   },
 
   offlineBanner: {

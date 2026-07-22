@@ -79,6 +79,8 @@ interface RawReport {
   ai_flag_reason?: string | null;
   ai_image_verified?: boolean | null;
   ai_image_notes?: string | null;
+  ai_exif_status?: 'pass' | 'fail' | 'no_data' | null;
+  ai_exif_notes?: string | null;
   potential_duplicate_of?: number | null;
 }
 
@@ -282,7 +284,7 @@ client.interceptors.response.use(
 
 async function get<T>(path: string, token: string): Promise<T> {
   const res = await client.get<T>(path, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { 'Accept': 'application/json', Authorization: `Bearer ${token}` },
   });
   return res.data;
 }
@@ -290,6 +292,7 @@ async function get<T>(path: string, token: string): Promise<T> {
 async function post<T>(path: string, body: unknown, token?: string): Promise<T> {
   const res = await client.post<T>(path, body, {
     headers: {
+      'Accept': 'application/json',
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
@@ -300,6 +303,7 @@ async function post<T>(path: string, body: unknown, token?: string): Promise<T> 
 async function put<T>(path: string, body: unknown, token: string): Promise<T> {
   const res = await client.put<T>(path, body, {
     headers: {
+      'Accept': 'application/json',
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
@@ -310,6 +314,7 @@ async function put<T>(path: string, body: unknown, token: string): Promise<T> {
 async function patch<T>(path: string, body: unknown, token: string): Promise<T> {
   const res = await client.patch<T>(path, body, {
     headers: {
+      'Accept': 'application/json',
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
@@ -345,6 +350,12 @@ async function del<T>(path: string, token: string, data?: unknown): Promise<T> {
 export async function apiLogin(
   payload: LoginPayload,
 ): Promise<{ token: string; user: User }> {
+  if (payload.googleIdToken) {
+    const data = await post<{ token: string; user: RawUser }>('/auth/google', {
+      id_token: payload.googleIdToken,
+    });
+    return { token: data.token, user: adaptUser(data.user) };
+  }
   const data = await post<{ token: string; user: RawUser }>('/login', {
     email:    payload.email,
     password: payload.password,
@@ -777,6 +788,45 @@ export async function getWeather(lat: number, lon: number, token: string): Promi
   };
 }
 
+/**
+ * Fetch weather from backend, falling back to OpenWeatherMap direct if unavailable.
+ * The OWM key is read from EXPO_PUBLIC_OWM_KEY env var.
+ */
+export async function getWeatherWithFallback(lat: number, lon: number, token: string): Promise<WeatherData | null> {
+  try {
+    const w = await getWeather(lat, lon, token);
+    if (w.current.description !== 'Unavailable') return w;
+  } catch {}
+
+  const KEY = process.env.EXPO_PUBLIC_OWM_KEY;
+  if (!KEY) return null;
+
+  try {
+    const res = await fetch(
+      `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${KEY}&units=metric`,
+    );
+    if (!res.ok) return null;
+    const d = await res.json();
+    return {
+      current: {
+        temperature: d.main?.temp ?? 0,
+        humidity: d.main?.humidity ?? 0,
+        windSpeed: Math.round((d.wind?.speed ?? 0) * 3.6 * 10) / 10,
+        description: d.weather?.[0]?.description
+          ? d.weather[0].description.charAt(0).toUpperCase() + d.weather[0].description.slice(1)
+          : 'Unknown',
+        icon: d.weather?.[0]?.icon ?? '01d',
+        rainH: d.rain?.['1h'] ?? 0,
+        city: d.name ?? '',
+      },
+      alerts: [],
+      forecast: [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function withdrawReport(id: string, token: string): Promise<void> {
   await del('/reports/' + id, token);
 }
@@ -924,6 +974,8 @@ function adaptAdminReport(raw: RawReport): AdminReport {
     aiFlagReason:    raw.ai_flag_reason ?? null,
     aiHasDuplicate:  raw.potential_duplicate_of != null,
     aiImageNotes:    raw.ai_image_notes ?? null,
+    aiExifStatus:    raw.ai_exif_status ?? null,
+    aiExifNotes:     raw.ai_exif_notes ?? null,
     reportedByName:  raw.user?.name ?? 'Unknown',
   };
 }

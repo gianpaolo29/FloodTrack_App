@@ -218,7 +218,7 @@ export default function ProtocolsScreen() {
   if (loading) {
     return (
       <View style={[s.root, { backgroundColor: screenBg, alignItems: 'center', justifyContent: 'center' }]}>
-        <ActivityIndicator size="large" color={colors.accent[700]} />
+        <ActivityIndicator size="large" color={colors.brand[700]} />
       </View>
     );
   }
@@ -229,7 +229,7 @@ export default function ProtocolsScreen() {
         <View
           style={[
             s.headerBg,
-            { backgroundColor: isDark ? colors.dark.surface : colors.accent[700] },
+            { backgroundColor: isDark ? colors.dark.surface : colors.brand[700] },
           ]}
         />
         <View style={s.headerContent}>
@@ -258,7 +258,7 @@ export default function ProtocolsScreen() {
         contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 40 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent[700]} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand[700]} />
         }
       >
         {protocols.map((proto) => (

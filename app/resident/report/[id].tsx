@@ -188,6 +188,49 @@ const tlStyles = StyleSheet.create({
   detail: { fontSize: 13, color: colors.slate[500], lineHeight: 18 },
 });
 
+// ─── Gallery slide with error fallback ───────────────────────────────────────
+
+function GallerySlide({
+  url,
+  index,
+  total,
+  isDark,
+}: {
+  url: string;
+  index: number;
+  total: number;
+  isDark: boolean;
+}) {
+  const [errored, setErrored] = useState(false);
+
+  if (errored) {
+    return (
+      <View
+        style={[
+          gal.slide,
+          { width: GALLERY_W, alignItems: 'center', justifyContent: 'center' },
+          isDark && { backgroundColor: colors.dark.elevated },
+        ]}
+      >
+        <Ionicons name="image-outline" size={32} color={colors.slate[400]} />
+        <Text style={[gal.emptyText, { marginTop: 8 }, isDark && { color: colors.slate[500] }]}>
+          Image unavailable
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri: url }}
+      style={[gal.slide, { width: GALLERY_W }]}
+      resizeMode="cover"
+      onError={() => setErrored(true)}
+      accessibilityLabel={`Photo ${index + 1} of ${total}`}
+    />
+  );
+}
+
 // ─── Photo gallery ───────────────────────────────────────────────────────────
 
 function PhotoGallery({ urls, isDark }: { urls: string[]; isDark: boolean }) {
@@ -228,12 +271,12 @@ function PhotoGallery({ urls, isDark }: { urls: string[]; isDark: boolean }) {
           style={{ width: GALLERY_W }}
         >
           {urls.map((url, i) => (
-            <Image
+            <GallerySlide
               key={i}
-              source={{ uri: url }}
-              style={[gal.slide, { width: GALLERY_W }]}
-              resizeMode="cover"
-              accessibilityLabel={`Photo ${i + 1} of ${urls.length}`}
+              url={url}
+              index={i}
+              total={urls.length}
+              isDark={isDark}
             />
           ))}
         </ScrollView>
@@ -952,13 +995,13 @@ export default function ReportDetailScreen() {
             <SectionCard isDark={isDark}>
               <View style={s.sectionTitleRow}>
                 <SectionLabel text="Evidence" isDark={isDark} />
-                {report.mediaUrls.length > 0 && (
+                {(report.mediaUrls?.length ?? 0) > 0 && (
                   <View style={s.countPill}>
                     <Text style={s.countPillText}>{report.mediaUrls.length}</Text>
                   </View>
                 )}
               </View>
-              <PhotoGallery urls={report.mediaUrls} isDark={isDark} />
+              <PhotoGallery urls={report.mediaUrls ?? []} isDark={isDark} />
             </SectionCard>
           )}
 

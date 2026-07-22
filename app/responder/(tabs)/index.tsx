@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  AppState,
   Dimensions,
   Easing,
   Image,
@@ -22,7 +23,7 @@ import * as Location from 'expo-location';
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getAssignedIncidents, getResponderStats, getWeather, type WeatherData } from '@/services/api';
+import { getAssignedIncidents, getResponderStats, getWeatherWithFallback, type WeatherData } from '@/services/api';
 import { socketService } from '@/services/socket';
 import type { Incident, ResponderStats, ResponderStatus } from '@/types';
 
@@ -41,7 +42,7 @@ const STATUS_LABELS: Record<ResponderStatus, string> = {
 const STATUS_COLORS: Record<ResponderStatus, string> = {
   pending: colors.severity.moderate,
   en_route: colors.brand[500],
-  on_scene: colors.accent[500],
+  on_scene: colors.brand[500],
   resolved: colors.severity.low,
 };
 
@@ -235,31 +236,8 @@ export default function HomeTab() {
         (await Location.getLastKnownPositionAsync()) ??
         (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }));
       const { latitude: lat, longitude: lon } = loc.coords;
-      try {
-        const w = await getWeather(lat, lon, token);
-        if (w.current.description !== 'Unavailable') { setWeather(w); return; }
-      } catch {}
-      const KEY = '492a0ca6810997c64038621e373ae0de';
-      const res = await fetch(
-        `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${KEY}&units=metric`,
-      );
-      if (!res.ok) return;
-      const d = await res.json();
-      setWeather({
-        current: {
-          temperature: d.main?.temp ?? 0,
-          humidity: d.main?.humidity ?? 0,
-          windSpeed: Math.round((d.wind?.speed ?? 0) * 3.6 * 10) / 10,
-          description: d.weather?.[0]?.description
-            ? d.weather[0].description.charAt(0).toUpperCase() + d.weather[0].description.slice(1)
-            : 'Unknown',
-          icon: d.weather?.[0]?.icon ?? '01d',
-          rainH: d.rain?.['1h'] ?? 0,
-          city: d.name ?? '',
-        },
-        alerts: [],
-        forecast: [],
-      });
+      const w = await getWeatherWithFallback(lat, lon, token);
+      if (w) setWeather(w);
     } catch {}
   }, [token]);
 
@@ -281,6 +259,15 @@ export default function HomeTab() {
     socketService.on('new-notification', loadIncidents);
     return () => socketService.off('new-notification', loadIncidents);
   }, [loadIncidents]);
+
+  // Auto-refresh weather every 15 min + when app returns to foreground
+  useEffect(() => {
+    const interval = setInterval(loadWeather, 15 * 60 * 1000);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') loadWeather();
+    });
+    return () => { clearInterval(interval); sub.remove(); };
+  }, [loadWeather]);
 
   /* toggle weather panel */
   function toggleWeather() {
@@ -346,10 +333,10 @@ export default function HomeTab() {
           <View style={{ alignItems: 'center', gap: 16 }}>
             <View style={{
               width: 64, height: 64, borderRadius: 20,
-              backgroundColor: isDark ? colors.dark.card : colors.accent[500] + '10',
+              backgroundColor: isDark ? colors.dark.card : colors.brand[500] + '10',
               alignItems: 'center', justifyContent: 'center',
             }}>
-              <ActivityIndicator size="large" color={colors.accent[500]} />
+              <ActivityIndicator size="large" color={colors.brand[500]} />
             </View>
             <Text style={{ fontSize: 13, fontWeight: '600', color: textSecondary }}>
               Loading dashboard...
@@ -363,8 +350,8 @@ export default function HomeTab() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => { setRefreshing(true); loadIncidents(true); loadWeather(); loadStats(); }}
-              tintColor={colors.accent[500]}
-              colors={[colors.accent[500]]}
+              tintColor={colors.brand[500]}
+              colors={[colors.brand[500]]}
             />
           }
           showsVerticalScrollIndicator={false}
@@ -377,7 +364,7 @@ export default function HomeTab() {
             }}
           >
             <LinearGradient
-              colors={isDark ? ['#0D2137', '#0A1628', '#070E18'] : ['#0B8F80', '#0FA896', '#12C4AE']}
+              colors={isDark ? ['#0D1A37', '#070E18', '#07090F'] : ['#00D2FF', '#4A6CF7', '#7C3AED']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={[$.hero, { paddingTop: insets.top + 16 }]}
@@ -424,38 +411,43 @@ export default function HomeTab() {
           </Animated.View>
 
           {/* ═══ WEATHER CARD ═══ */}
-          <View style={[$.weatherCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-            <Pressable onPress={toggleWeather} style={[$.wStrip, { borderBottomColor: weatherExpanded ? (isDark ? colors.dark.border : colors.slate[100]) : 'transparent' }]}>
-              <Ionicons name={weatherIcon} size={16} color={colors.accent[500]} />
-              <Text style={[$.wTemp, { color: textPrimary }]}>
-                {weather ? `${Math.round(weather.current.temperature)}°C` : '--°'}
-              </Text>
-              <Text style={[$.wDesc, { color: textSecondary }]} numberOfLines={1}>
-                {weather?.current.description ?? 'Loading...'}
-              </Text>
-              {weather && weather.current.rainH > 0 && (
-                <>
-                  <View style={[$.wSep, { backgroundColor: isDark ? colors.dark.border : colors.slate[200] }]} />
-                  <Ionicons name="water" size={11} color={colors.accent[500]} />
-                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.accent[500] }}>{weather.current.rainH} mm/h</Text>
-                </>
-              )}
-              {hasStorm && (
-                <>
-                  <View style={[$.wSep, { backgroundColor: isDark ? colors.dark.border : colors.slate[200] }]} />
-                  <Ionicons name="warning" size={12} color={colors.severity.critical} />
-                </>
-              )}
-              <View style={{ flex: 1 }} />
-              <Animated.View style={{
-                transform: [{ rotate: expandAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }) }],
-              }}>
-                <Ionicons name="chevron-down" size={16} color={textSecondary} />
-              </Animated.View>
-            </Pressable>
+          <View style={$.weatherWrap}>
+            <View style={[$.weatherCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+              <Pressable onPress={toggleWeather} style={$.wStrip}>
+                <Ionicons name={weatherIcon} size={16} color={colors.brand[500]} />
+                <Text style={[$.wTemp, { color: textPrimary }]}>
+                  {weather ? `${Math.round(weather.current.temperature)}°C` : '--°'}
+                </Text>
+                <Text style={[$.wDesc, { color: textSecondary }]} numberOfLines={1}>
+                  {weather?.current.description ?? 'Loading...'}
+                </Text>
+
+                {weather && weather.current.rainH > 0 && (
+                  <>
+                    <View style={[$.wSep, { backgroundColor: isDark ? colors.dark.border : colors.slate[200] }]} />
+                    <Ionicons name="water" size={11} color={colors.brand[300]} />
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: colors.brand[500] }}>{weather.current.rainH} mm/h</Text>
+                  </>
+                )}
+
+                {hasStorm && (
+                  <>
+                    <View style={[$.wSep, { backgroundColor: isDark ? colors.dark.border : colors.slate[200] }]} />
+                    <Ionicons name="warning" size={12} color={colors.severity.critical} />
+                  </>
+                )}
+
+                <View style={{ flex: 1 }} />
+                <Animated.View style={{
+                  transform: [{ rotate: expandAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }) }],
+                }}>
+                  <Ionicons name="chevron-down" size={16} color={textSecondary} />
+                </Animated.View>
+              </Pressable>
+            </View>
 
             {weatherExpanded && weather && (
-              <Animated.View style={[$.wPanel, { backgroundColor: isDark ? colors.dark.card : '#F8FAFC', opacity: expandAnim }]}>
+              <Animated.View style={[$.wDropdown, { backgroundColor: isDark ? colors.dark.card : colors.white, borderColor: cardBorder, opacity: expandAnim }]}>
                 <Text style={[$.wSectionTitle, { color: textSecondary }]}>Today's Weather</Text>
                 <View style={$.wTileGrid}>
                   {weatherTiles.map(tile => (
@@ -507,7 +499,7 @@ export default function HomeTab() {
           >
             <StatChip icon="warning" label="Active" value={active.length} gradient={['#EF4444', '#F97316']} isDark={isDark} />
             <StatChip icon="car" label="En Route" value={enRouteCount} gradient={[colors.brand[500], '#6366F1']} isDark={isDark} />
-            <StatChip icon="location" label="On Scene" value={onSceneCount} gradient={[colors.accent[500], '#059669']} isDark={isDark} />
+            <StatChip icon="location" label="On Scene" value={onSceneCount} gradient={[colors.brand[500], '#6366F1']} isDark={isDark} />
             <StatChip icon="checkmark-circle" label="Done" value={resolvedCount} gradient={['#10B981', '#34D399']} isDark={isDark} />
           </Animated.View>
 
@@ -618,7 +610,7 @@ export default function HomeTab() {
               <QuickAction
                 icon="map"
                 label="Map"
-                gradient={[colors.accent[500], '#059669']}
+                gradient={[colors.brand[500], '#6366F1']}
                 isDark={isDark}
                 onPress={() => router.push('/responder/(tabs)/map' as never)}
               />
@@ -730,7 +722,7 @@ export default function HomeTab() {
                       $.tabPill,
                       {
                         backgroundColor: isActive
-                          ? colors.accent[500]
+                          ? colors.brand[500]
                           : (isDark ? colors.dark.card : colors.white),
                         borderColor: isActive ? 'transparent' : cardBorder,
                       },
@@ -781,7 +773,7 @@ export default function HomeTab() {
                       onPress={() => router.push('/responder/(tabs)/map' as never)}
                       style={({ pressed }) => [pressed && { opacity: 0.6 }]}
                     >
-                      <Text style={[$.seeAllText, { color: colors.accent[500] }]}>See all</Text>
+                      <Text style={[$.seeAllText, { color: colors.brand[500] }]}>See all</Text>
                     </Pressable>
                   )}
                 </View>
@@ -856,12 +848,12 @@ export default function HomeTab() {
                   onPress={() => router.push('/responder/(tabs)/map' as never)}
                   style={({ pressed }) => [
                     $.emptyMapBtn,
-                    { borderColor: colors.accent[500] + '40' },
+                    { borderColor: colors.brand[500] + '40' },
                     pressed && { opacity: 0.7 },
                   ]}
                 >
-                  <Ionicons name="map-outline" size={14} color={colors.accent[500]} />
-                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.accent[500] }}>
+                  <Ionicons name="map-outline" size={14} color={colors.brand[500]} />
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.brand[500] }}>
                     Open Map
                   </Text>
                 </Pressable>
@@ -870,6 +862,7 @@ export default function HomeTab() {
           </Animated.View>
         </ScrollView>
       )}
+
     </View>
   );
 }
@@ -937,13 +930,15 @@ const $ = StyleSheet.create({
   },
 
   /* weather card */
-  weatherCard: {
+  weatherWrap: {
     marginHorizontal: H_PAD,
     marginTop: -12,
     marginBottom: 12,
+    zIndex: 50,
+  },
+  weatherCard: {
     borderRadius: 18,
     borderWidth: 1,
-    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -956,12 +951,28 @@ const $ = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderRadius: 18,
   },
   wTemp: { fontSize: 13, fontWeight: '700' },
   wDesc: { fontSize: 12, flexShrink: 1 },
   wSep: { width: StyleSheet.hairlineWidth, height: 12, marginHorizontal: 2 },
-  wPanel: { paddingHorizontal: 14, paddingTop: 4, paddingBottom: 14 },
+  wDropdown: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    marginTop: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 12,
+  },
   wSectionTitle: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8 },
   wTileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   wTile: {

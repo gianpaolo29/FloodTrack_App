@@ -22,6 +22,7 @@ export interface AlertConfig {
   cancelText?: string;
   onConfirm?: () => void | Promise<void>;
   onCancel?: () => void;
+  timer?: number; // auto-dismiss in ms, hides buttons
 }
 
 const ALERT_META: Record<AlertType, {
@@ -96,6 +97,11 @@ export function AppAlert({ config, onDismiss }: Props) {
         useNativeDriver: true,
       }),
     ]).start();
+
+    if (config.timer) {
+      const t = setTimeout(() => animateDismiss(config.onConfirm), config.timer);
+      return () => clearTimeout(t);
+    }
   }, []);
 
   function animateDismiss(callback?: () => void) {
@@ -166,40 +172,42 @@ export function AppAlert({ config, onDismiss }: Props) {
             <Text style={[s.message, { color: msgColor }]}>{config.message}</Text>
           ) : null}
 
-          <View style={[s.divider, { backgroundColor: isDark ? colors.dark.border : colors.slate[100] }]} />
+          {!config.timer && <View style={[s.divider, { backgroundColor: isDark ? colors.dark.border : colors.slate[100] }]} />}
 
-          <View style={[s.btnRow, config.cancelText && s.btnRowDouble]}>
-            {config.cancelText && (
+          {!config.timer && (
+            <View style={[s.btnRow, config.cancelText && s.btnRowDouble]}>
+              {config.cancelText && (
+                <Pressable
+                  onPress={() => animateDismiss(config.onCancel)}
+                  style={({ pressed }) => [
+                    s.btnCancel,
+                    { borderColor: isDark ? colors.dark.border : colors.slate[200] },
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={config.cancelText}
+                >
+                  <Text style={[s.btnCancelText, { color: isDark ? colors.slate[400] : colors.slate[600] }]}>
+                    {config.cancelText}
+                  </Text>
+                </Pressable>
+              )}
+
               <Pressable
-                onPress={() => animateDismiss(config.onCancel)}
+                onPress={() => animateDismiss(config.onConfirm)}
                 style={({ pressed }) => [
-                  s.btnCancel,
-                  { borderColor: isDark ? colors.dark.border : colors.slate[200] },
-                  pressed && { opacity: 0.7 },
+                  s.btnConfirm,
+                  { backgroundColor: confirmBtnColor },
+                  !config.cancelText && s.btnConfirmFull,
+                  pressed && { opacity: 0.88 },
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel={config.cancelText}
+                accessibilityLabel={config.confirmText ?? 'OK'}
               >
-                <Text style={[s.btnCancelText, { color: isDark ? colors.slate[400] : colors.slate[600] }]}>
-                  {config.cancelText}
-                </Text>
+                <Text style={s.btnConfirmText}>{config.confirmText ?? 'OK'}</Text>
               </Pressable>
-            )}
-
-            <Pressable
-              onPress={() => animateDismiss(config.onConfirm)}
-              style={({ pressed }) => [
-                s.btnConfirm,
-                { backgroundColor: confirmBtnColor },
-                !config.cancelText && s.btnConfirmFull,
-                pressed && { opacity: 0.88 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={config.confirmText ?? 'OK'}
-            >
-              <Text style={s.btnConfirmText}>{config.confirmText ?? 'OK'}</Text>
-            </Pressable>
-          </View>
+            </View>
+          )}
         </Animated.View>
       </View>
     </Modal>

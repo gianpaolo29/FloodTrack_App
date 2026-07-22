@@ -27,28 +27,12 @@ import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
 import { updateProfile, changePassword, uploadAvatar } from '@/services/api';
 
-interface PwdCheck {
-  label: string;
-  met: boolean;
-}
-
-function getPasswordChecks(pwd: string): PwdCheck[] {
-  return [
-    { label: 'At least 8 characters', met: pwd.length >= 8 },
-    { label: 'Uppercase letter (A-Z)', met: /[A-Z]/.test(pwd) },
-    { label: 'Lowercase letter (a-z)', met: /[a-z]/.test(pwd) },
-    { label: 'Number (0-9)', met: /[0-9]/.test(pwd) },
-    { label: 'Special character (!@#$...)', met: /[^A-Za-z0-9]/.test(pwd) },
-  ];
-}
-
-function getStrengthLevel(checks: PwdCheck[]): { score: number; label: string; color: string } {
-  const met = checks.filter((c) => c.met).length;
-  if (met <= 1) return { score: met, label: 'Very Weak', color: colors.severity.critical };
-  if (met === 2) return { score: met, label: 'Weak', color: colors.severity.high };
-  if (met === 3) return { score: met, label: 'Fair', color: colors.severity.moderate };
-  if (met === 4) return { score: met, label: 'Strong', color: colors.feedback.strongPassword };
-  return { score: met, label: 'Very Strong', color: colors.severity.low };
+function getStrengthLevel(len: number): { score: number; label: string; color: string } {
+  if (len === 0) return { score: 0, label: '', color: '' };
+  if (len < 8)  return { score: 1, label: 'Too Short', color: colors.severity.critical };
+  if (len < 10) return { score: 2, label: 'Weak',      color: colors.severity.high };
+  if (len < 13) return { score: 3, label: 'Medium',    color: colors.severity.moderate };
+  return              { score: 4, label: 'Strong',     color: colors.feedback.strongPassword };
 }
 
 function PasswordStrengthBar({
@@ -58,63 +42,26 @@ function PasswordStrengthBar({
   password: string;
   isDark: boolean;
 }) {
-  const checks = getPasswordChecks(password);
-  const { score, label, color } = getStrengthLevel(checks);
-  const textPrimary = isDark ? colors.white : colors.slate[900];
+  const { score, label, color } = getStrengthLevel(password.length);
   const textTertiary = isDark ? colors.slate[500] : colors.slate[400];
 
   if (!password) return null;
 
   return (
-    <View style={{ gap: 8 }}>
-      <View style={{ gap: 4 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', color: textTertiary }}>
-            Password Strength
-          </Text>
-          <Text style={{ fontSize: 11, fontWeight: '700', color }}>
-            {label}
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', gap: 4, height: 4, borderRadius: 2 }}>
-          {[1, 2, 3, 4, 5].map((i) => (
-            <View
-              key={i}
-              style={{
-                flex: 1,
-                height: 4,
-                borderRadius: 2,
-                backgroundColor: i <= score
-                  ? color
-                  : isDark
-                  ? colors.dark.border
-                  : colors.slate[200],
-              }}
-            />
-          ))}
-        </View>
+    <View style={{ gap: 4 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Text style={{ fontSize: 11, fontWeight: '600', color: textTertiary }}>Password Strength</Text>
+        <Text style={{ fontSize: 11, fontWeight: '700', color }}>{label}</Text>
       </View>
-      <View style={{ gap: 4 }}>
-        {checks.map((c) => (
+      <View style={{ flexDirection: 'row', gap: 4 }}>
+        {[1, 2, 3, 4].map((i) => (
           <View
-            key={c.label}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-          >
-            <Ionicons
-              name={c.met ? 'checkmark-circle' : 'ellipse-outline'}
-              size={14}
-              color={c.met ? colors.severity.low : textTertiary}
-            />
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: '500',
-                color: c.met ? textPrimary : textTertiary,
-              }}
-            >
-              {c.label}
-            </Text>
-          </View>
+            key={i}
+            style={{
+              flex: 1, height: 4, borderRadius: 2,
+              backgroundColor: i <= score ? color : isDark ? colors.dark.border : colors.slate[200],
+            }}
+          />
         ))}
       </View>
     </View>
@@ -416,11 +363,12 @@ export default function ProfileScreen() {
     }
     setEditSaving(true);
     try {
+      const newAddress = editHomeAddress.trim() || null;
       const updated = await updateProfile({
         name: `${editFirstName.trim()} ${editLastName.trim()}`,
         contact_number: editContact.trim() || undefined,
+        home_address: newAddress,
       }, token!);
-      const newAddress = editHomeAddress.trim() || null;
       await setHomeAddress(newAddress);
       await updateUser({ ...updated, homeAddress: newAddress });
       showAlert({ type: 'success', title: 'Updated', message: 'Your profile has been updated.' });
@@ -439,9 +387,8 @@ export default function ProfileScreen() {
     setShowChangePwd(true);
   }
 
-  const pwdChecks = getPasswordChecks(newPwd);
-  const pwdStrength = getStrengthLevel(pwdChecks);
-  const allChecksMet = pwdChecks.every((c) => c.met);
+  const pwdStrength = getStrengthLevel(newPwd.length);
+  const allChecksMet = newPwd.length >= 8 && newPwd.length <= 16;
   const passwordsMatch = newPwd.length > 0 && newPwd === confirmPwd;
 
   async function handleChangePwd() {
@@ -450,8 +397,7 @@ export default function ProfileScreen() {
       return;
     }
     if (!allChecksMet) {
-      const missing = pwdChecks.filter((c) => !c.met).map((c) => c.label).join(', ');
-      showAlert({ type: 'error', title: 'Weak Password', message: `Password must meet all requirements: ${missing}` });
+      showAlert({ type: 'error', title: 'Invalid Password', message: 'Password must be between 8 and 16 characters.' });
       return;
     }
     if (!passwordsMatch) {
@@ -889,9 +835,10 @@ export default function ProfileScreen() {
                     style={[styles.modalInput, isDark && { color: colors.white }]}
                     value={newPwd}
                     onChangeText={setNewPwd}
-                    placeholder="New password"
+                    placeholder="New password (8–16 chars)"
                     placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                     secureTextEntry={!showNewPwd}
+                    maxLength={16}
                   />
                   <Pressable onPress={() => setShowNewPwd(v => !v)} hitSlop={8}>
                     <Ionicons
@@ -916,6 +863,7 @@ export default function ProfileScreen() {
                     placeholder="Confirm new password"
                     placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                     secureTextEntry={!showNewPwd}
+                    maxLength={16}
                   />
                 </GlassInput>
 

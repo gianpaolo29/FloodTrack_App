@@ -26,8 +26,8 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const { unreadCount } = useAlertBadge();
   const bottom = Platform.OS === 'ios' ? 28 : Math.max(insets.bottom, 12);
 
-  const barBg = isDark ? '#111827' : '#E8F5F3';
-  const activeColor = isDark ? '#6EE7B7' : colors.accent[500];
+  const barBg = isDark ? '#111827' : '#EAF2FB';
+  const activeColor = isDark ? '#93C5FD' : colors.brand[500];
   const inactiveColor = isDark ? '#64748B' : colors.slate[400];
 
   return (

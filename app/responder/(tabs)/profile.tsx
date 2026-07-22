@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,28 +25,12 @@ import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
 import { updateProfile, changePassword, updateDutyStatus, uploadAvatar, getCurrentUser } from '@/services/api';
 
-interface PwdCheck {
-  label: string;
-  met: boolean;
-}
-
-function getPasswordChecks(pwd: string): PwdCheck[] {
-  return [
-    { label: 'At least 8 characters', met: pwd.length >= 8 },
-    { label: 'Uppercase letter (A-Z)', met: /[A-Z]/.test(pwd) },
-    { label: 'Lowercase letter (a-z)', met: /[a-z]/.test(pwd) },
-    { label: 'Number (0-9)', met: /[0-9]/.test(pwd) },
-    { label: 'Special character (!@#$...)', met: /[^A-Za-z0-9]/.test(pwd) },
-  ];
-}
-
-function getStrengthLevel(checks: PwdCheck[]): { score: number; label: string; color: string } {
-  const met = checks.filter((c) => c.met).length;
-  if (met <= 1) return { score: met, label: 'Very Weak', color: colors.severity.critical };
-  if (met === 2) return { score: met, label: 'Weak', color: colors.severity.high };
-  if (met === 3) return { score: met, label: 'Fair', color: colors.severity.moderate };
-  if (met === 4) return { score: met, label: 'Strong', color: '#66BB6A' };
-  return { score: met, label: 'Very Strong', color: colors.severity.low };
+function getStrengthLevel(len: number): { score: number; label: string; color: string } {
+  if (len === 0) return { score: 0, label: '', color: '' };
+  if (len < 8)  return { score: 1, label: 'Too Short', color: colors.severity.critical };
+  if (len < 10) return { score: 2, label: 'Weak',      color: colors.severity.high };
+  if (len < 13) return { score: 3, label: 'Medium',    color: colors.severity.moderate };
+  return              { score: 4, label: 'Strong',     color: '#66BB6A' };
 }
 
 function PasswordStrengthBar({
@@ -55,63 +40,26 @@ function PasswordStrengthBar({
   password: string;
   isDark: boolean;
 }) {
-  const checks = getPasswordChecks(password);
-  const { score, label, color } = getStrengthLevel(checks);
-  const textPrimary = isDark ? colors.white : colors.slate[900];
+  const { score, label, color } = getStrengthLevel(password.length);
   const textTertiary = isDark ? colors.slate[500] : colors.slate[400];
 
   if (!password) return null;
 
   return (
-    <View style={{ gap: 8 }}>
-      <View style={{ gap: 4 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', color: textTertiary }}>
-            Password Strength
-          </Text>
-          <Text style={{ fontSize: 11, fontWeight: '700', color }}>
-            {label}
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', gap: 4, height: 4, borderRadius: 2 }}>
-          {[1, 2, 3, 4, 5].map((i) => (
-            <View
-              key={i}
-              style={{
-                flex: 1,
-                height: 4,
-                borderRadius: 2,
-                backgroundColor: i <= score
-                  ? color
-                  : isDark
-                  ? colors.dark.border
-                  : colors.slate[200],
-              }}
-            />
-          ))}
-        </View>
+    <View style={{ gap: 4 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Text style={{ fontSize: 11, fontWeight: '600', color: textTertiary }}>Password Strength</Text>
+        <Text style={{ fontSize: 11, fontWeight: '700', color }}>{label}</Text>
       </View>
-      <View style={{ gap: 4 }}>
-        {checks.map((c) => (
+      <View style={{ flexDirection: 'row', gap: 4 }}>
+        {[1, 2, 3, 4].map((i) => (
           <View
-            key={c.label}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-          >
-            <Ionicons
-              name={c.met ? 'checkmark-circle' : 'ellipse-outline'}
-              size={14}
-              color={c.met ? colors.severity.low : textTertiary}
-            />
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: '500',
-                color: c.met ? textPrimary : textTertiary,
-              }}
-            >
-              {c.label}
-            </Text>
-          </View>
+            key={i}
+            style={{
+              flex: 1, height: 4, borderRadius: 2,
+              backgroundColor: i <= score ? color : isDark ? colors.dark.border : colors.slate[200],
+            }}
+          />
         ))}
       </View>
     </View>
@@ -290,7 +238,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
-  const { user, token, logout, updateUser } = useAuth();
+  const { user, token, logout, updateUser, setHomeAddress } = useAuth();
   const { showAlert } = useAlert();
 
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -306,6 +254,8 @@ export default function ProfileScreen() {
   const [editFirstName, setEditFirstName]     = useState('');
   const [editLastName, setEditLastName]       = useState('');
   const [editContact, setEditContact]         = useState('');
+  const [editHomeAddress, setEditHomeAddress] = useState('');
+  const [editAddressLoading, setEditAddressLoading] = useState(false);
   const [editSaving, setEditSaving]           = useState(false);
 
   const [showChangePwd, setShowChangePwd]         = useState(false);
@@ -396,7 +346,32 @@ export default function ProfileScreen() {
     setEditFirstName(user?.firstName ?? '');
     setEditLastName(user?.lastName ?? '');
     setEditContact(user?.contact ?? '');
+    setEditHomeAddress(user?.homeAddress ?? '');
     setShowEditProfile(true);
+  }
+
+  async function handleUseLocationForAddress() {
+    setEditAddressLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        showAlert({ type: 'warning', title: 'Permission Needed', message: 'Allow location permission to auto-fill your address.' });
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const [geo] = await Location.reverseGeocodeAsync({
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      });
+      const parts = [geo.street, geo.district, geo.city, geo.region]
+        .filter(Boolean)
+        .filter((v, i, a) => a.indexOf(v) === i);
+      setEditHomeAddress(parts.join(', ') || `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`);
+    } catch {
+      showAlert({ type: 'warning', title: 'Error', message: 'Could not get your location.' });
+    } finally {
+      setEditAddressLoading(false);
+    }
   }
 
   async function handleSaveProfile() {
@@ -406,11 +381,14 @@ export default function ProfileScreen() {
     }
     setEditSaving(true);
     try {
+      const newAddress = editHomeAddress.trim() || null;
       const updated = await updateProfile({
         name: `${editFirstName.trim()} ${editLastName.trim()}`,
         contact_number: editContact.trim() || undefined,
+        home_address: newAddress,
       }, token!);
-      await updateUser(updated);
+      await setHomeAddress(newAddress);
+      await updateUser({ ...updated, homeAddress: newAddress });
       showAlert({ type: 'success', title: 'Updated', message: 'Your profile has been updated.' });
       setShowEditProfile(false);
     } catch (e: any) {
@@ -429,9 +407,8 @@ export default function ProfileScreen() {
     setShowChangePwd(true);
   }
 
-  const pwdChecks = getPasswordChecks(newPwd);
-  const pwdStrength = getStrengthLevel(pwdChecks);
-  const allChecksMet = pwdChecks.every((c) => c.met);
+  const pwdStrength = getStrengthLevel(newPwd.length);
+  const allChecksMet = newPwd.length >= 8 && newPwd.length <= 16;
   const passwordsMatch = newPwd.length > 0 && newPwd === confirmPwd;
 
   async function handleChangePwd() {
@@ -440,8 +417,7 @@ export default function ProfileScreen() {
       return;
     }
     if (!allChecksMet) {
-      const missing = pwdChecks.filter((c) => !c.met).map((c) => c.label).join(', ');
-      showAlert({ type: 'error', title: 'Weak Password', message: `Password must meet all requirements: ${missing}` });
+      showAlert({ type: 'error', title: 'Invalid Password', message: 'Password must be between 8 and 16 characters.' });
       return;
     }
     if (!passwordsMatch) {
@@ -465,8 +441,8 @@ export default function ProfileScreen() {
   }
 
   const screenBg    = isDark ? colors.dark.bg : '#F0F4FA';
-  const roleColor   = colors.accent[500];
-  const accentBrand = colors.accent[500];
+  const roleColor   = colors.brand[500];
+  const accentBrand = colors.brand[500];
 
   const fullName   = user ? `${user.firstName} ${user.lastName}` : '—';
   const initials   = user
@@ -642,7 +618,7 @@ export default function ProfileScreen() {
             <SettingRow
               icon="person-outline"
               label="Edit profile"
-              description="Name, contact number"
+              description="Name, contact, home address"
               onPress={openEditProfile}
               isDark={isDark}
             />
@@ -652,7 +628,8 @@ export default function ProfileScreen() {
               onPress={openChangePwd}
               isDark={isDark}
             />
-            <SettingRow icon="call-outline" label="Mobile number" description={user?.contact ?? '—'} isDark={isDark} isLast />
+            <SettingRow icon="call-outline" label="Mobile number" description={user?.contact ?? '—'} isDark={isDark} />
+            <SettingRow icon="home-outline" label="Home address" description={user?.homeAddress ?? 'Not set — edit profile to add'} isDark={isDark} isLast />
           </View>
 
           <SectionLabel title="Notifications" isDark={isDark} />
@@ -804,6 +781,22 @@ export default function ProfileScreen() {
                     keyboardType="phone-pad"
                   />
                 </GlassInput>
+                <GlassInput icon="home-outline" isDark={isDark}>
+                  <TextInput
+                    style={[styles.modalInput, isDark && { color: colors.white }]}
+                    value={editHomeAddress}
+                    onChangeText={setEditHomeAddress}
+                    placeholder="Home address"
+                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                    autoCapitalize="words"
+                  />
+                  <Pressable onPress={handleUseLocationForAddress} hitSlop={8} disabled={editAddressLoading}>
+                    {editAddressLoading
+                      ? <ActivityIndicator size="small" color={colors.brand[500]} />
+                      : <Ionicons name="locate" size={18} color={colors.brand[500]} />
+                    }
+                  </Pressable>
+                </GlassInput>
               </View>
 
               <View style={styles.modalActions}>
@@ -880,9 +873,10 @@ export default function ProfileScreen() {
                     style={[styles.modalInput, isDark && { color: colors.white }]}
                     value={newPwd}
                     onChangeText={setNewPwd}
-                    placeholder="New password"
+                    placeholder="New password (8–16 chars)"
                     placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
                     secureTextEntry={!showNewPwd}
+                    maxLength={16}
                   />
                   <Pressable onPress={() => setShowNewPwd(v => !v)} hitSlop={8}>
                     <Ionicons
@@ -907,6 +901,7 @@ export default function ProfileScreen() {
                     placeholder="Confirm new password"
                     placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
                     secureTextEntry={!showNewPwd}
+                    maxLength={16}
                   />
                 </GlassInput>
 

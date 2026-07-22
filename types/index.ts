@@ -17,8 +17,9 @@ export interface User {
 }
 
 export interface LoginPayload {
-  email: string;
-  password: string;
+  email?: string;
+  password?: string;
+  googleIdToken?: string;
 }
 
 export interface RegisterPayload {
@@ -33,6 +34,7 @@ export interface RegisterPayload {
 export interface UpdateProfilePayload {
   name?: string;
   contact_number?: string;
+  home_address?: string | null;
 }
 
 export interface ChangePasswordPayload {
@@ -98,6 +100,8 @@ export interface AdminReport extends Report {
   aiFlagReason: string | null;
   aiHasDuplicate: boolean;
   aiImageNotes: string | null;
+  aiExifStatus: 'pass' | 'fail' | 'no_data' | null;
+  aiExifNotes: string | null;
   reportedByName: string;
 }
 
