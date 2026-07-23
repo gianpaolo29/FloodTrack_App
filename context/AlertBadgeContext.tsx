@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import { useAuth } from '@/context/AuthContext';
 import { getAlertsWithReadState } from '@/services/api';
 import { socketService } from '@/services/socket';
+import { getNotificationPrefs } from '@/services/notifications';
 
 interface AlertBadgeContextValue {
   unreadCount: number;
@@ -38,15 +39,22 @@ export function AlertBadgeProvider({ children }: { children: React.ReactNode }) 
       if (state === 'active') fetchCount();
     });
 
-    // Real-time: increment badge instantly when a new alert/notification arrives
-    const increment = () => setUnreadCount(c => c + 1);
-    socketService.on('new-alert', increment);
-    socketService.on('new-notification', increment);
+    // Real-time: increment badge only for alert kinds the user has enabled
+    const incrementIfAllowed = async (raw: any) => {
+      const prefs = await getNotificationPrefs();
+      const kind = raw?.type; // 'critical' | 'advisory' | 'update'
+      if (kind === 'critical' && !prefs.critical) return;
+      if (kind === 'advisory' && !prefs.advisory) return;
+      if (kind === 'update'   && !prefs.myReports) return;
+      setUnreadCount(c => c + 1);
+    };
+    socketService.on('new-alert', incrementIfAllowed);
+    socketService.on('new-notification', incrementIfAllowed);
 
     return () => {
       sub.remove();
-      socketService.off('new-alert', increment);
-      socketService.off('new-notification', increment);
+      socketService.off('new-alert', incrementIfAllowed);
+      socketService.off('new-notification', incrementIfAllowed);
     };
   }, [token]);
 

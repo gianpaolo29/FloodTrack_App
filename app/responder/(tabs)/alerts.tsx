@@ -22,6 +22,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useAlertBadge } from '@/context/AlertBadgeContext';
 import { getAlertsWithReadState, markAlertRead, markAllAlertsRead, adaptAlert } from '@/services/api';
 import { socketService } from '@/services/socket';
+import { getNotificationPrefs } from '@/services/notifications';
 import type { AlertItem } from '@/types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -322,14 +323,18 @@ export default function AlertsScreen() {
       if (state === 'active') load(true);
     });
 
-    const handleNew = (raw: any) => {
+    const handleNew = async (raw: any) => {
       if (!raw?.id) return;
+      const prefs = await getNotificationPrefs();
+      const kind = raw.type; // 'critical' | 'advisory' | 'update'
+      if (kind === 'critical' && !prefs.critical) return;
+      if (kind === 'advisory' && !prefs.advisory) return;
+      if (kind === 'update'   && !prefs.myReports) return;
       const item = adaptAlert(raw);
       setAlerts(prev => {
         if (prev.some(a => a.id === item.id)) return prev;
         return [item, ...prev];
       });
-      // Badge increment is already handled by AlertBadgeProvider's own socket listener
     };
 
     const handleUpdated = (raw: any) => {

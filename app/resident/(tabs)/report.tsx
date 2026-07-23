@@ -71,29 +71,29 @@ const SEVERITY_OPTIONS: SeverityOption[] = [
   { level: 'critical', label: 'Critical', description: 'Life-threatening, immediate dispatch' },
 ];
 
-function StepIndicator({ current, total }: { current: number; total: number }) {
+function ProgressBar({ current, total }: { current: number; total: number }) {
+  const progress = (current + 1) / total;
   return (
-    <View style={stepStyles.row}>
-      {Array.from({ length: total }).map((_, i) => (
-        <View
-          key={i}
-          style={[
-            stepStyles.dot,
-            i < current
-              ? { backgroundColor: colors.white }
-              : i === current
-              ? { backgroundColor: colors.white, width: 22, borderRadius: 4 }
-              : { backgroundColor: 'rgba(255,255,255,0.3)' },
-          ]}
-        />
-      ))}
+    <View style={progressStyles.wrap}>
+      <View style={progressStyles.track}>
+        <View style={[progressStyles.fill, { width: `${progress * 100}%` }]} />
+      </View>
+      <Text style={progressStyles.label}>{current + 1}/{total}</Text>
     </View>
   );
 }
 
-const stepStyles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: 6, alignItems: 'center' },
-  dot: { height: 6, width: 6, borderRadius: 3 },
+const progressStyles = StyleSheet.create({
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  track: {
+    flex: 1, height: 4, borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.20)', overflow: 'hidden',
+  },
+  fill: {
+    height: '100%', borderRadius: 2,
+    backgroundColor: colors.white,
+  },
+  label: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.80)', letterSpacing: 0.3 },
 });
 
 interface LocationData {
@@ -198,9 +198,8 @@ function SeverityStep({
                 styles.severityCard,
                 isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
                 active && {
-                  borderColor: levelColor,
-                  borderWidth: 1.5,
-                  backgroundColor: isDark ? levelColor + '15' : levelColor + '08',
+                  borderColor: levelColor + '30',
+                  backgroundColor: isDark ? levelColor + '12' : levelColor + '0A',
                 },
                 pressed && !active && { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50] },
               ]}
@@ -208,6 +207,9 @@ function SeverityStep({
               accessibilityState={{ checked: active }}
               accessibilityLabel={`${opt.label}: ${opt.description}`}
             >
+              {active && (
+                <View style={[styles.severityAccent, { backgroundColor: levelColor }]} />
+              )}
               <View style={[styles.severityLeft, { borderColor: levelColor + '40', backgroundColor: levelColor + '14' }]}>
                 <Ionicons
                   name={
@@ -228,7 +230,7 @@ function SeverityStep({
                 </Text>
               </View>
               {active && (
-                <Ionicons name="checkmark-circle" size={20} color={levelColor} />
+                <Ionicons name="checkmark-circle" size={22} color={levelColor} />
               )}
             </Pressable>
           );
@@ -282,25 +284,26 @@ function FloodDepthPicker({
     transform: [{ translateX: interpolate(waveOffset.value, [0, 1], [0, -24]) }],
   }));
 
-  function snapNearest(frac: number): number {
-    'worklet';
-    let best = 0, min = Math.abs(frac - SNAPS[0]);
-    for (let i = 1; i < SNAPS.length; i++) {
-      const d = Math.abs(frac - SNAPS[i]);
-      if (d < min) { min = d; best = i; }
-    }
-    return best;
+  function levelFromFrac(frac: number): number {
+    // ankle < 0.21, knee < 0.41, waist < 0.63, chest >= 0.63
+    if (frac < 0.21) return 0;
+    if (frac < 0.41) return 1;
+    if (frac < 0.63) return 2;
+    return 3;
   }
 
-  function onPick(idx: number) {
+  function onPickFromFrac(frac: number) {
+    const idx = levelFromFrac(frac);
     const l = DEPTH_LEVELS[idx];
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onSelect(l.key, l.severity);
   }
 
   function onTapLevel(idx: number) {
     waterFrac.value = withSpring(SNAPS[idx], { damping: 20, stiffness: 200 });
-    onPick(idx);
+    const l = DEPTH_LEVELS[idx];
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onSelect(l.key, l.severity);
   }
 
   const pan = Gesture.Pan()
@@ -309,10 +312,12 @@ function FloodDepthPicker({
       const delta = -e.translationY / PICKER_H;
       waterFrac.value = Math.max(0.04, Math.min(0.92, dragStart.value + delta));
     })
-    .onEnd(() => {
-      const idx = snapNearest(waterFrac.value);
-      waterFrac.value = withSpring(SNAPS[idx], { damping: 20, stiffness: 200 });
-      runOnJS(onPick)(idx);
+    .onEnd(e => {
+      // Apply velocity-based momentum then settle smoothly
+      const velocity = -e.velocityY / PICKER_H;
+      const projected = Math.max(0.04, Math.min(0.92, waterFrac.value + velocity * 0.08));
+      waterFrac.value = withSpring(projected, { damping: 22, stiffness: 180, mass: 0.8 });
+      runOnJS(onPickFromFrac)(projected);
     });
 
   const waterStyle = useAnimatedStyle(() => ({
@@ -336,7 +341,7 @@ function FloodDepthPicker({
           waterFrac.value,
           [0, 0.15, 0.35, 0.55, 0.78],
           [
-            'rgba(59,150,255,0.22)',
+            'rgba(0,210,255,0.22)',
             'rgba(34,197,94,0.28)',
             'rgba(250,190,21,0.32)',
             'rgba(249,115,22,0.35)',
@@ -566,33 +571,6 @@ function FloodDepthPicker({
         </GestureDetector>
       </GestureHandlerRootView>
 
-      {selected && (() => {
-        const l = DEPTH_LEVELS.find(d => d.key === selected)!;
-        const c = colors.severity[l.severity];
-        return (
-          <View style={[fdp.banner, {
-            backgroundColor: isDark ? c + '15' : c + '0C',
-            borderColor: isDark ? c + '30' : c + '22',
-          }]}>
-            <View style={[fdp.bannerIcon, {
-              backgroundColor: c + '18',
-              borderWidth: 1,
-              borderColor: c + '25',
-            }]}>
-              <Ionicons name="water" size={18} color={c} />
-            </View>
-            <View style={{ flex: 1, gap: 3 }}>
-              <Text style={[fdp.bannerTitle, { color: c }]}>{l.label}</Text>
-              <Text style={[fdp.bannerDesc, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>{l.desc}</Text>
-            </View>
-            <View style={[fdp.bannerBadge, { backgroundColor: c + '18' }]}>
-              <Text style={[fdp.bannerBadgeText, { color: c }]}>
-                {TICK_LABELS[DEPTH_LEVELS.indexOf(l)]}
-              </Text>
-            </View>
-          </View>
-        );
-      })()}
     </View>
   );
 }
@@ -606,21 +584,21 @@ function DepthFtText({ depthFt }: { depthFt: SharedValue<number> }) {
 const s = (v: number) => Math.round(v * FIGURE_SCALE);
 
 const fdp = StyleSheet.create({
-  stepBody:  { padding: SCREEN_W < 360 ? 16 : 24, gap: 18 },
+  stepBody:  { padding: SCREEN_W < 360 ? 16 : 24, paddingTop: SCREEN_W < 360 ? 12 : 14, gap: 14 },
   title:     { fontSize: SCREEN_W < 360 ? 19 : 22, fontWeight: '800', letterSpacing: -0.3 },
-  subtitle:  { fontSize: SCREEN_W < 360 ? 13 : 14, lineHeight: 20, letterSpacing: 0.1 },
+  subtitle:  { fontSize: SCREEN_W < 360 ? 13 : 14, lineHeight: 20, letterSpacing: 0.1, marginBottom: 2 },
 
   card: {
     flexDirection: 'row',
-    borderRadius: 28,
-    borderWidth: 1.5,
+    borderRadius: 24,
+    borderWidth: 1,
     height: PICKER_H,
     overflow: 'hidden',
     shadowColor: '#1A3A5C',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.22,
-    shadowRadius: 28,
-    elevation: 14,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 8,
   },
 
   skyTop: {
@@ -646,8 +624,8 @@ const fdp = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingLeft: 6,
   },
-  tickLine: { width: 10, height: 1, borderRadius: 0.5 },
-  tickLabel: { fontSize: SCREEN_W < 360 ? 8 : 9, fontWeight: '700', letterSpacing: 0.3 },
+  tickLine: { width: 14, height: 1.5, borderRadius: 1 },
+  tickLabel: { fontSize: SCREEN_W < 360 ? 9 : 10, fontWeight: '800', letterSpacing: 0.2 },
 
   centerCol: { flex: 1, position: 'relative', overflow: 'hidden', zIndex: 1 },
 
@@ -758,7 +736,7 @@ const fdp = StyleSheet.create({
   dragHintText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
 
   labelCol: {
-    width: SCREEN_W < 360 ? 80 : 96,
+    width: SCREEN_W < 360 ? 86 : 102,
     position: 'relative', zIndex: 3,
   },
   labelItem: {
@@ -767,7 +745,7 @@ const fdp = StyleSheet.create({
     marginBottom: -9,
   },
   labelDot: {
-    width: 9, height: 9, borderRadius: 4.5,
+    width: 10, height: 10, borderRadius: 5,
     borderWidth: 1.5,
   },
   labelDotOuter: {
@@ -781,7 +759,7 @@ const fdp = StyleSheet.create({
   labelPill: {
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1,
   },
-  labelText: { fontSize: SCREEN_W < 360 ? 9 : 10, fontWeight: '500' },
+  labelText: { fontSize: SCREEN_W < 360 ? 10 : 11, fontWeight: '600' },
   labelTextActive: { fontWeight: '800', letterSpacing: 0.2 },
 
   banner: {
@@ -907,25 +885,35 @@ function EvidenceStep({
       {photos.length === 0 && (
         <View style={styles.evidenceGrid}>
           <Pressable
-            style={[styles.evidenceAdd, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[600] }]}
+            style={[styles.evidenceAdd, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
             onPress={openCamera}
             accessibilityRole="button"
             accessibilityLabel="Take a photo"
           >
-            <Ionicons name="camera" size={30} color={colors.brand[500]} />
-            <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[400] }]}>
-              Camera
+            <View style={[styles.evidenceIconCircle, isDark && { backgroundColor: 'rgba(79,142,247,0.15)' }]}>
+              <Ionicons name="camera" size={32} color={colors.brand[500]} />
+            </View>
+            <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[300] }]}>
+              Take Photo
+            </Text>
+            <Text style={[styles.evidenceAddSub, isDark && { color: colors.slate[500] }]}>
+              Use your camera
             </Text>
           </Pressable>
           <Pressable
-            style={[styles.evidenceAdd, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[600] }]}
+            style={[styles.evidenceAdd, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
             onPress={openGallery}
             accessibilityRole="button"
             accessibilityLabel="Choose from gallery"
           >
-            <Ionicons name="images" size={30} color={colors.brand[500]} />
-            <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[400] }]}>
+            <View style={[styles.evidenceIconCircle, isDark && { backgroundColor: 'rgba(124,58,237,0.12)' }]}>
+              <Ionicons name="images" size={32} color="#7C3AED" />
+            </View>
+            <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[300] }]}>
               Gallery
+            </Text>
+            <Text style={[styles.evidenceAddSub, isDark && { color: colors.slate[500] }]}>
+              Choose existing
             </Text>
           </Pressable>
         </View>
@@ -964,6 +952,15 @@ function EvidenceStep({
   );
 }
 
+const QUICK_CHIPS = [
+  'Road impassable',
+  'Vehicles stranded',
+  'Rising water',
+  'Strong current',
+  'Debris blocking',
+  'Power lines down',
+];
+
 function DescriptionStep({
   value,
   onChange,
@@ -973,6 +970,11 @@ function DescriptionStep({
   onChange: (v: string) => void;
   isDark: boolean;
 }) {
+  function addChip(chip: string) {
+    const separator = value.length > 0 && !value.endsWith(' ') ? '. ' : '';
+    onChange(value + separator + chip);
+  }
+
   return (
     <View style={styles.stepBody}>
       <Text style={[styles.stepTitle, isDark && { color: colors.white }]}>
@@ -982,28 +984,48 @@ function DescriptionStep({
         Optional. Describe what you see, any vehicles involved, etc.
       </Text>
 
-      <TextInput
-        style={[
-          styles.textarea,
-          isDark && {
-            backgroundColor: colors.slate[900],
-            borderColor: colors.slate[600] + '88',
-            color: colors.white,
-          },
-        ]}
-        placeholder="E.g. Water is about knee-deep, road is impassable for small vehicles..."
-        placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
-        multiline
-        numberOfLines={5}
-        textAlignVertical="top"
-        value={value}
-        onChangeText={onChange}
-        accessibilityLabel="Additional description"
-        maxLength={500}
-      />
-      <Text style={[styles.charCount, isDark && { color: colors.slate[600] }]}>
-        {value.length}/500
-      </Text>
+      <View style={[
+        styles.textareaWrap,
+        isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[600] + '88' },
+      ]}>
+        <View style={styles.textareaIconRow}>
+          <Ionicons name="create-outline" size={16} color={isDark ? colors.slate[500] : colors.slate[400]} />
+          <Text style={[styles.textareaLabel, isDark && { color: colors.slate[500] }]}>Description</Text>
+        </View>
+        <TextInput
+          style={[
+            styles.textarea,
+            isDark && { color: colors.white },
+          ]}
+          placeholder="E.g. Water is about knee-deep, road is impassable for small vehicles..."
+          placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
+          multiline
+          numberOfLines={5}
+          textAlignVertical="top"
+          value={value}
+          onChangeText={onChange}
+          accessibilityLabel="Additional description"
+          maxLength={500}
+        />
+        <Text style={[styles.charCount, isDark && { color: colors.slate[600] }]}>
+          {value.length}/500
+        </Text>
+      </View>
+
+      <View style={styles.chipsWrap}>
+        <Text style={[styles.chipsLabel, isDark && { color: colors.slate[400] }]}>Quick add:</Text>
+        <View style={styles.chipsRow}>
+          {QUICK_CHIPS.map(chip => (
+            <Pressable
+              key={chip}
+              onPress={() => addChip(chip)}
+              style={[styles.chip, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
+            >
+              <Text style={[styles.chipText, isDark && { color: colors.slate[300] }]}>{chip}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
     </View>
   );
 }
@@ -1124,6 +1146,7 @@ export default function ReportScreen() {
     setLocation(null);
     setSeverity(null);
     setFloodDepth(null);
+    setPhotos([]);
     setDescription('');
     setStep(0);
   }
@@ -1202,51 +1225,61 @@ export default function ReportScreen() {
     }
   }
 
+  function handleConfirmationDone() {
+    setSubmitted(false);
+    setSubmittedRef('');
+    resetForm();
+    detectLocation();
+    router.replace('/resident');
+  }
+
   if (submitted) {
     return (
-      <ConfirmationScreen
-        reference={submittedRef}
-        onDone={() => {
-          setSubmitted(false);
-          setStep(0);
-          setLocation(null);
-          setSeverity(null);
-          setFloodDepth(null);
-          setPhotos([]);
-          setDescription('');
-          detectLocation();
-          router.replace('/resident');
-        }}
-      />
+      <View style={[styles.root, { backgroundColor: screenBg }]}>
+        <ConfirmationScreen reference={submittedRef} onDone={handleConfirmationDone} />
+      </View>
     );
   }
 
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
-      <LinearGradient colors={[colors.brand[500], colors.brand[700]]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <Pressable
-          onPress={step === 0 ? () => router.back() : () => animateStepTransition('back', () => setStep(s => s - 1))}
-          style={styles.backBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-          hitSlop={8}
-        >
-          <Ionicons name="chevron-back" size={22} color={colors.white} />
-        </Pressable>
+      <LinearGradient colors={['#00D2FF', '#4A6CF7', '#7C3AED']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        {/* Orbs */}
+        <View style={styles.orb1} pointerEvents="none" />
+        <View style={styles.orb2} pointerEvents="none" />
 
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={styles.headerTitle}>Flood Report</Text>
-          <Text style={styles.headerStep}>
-            Step {step + 1} of {TOTAL_STEPS} — {STEP_TITLES[step]}
-          </Text>
+        <View style={styles.headerRow}>
+          {step > 0 && (
+            <Pressable
+              onPress={() => animateStepTransition('back', () => setStep(s => s - 1))}
+              style={styles.backBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              hitSlop={8}
+            >
+              <Ionicons name="chevron-back" size={22} color={colors.white} />
+            </Pressable>
+          )}
+
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={styles.headerTitle}>Flood Report</Text>
+            <Text style={styles.headerStep}>
+              Step {step + 1} of {TOTAL_STEPS} — {STEP_TITLES[step]}
+            </Text>
+          </View>
         </View>
 
-        <StepIndicator current={step} total={TOTAL_STEPS} />
+        <ProgressBar current={step} total={TOTAL_STEPS} />
+
+        {/* Wave transition */}
+        <View style={styles.waveWrap} pointerEvents="none">
+          <View style={[styles.waveShape, { backgroundColor: cardBg }]} />
+        </View>
       </LinearGradient>
 
       <ScrollView
         style={[styles.scroll, { backgroundColor: cardBg }]}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 200 }}
+        contentContainerStyle={{ paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         scrollEnabled={step !== 1}
@@ -1301,38 +1334,41 @@ export default function ReportScreen() {
         style={[
           styles.actionBar,
           {
-            paddingBottom: insets.bottom + 100,
+            paddingBottom: Math.max(insets.bottom, 16) + 8,
             backgroundColor: cardBg,
-            borderTopColor: isDark ? colors.slate[900] : colors.slate[100],
           },
         ]}
       >
-        {(severity || floodDepth) && (
-          <View style={styles.summaryRow}>
-            <View style={[styles.summaryChip, isDark && { backgroundColor: colors.slate[900] }]}>
-              <Ionicons name="water" size={11} color={colors.brand[500]} />
-              <Text style={[styles.summaryChipText, isDark && { color: colors.slate[400] }]}>Flood</Text>
-            </View>
-            {severity && <SeverityChip level={severity} size="sm" />}
-            {floodDepth && (
-              <View style={[styles.summaryChip, isDark && { backgroundColor: colors.slate[900] }]}>
-                <Ionicons name="water" size={11} color={colors.brand[500]} />
-                <Text style={[styles.summaryChipText, isDark && { color: colors.slate[400] }]}>
-                  {DEPTH_LEVELS.find(d => d.key === floodDepth)?.label}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
-
         <Animated.View style={shakeStyle}>
-          <PrimaryButton
-            label={step < TOTAL_STEPS - 1 ? 'Continue' : 'Submit report'}
-            onPress={handleNext}
-            loading={loading || checkingDups}
-            fullWidth
-            size="lg"
-          />
+          {step < TOTAL_STEPS - 1 ? (
+            <PrimaryButton
+              label="Continue"
+              onPress={handleNext}
+              loading={loading || checkingDups}
+              fullWidth
+              size="lg"
+            />
+          ) : (
+            <Pressable onPress={handleNext} disabled={loading || checkingDups} accessibilityRole="button">
+              {({ pressed }) => (
+                <LinearGradient
+                  colors={pressed ? ['#00B8E0', '#3A5AF7', '#6B2ED0'] : ['#00D2FF', '#4A6CF7', '#7C3AED']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.submitGradient}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="paper-plane" size={18} color="#fff" />
+                      <Text style={styles.submitText}>Submit Report</Text>
+                    </>
+                  )}
+                </LinearGradient>
+              )}
+            </Pressable>
+          )}
         </Animated.View>
       </View>
     </View>
@@ -1343,10 +1379,14 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
 
   header: {
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    gap: 14,
+    overflow: 'hidden',
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingBottom: 16,
     gap: 12,
   },
   backBtn: {
@@ -1359,6 +1399,24 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 18, fontWeight: '700', color: colors.white },
   headerStep:  { fontSize: 12, color: 'rgba(255,255,255,0.72)' },
+  orb1: {
+    position: 'absolute', top: -30, right: -30,
+    width: 120, height: 120, borderRadius: 60,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  orb2: {
+    position: 'absolute', bottom: 10, left: -20,
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  waveWrap: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    height: 16, overflow: 'hidden',
+  },
+  waveShape: {
+    position: 'absolute', bottom: 0, left: -10, right: -10,
+    height: 20, borderTopLeftRadius: 18, borderTopRightRadius: 18,
+  },
 
   scroll: { flex: 1 },
 
@@ -1370,8 +1428,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginHorizontal: 20,
-    marginTop: 16,
+    marginHorizontal: 24,
+    marginTop: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 14,
@@ -1392,6 +1450,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.slate[200],
     backgroundColor: colors.white,
+    overflow: 'hidden',
+  },
+  severityAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
   },
   severityLeft: {
     width: 46,
@@ -1439,14 +1507,21 @@ const styles = StyleSheet.create({
   photoAddLabel: { fontSize: 12, color: colors.brand[500], fontWeight: '600' },
   evidenceGrid: { flexDirection: 'row', gap: 14 },
   evidenceAdd: {
-    flex: 1, aspectRatio: 1,
-    borderRadius: 16, borderWidth: 2,
+    flex: 1,
+    borderRadius: 20, borderWidth: 1.5,
     borderStyle: 'dashed', borderColor: colors.brand[200],
     backgroundColor: colors.brand[50],
     alignItems: 'center', justifyContent: 'center',
-    gap: 10, maxHeight: 150,
+    gap: 8, paddingVertical: 32,
   },
-  evidenceAddLabel: { fontSize: 14, color: colors.brand[500], fontWeight: '700' },
+  evidenceIconCircle: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: 'rgba(31,111,191,0.10)',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 4,
+  },
+  evidenceAddLabel: { fontSize: 15, color: colors.slate[800], fontWeight: '700' },
+  evidenceAddSub: { fontSize: 12, color: colors.slate[400] },
   evidenceRowBtns: { flexDirection: 'row', gap: 10 },
   evidenceRowBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -1461,33 +1536,69 @@ const styles = StyleSheet.create({
   },
   evidenceHintText: { flex: 1, fontSize: 12, color: colors.slate[600], lineHeight: 18 },
 
-  textarea: {
+  textareaWrap: {
     borderWidth: 1.5,
     borderColor: colors.slate[200],
-    borderRadius: 14,
+    borderRadius: 16,
+    backgroundColor: colors.white,
     padding: 16,
+    gap: 8,
+  },
+  textareaIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  textareaLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.slate[400],
+    letterSpacing: 0.3,
+  },
+  textarea: {
     fontSize: 15,
     color: colors.slate[900],
-    minHeight: 140,
-    backgroundColor: colors.white,
+    minHeight: 120,
     lineHeight: 22,
+    padding: 0,
   },
-  charCount: { fontSize: 12, color: colors.slate[400], alignSelf: 'flex-end' },
+  charCount: { fontSize: 11, color: colors.slate[400], alignSelf: 'flex-end' },
+  chipsWrap: { gap: 10 },
+  chipsLabel: { fontSize: 12, fontWeight: '600', color: colors.slate[500] },
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.slate[200],
+    backgroundColor: colors.slate[50],
+  },
+  chipText: { fontSize: 13, fontWeight: '500', color: colors.slate[600] },
 
   actionBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     paddingHorizontal: 20,
     paddingTop: 14,
-    borderTopWidth: StyleSheet.hairlineWidth,
     gap: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
+  },
+  submitGradient: {
+    height: 56,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
     elevation: 8,
+  },
+  submitText: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: 0.3,
   },
   summaryRow: { flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
   summaryChip: {

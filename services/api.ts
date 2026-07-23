@@ -488,9 +488,12 @@ interface RawUserNotification {
 }
 
 function adaptUserNotification(raw: RawUserNotification): AlertItem {
+  const isRejected = raw.new_status === 'rejected'
+    || raw.title?.toLowerCase().includes('not verified')
+    || raw.title?.toLowerCase().includes('rejected');
   return {
     id:       `notif_${raw.id}`,
-    kind:     'status_update',
+    kind:     isRejected ? 'rejected' : 'status_update',
     title:    raw.title,
     body:     raw.message,
     area:     '',

@@ -24,6 +24,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
 import { updateProfile, changePassword, updateDutyStatus, uploadAvatar, getCurrentUser } from '@/services/api';
+import * as Storage from '@/utils/storage';
 
 function getStrengthLevel(len: number): { score: number; label: string; color: string } {
   if (len === 0) return { score: 0, label: '', color: '' };
@@ -278,6 +279,24 @@ export default function ProfileScreen() {
       setIsOnDuty(data.isOnDuty ?? false);
     }).catch(() => {});
   }, [token]);
+
+  // Load notification preferences from storage
+  useEffect(() => {
+    Promise.all([
+      Storage.getItem('ft_notif_critical'),
+      Storage.getItem('ft_notif_advisory'),
+      Storage.getItem('ft_notif_reports'),
+    ]).then(([nc, na, nr]) => {
+      if (nc !== null) setNotifCritical(nc !== 'false');
+      if (na !== null) setNotifAdvisory(na !== 'false');
+      if (nr !== null) setNotifMyReports(nr !== 'false');
+    }).catch(() => {});
+  }, []);
+
+  // Persist notification preferences
+  useEffect(() => { Storage.setItem('ft_notif_critical', String(notifCritical)); }, [notifCritical]);
+  useEffect(() => { Storage.setItem('ft_notif_advisory', String(notifAdvisory)); }, [notifAdvisory]);
+  useEffect(() => { Storage.setItem('ft_notif_reports',  String(notifMyReports)); }, [notifMyReports]);
 
   useEffect(() => {
     Animated.stagger(80, [

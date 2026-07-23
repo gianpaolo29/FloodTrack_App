@@ -12,6 +12,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Share,
   Text,
   TextInput,
   View,
@@ -21,6 +22,7 @@ import * as Location from 'expo-location';
 import MapView, {
   Circle,
   Marker,
+  Polyline,
   PROVIDER_GOOGLE,
   type MapType,
   type Region,
@@ -178,6 +180,73 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
 
 function fmtDist(km: number): string {
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
+}
+
+/** Decode Google encoded polyline string into array of coordinates */
+function decodePolyline(encoded: string): { latitude: number; longitude: number }[] {
+  const points: { latitude: number; longitude: number }[] = [];
+  let index = 0, lat = 0, lng = 0;
+  while (index < encoded.length) {
+    let shift = 0, result = 0, byte: number;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    lat += result & 1 ? ~(result >> 1) : result >> 1;
+
+    shift = 0; result = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    lng += result & 1 ? ~(result >> 1) : result >> 1;
+
+    points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+  }
+  return points;
+}
+
+/** Build flood-avoidance waypoints: find intermediate point that steers away from flood zones */
+function buildAvoidanceWaypoints(
+  origin: { latitude: number; longitude: number },
+  dest: { latitude: number; longitude: number },
+  floodReports: Report[],
+): string | undefined {
+  // Only consider active (non-resolved) reports with moderate+ severity along the route corridor
+  const active = floodReports.filter(r =>
+    r.status !== 'resolved' && (r.severity === 'moderate' || r.severity === 'high' || r.severity === 'critical'),
+  );
+  if (active.length === 0) return undefined;
+
+  // Check if any flood zone is within ~500m of the straight-line path
+  const midLat = (origin.latitude + dest.latitude) / 2;
+  const midLng = (origin.longitude + dest.longitude) / 2;
+  const corridorRadius = haversineKm(origin.latitude, origin.longitude, dest.latitude, dest.longitude) / 2 + 0.3;
+
+  const nearbyFloods = active.filter(r => {
+    const d = haversineKm(midLat, midLng, r.latitude, r.longitude);
+    return d < corridorRadius;
+  });
+
+  if (nearbyFloods.length === 0) return undefined;
+
+  // Compute centroid of flood zones to avoid
+  const floodCentroid = {
+    lat: nearbyFloods.reduce((s, r) => s + r.latitude, 0) / nearbyFloods.length,
+    lng: nearbyFloods.reduce((s, r) => s + r.longitude, 0) / nearbyFloods.length,
+  };
+
+  // Push midpoint away from flood centroid
+  const offsetLat = midLat - floodCentroid.lat;
+  const offsetLng = midLng - floodCentroid.lng;
+  const norm = Math.sqrt(offsetLat ** 2 + offsetLng ** 2) || 0.001;
+  const pushDist = 0.004; // ~400m push
+  const waypointLat = midLat + (offsetLat / norm) * pushDist;
+  const waypointLng = midLng + (offsetLng / norm) * pushDist;
+
+  return `${waypointLat},${waypointLng}`;
 }
 
 const FALLBACK_EVAC_CENTERS: EvacCenter[] = [
@@ -780,7 +849,7 @@ function EvacSheet({
 /* ───────────── Search Pin Detail Sheet ───────────── */
 
 function SearchPinSheet({
-  pin, onClose, onGetDirections, isDark, bottomInset, distanceKm,
+  pin, onClose, onGetDirections, isDark, bottomInset, distanceKm, isRouteLoading,
 }: {
   pin: { name: string; latitude: number; longitude: number };
   onClose: () => void;
@@ -788,29 +857,44 @@ function SearchPinSheet({
   isDark: boolean;
   bottomInset: number;
   distanceKm: number | null;
+  isRouteLoading?: boolean;
 }) {
   const bg       = isDark ? colors.slate[900] : colors.white;
   const textMain = isDark ? colors.white      : colors.slate[900];
   const textSub  = isDark ? colors.slate[400] : colors.slate[500];
 
+  const walkMins = distanceKm !== null ? Math.round(distanceKm / 5 * 60) : null;
+  const walkTime = walkMins !== null
+    ? walkMins >= 60
+      ? `${Math.floor(walkMins / 60)}h ${walkMins % 60}m`
+      : `${walkMins}m`
+    : null;
+
+  function handleShare() {
+    Share.share({
+      message: `${pin.name}\nhttps://www.google.com/maps/search/?api=1&query=${pin.latitude},${pin.longitude}`,
+    });
+  }
+
   return (
-    <View style={[spSheet.sheet, { backgroundColor: bg, paddingBottom: bottomInset + 100 }]}>
-      <View style={spSheet.accentBar} />
+    <View style={[spSheet.sheet, { backgroundColor: bg, paddingBottom: Math.max(bottomInset, 12) + 16 }]}>
       <View style={spSheet.handle} />
 
       <View style={spSheet.header}>
-        <View style={spSheet.iconWrap}>
-          <Ionicons name="location" size={24} color={colors.white} />
-        </View>
-        <View style={{ flex: 1, gap: 3 }}>
-          <Text style={[spSheet.typeLabel, { color: colors.brand[500] }]}>
-            PLACE
-          </Text>
+        <LinearGradient
+          colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={spSheet.iconWrap}
+        >
+          <Ionicons name="location" size={22} color={colors.white} />
+        </LinearGradient>
+        <View style={{ flex: 1, gap: 2 }}>
           <Text style={[spSheet.title, { color: textMain }]} numberOfLines={2}>
             {pin.name}
           </Text>
-          <Text style={[spSheet.coords, { color: textSub }]}>
-            {pin.latitude.toFixed(5)}, {pin.longitude.toFixed(5)}
+          <Text style={[spSheet.typeLabel, { color: textSub }]}>
+            Search result
           </Text>
         </View>
         <Pressable
@@ -823,25 +907,57 @@ function SearchPinSheet({
         </Pressable>
       </View>
 
-      <View style={spSheet.statsRow}>
-        {distanceKm !== null && (
-          <View style={[spSheet.statPill, { backgroundColor: colors.brand[500] + '18' }]}>
+      {distanceKm !== null && (
+        <View style={spSheet.statsRow}>
+          <View style={[spSheet.statPill, { backgroundColor: colors.brand[500] + '12' }]}>
             <Ionicons name="walk" size={14} color={colors.brand[500]} />
             <Text style={[spSheet.statText, { color: colors.brand[500] }]}>
-              ~{fmtDist(distanceKm)} away
+              ~{fmtDist(distanceKm)}
             </Text>
           </View>
-        )}
-      </View>
+          {walkTime && (
+            <View style={[spSheet.statPill, { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50] }]}>
+              <Ionicons name="time-outline" size={14} color={isDark ? colors.slate[400] : colors.slate[500]} />
+              <Text style={[spSheet.statText, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
+                ~{walkTime} walk
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
 
       <View style={spSheet.actions}>
         <Pressable
-          style={({ pressed }) => [spSheet.dirBtn, { opacity: pressed ? 0.85 : 1 }]}
+          style={({ pressed }) => [spSheet.dirBtnWrap, pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] }]}
           onPress={onGetDirections}
           accessibilityLabel="Get directions"
         >
-          <Ionicons name="navigate" size={16} color={colors.white} />
-          <Text style={spSheet.dirBtnText}>Get Directions</Text>
+          <LinearGradient
+            colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={spSheet.dirBtn}
+          >
+            {isRouteLoading ? (
+              <ActivityIndicator size="small" color={colors.white} />
+            ) : (
+              <>
+                <Ionicons name="navigate" size={16} color={colors.white} />
+                <Text style={spSheet.dirBtnText}>Get Directions</Text>
+              </>
+            )}
+          </LinearGradient>
+        </Pressable>
+        <Pressable
+          onPress={handleShare}
+          style={({ pressed }) => [
+            spSheet.shareBtn,
+            { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50], borderColor: isDark ? colors.dark.border : colors.slate[200] },
+            pressed && { opacity: 0.8 },
+          ]}
+          accessibilityLabel="Share location"
+        >
+          <Ionicons name="share-outline" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
         </Pressable>
       </View>
     </View>
@@ -851,44 +967,45 @@ function SearchPinSheet({
 const spSheet = StyleSheet.create({
   sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15, shadowRadius: 20, elevation: 16,
+    shadowOpacity: 0.12, shadowRadius: 16, elevation: 12,
   },
-  accentBar: { height: 4, backgroundColor: colors.brand[500] },
   handle: {
-    width: 36, height: 4, borderRadius: 2,
-    backgroundColor: colors.slate[200],
+    width: 40, height: 5, borderRadius: 3,
+    backgroundColor: colors.slate[300],
     alignSelf: 'center', marginTop: 10, marginBottom: 14,
   },
-  header:    { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, marginBottom: 14 },
+  header:    { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, marginBottom: 12 },
   iconWrap: {
-    width: 48, height: 48, borderRadius: 14,
-    backgroundColor: colors.brand[500],
+    width: 46, height: 46, borderRadius: 23,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  typeLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
-  title:     { fontSize: 16, fontWeight: '700', lineHeight: 22 },
-  coords:    { fontSize: 12 },
+  typeLabel: { fontSize: 12, fontWeight: '500' },
+  title:     { fontSize: 17, fontWeight: '800', lineHeight: 22, letterSpacing: -0.2 },
   closeBtn: {
-    width: 30, height: 30, borderRadius: 10,
+    width: 32, height: 32, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  statsRow:  { flexDirection: 'row', gap: 10, paddingHorizontal: 16 },
+  statsRow:  { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginBottom: 4 },
   statPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
   },
   statText:  { fontSize: 13, fontWeight: '600' },
-  actions:   { paddingHorizontal: 16, paddingTop: 12 },
+  actions:   { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 10 },
+  dirBtnWrap: { flex: 1, borderRadius: 14, overflow: 'hidden' },
   dirBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, backgroundColor: colors.brand[500],
-    paddingVertical: 14, borderRadius: 14,
+    gap: 8, paddingVertical: 14, borderRadius: 14,
   },
-  dirBtnText: { color: colors.white, fontWeight: '700', fontSize: 15 },
+  dirBtnText: { color: colors.white, fontWeight: '800', fontSize: 15, letterSpacing: 0.2 },
+  shareBtn: {
+    width: 50, height: 50, borderRadius: 14,
+    borderWidth: 1, alignItems: 'center', justifyContent: 'center',
+  },
 });
 
 const evs = StyleSheet.create({
@@ -1428,6 +1545,9 @@ export default function MapScreen() {
   const [searchPin, setSearchPin] = useState<{ name: string; latitude: number; longitude: number } | null>(null);
   const [googlePlaces, setGooglePlaces] = useState<{ placeId: string; main: string; secondary: string; latitude?: number; longitude?: number }[]>([]);
   const [googlePlaceLoading, setGooglePlaceLoading] = useState<string | null>(null);
+  const [routeCoords, setRouteCoords]   = useState<{ latitude: number; longitude: number }[]>([]);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeInfo, setRouteInfo]       = useState<{ distance: string; duration: string } | null>(null);
   const [weather,        setWeather]        = useState<WeatherData | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [showHomeSetup,   setShowHomeSetup]   = useState(false);
@@ -1481,6 +1601,62 @@ export default function MapScreen() {
       setShowHomeSetup(false);
     } finally {
       setHomeSetupLoading(false);
+    }
+  }
+
+  function clearRoute() {
+    setRouteCoords([]);
+    setRouteInfo(null);
+    setRouteLoading(false);
+  }
+
+  async function fetchRoute(destLat: number, destLng: number) {
+    if (!userLocation) return;
+    const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID;
+    if (!apiKey) return;
+
+    setRouteLoading(true);
+    try {
+      const origin = `${userLocation.latitude},${userLocation.longitude}`;
+      const dest = `${destLat},${destLng}`;
+      const waypoint = buildAvoidanceWaypoints(userLocation, { latitude: destLat, longitude: destLng }, reports);
+
+      let url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${dest}&mode=driving&key=${apiKey}`;
+      if (waypoint) {
+        url += `&waypoints=${encodeURIComponent(waypoint)}`;
+      }
+
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const points = decodePolyline(route.overview_polyline.points);
+        setRouteCoords(points);
+
+        // Sum up all legs
+        let totalDist = '';
+        let totalDur = '';
+        if (route.legs && route.legs.length > 0) {
+          const distM = route.legs.reduce((s: number, l: any) => s + l.distance.value, 0);
+          const durS = route.legs.reduce((s: number, l: any) => s + l.duration.value, 0);
+          totalDist = distM < 1000 ? `${distM} m` : `${(distM / 1000).toFixed(1)} km`;
+          totalDur = durS < 60 ? `${durS}s` : durS < 3600 ? `${Math.round(durS / 60)} min` : `${Math.floor(durS / 3600)}h ${Math.round((durS % 3600) / 60)}m`;
+        }
+        setRouteInfo({ distance: totalDist, duration: totalDur });
+
+        // Fit map to route
+        if (mapRef.current && points.length > 1) {
+          mapRef.current.fitToCoordinates(points, {
+            edgePadding: { top: 120, right: 60, bottom: 300, left: 60 },
+            animated: true,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Route fetch failed', e);
+    } finally {
+      setRouteLoading(false);
     }
   }
 
@@ -1996,49 +2172,87 @@ export default function MapScreen() {
             anchor={{ x: 0.5, y: 1 }}
             zIndex={12}
           >
-            <View style={{ alignItems: 'center' }}>
+            <View style={{ alignItems: 'center', width: 36, height: 48 }}>
+              {/* Teardrop body — circle + triangle merged */}
               <View style={{
-                backgroundColor: colors.brand[500],
-                borderRadius: 20,
                 width: 36,
                 height: 36,
+                borderRadius: 18,
+                backgroundColor: '#0E7490',
                 alignItems: 'center',
                 justifyContent: 'center',
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.3,
-                shadowRadius: 4,
-                elevation: 6,
+                zIndex: 2,
               }}>
-                <Ionicons name="location" size={20} color="#fff" />
+                <View style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: 6,
+                  backgroundColor: '#fff',
+                }} />
               </View>
               <View style={{
                 width: 0, height: 0,
-                borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8,
+                borderLeftWidth: 10, borderRightWidth: 10, borderTopWidth: 18,
                 borderLeftColor: 'transparent', borderRightColor: 'transparent',
-                borderTopColor: colors.brand[500],
-                marginTop: -1,
+                borderTopColor: '#0E7490',
+                marginTop: -8,
+                zIndex: 1,
               }} />
+              {/* Shadow underneath */}
               <View style={{
-                backgroundColor: isDark ? '#1E293B' : '#fff',
-                paddingHorizontal: 8,
-                paddingVertical: 3,
-                borderRadius: 8,
-                marginTop: 2,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.15,
-                shadowRadius: 2,
-                elevation: 3,
-              }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#fff' : colors.slate[800] }}>
-                  {searchPin.name}
-                </Text>
-              </View>
+                position: 'absolute', bottom: -2,
+                width: 12, height: 4, borderRadius: 2,
+                backgroundColor: 'rgba(0,0,0,0.2)',
+              }} />
             </View>
           </Marker>
         )}
+
+        {/* Route polyline */}
+        {routeCoords.length > 1 && (
+          <>
+            {/* Shadow line */}
+            <Polyline
+              coordinates={routeCoords}
+              strokeWidth={7}
+              strokeColor="rgba(0,0,0,0.15)"
+            />
+            {/* Main route line */}
+            <Polyline
+              coordinates={routeCoords}
+              strokeWidth={5}
+              strokeColor="#4A6CF7"
+            />
+          </>
+        )}
       </MapView>
+
+      {/* Route info banner */}
+      {routeInfo && routeCoords.length > 0 && (
+        <View style={[
+          s.routeBanner,
+          { top: insets.top + 8, backgroundColor: isDark ? colors.slate[900] : colors.white },
+        ]}>
+          <View style={s.routeBannerLeft}>
+            <Ionicons name="navigate" size={18} color="#4A6CF7" />
+            <View>
+              <Text style={[s.routeBannerDuration, { color: isDark ? colors.white : colors.slate[900] }]}>
+                {routeInfo.duration}
+              </Text>
+              <Text style={[s.routeBannerDist, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
+                {routeInfo.distance}
+              </Text>
+            </View>
+          </View>
+          <Pressable
+            onPress={clearRoute}
+            style={[s.routeBannerClose, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]}
+            hitSlop={8}
+          >
+            <Ionicons name="close" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
+          </Pressable>
+        </View>
+      )}
 
       <View
         style={[s.topCard, { paddingTop: insets.top + 8, backgroundColor: cardBg }]}
@@ -2492,23 +2706,13 @@ export default function MapScreen() {
       {searchPin && !selected && !selectedEvac && (
         <SearchPinSheet
           pin={searchPin}
-          onClose={() => setSearchPin(null)}
+          onClose={() => { setSearchPin(null); clearRoute(); }}
           onGetDirections={() => {
-            const { latitude: lat, longitude: lng, name } = searchPin;
-            const label = encodeURIComponent(name);
-            const url = Platform.OS === 'ios'
-              ? `maps://?daddr=${lat},${lng}&dirflg=d`
-              : `google.navigation:q=${lat},${lng}&mode=d`;
-            Linking.canOpenURL(url).then(supported => {
-              if (supported) {
-                Linking.openURL(url);
-              } else {
-                Linking.openURL(`geo:${lat},${lng}?q=${lat},${lng}(${label})`);
-              }
-            });
+            fetchRoute(searchPin.latitude, searchPin.longitude);
           }}
           isDark={isDark}
           bottomInset={insets.bottom}
+          isRouteLoading={routeLoading}
           distanceKm={
             userLocation
               ? haversineKm(userLocation.latitude, userLocation.longitude, searchPin.latitude, searchPin.longitude)
@@ -2796,6 +3000,42 @@ const s = StyleSheet.create({
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     marginTop: -1,
+  },
+  routeBanner: {
+    position: 'absolute',
+    left: 16, right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 20,
+  },
+  routeBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  routeBannerDuration: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  routeBannerDist: {
+    fontSize: 12,
+    marginTop: 1,
+  },
+  routeBannerClose: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 

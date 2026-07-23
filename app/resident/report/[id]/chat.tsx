@@ -24,7 +24,7 @@ import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useNetworkStatus } from '@/hooks/use-network-status';
-import { getReportMessages, sendReportMessage, markMessagesRead } from '@/services/api';
+import { getReportMessages, sendReportMessage, markMessagesRead, getReportDetail } from '@/services/api';
 import { socketService, adaptSocketMessage, type RawSocketMessage, type TypingUser } from '@/services/socket';
 import type { IncidentMessage } from '@/types';
 
@@ -127,15 +127,35 @@ export default function ResidentChatScreen() {
     status: 'sending' | 'failed';
   }>>([]);
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
+  const [reportStatus, setReportStatus] = useState<string | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingClearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
+  const isChatClosed = reportStatus === 'resolved';
+
   const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
+
+  // Fetch report status to check if resolved
+  useEffect(() => {
+    if (!token) return;
+    getReportDetail(id, token)
+      .then(detail => setReportStatus(detail.status))
+      .catch(() => {});
+  }, [id, token]);
 
   useEffect(() => {
     if (!token || !user) return;
     socketService.connect(token);
     socketService.joinReport(id);
+
+    // Listen for report status changes (e.g. resolved)
+    const handleStatusChange = (data: { reportId: string }) => {
+      if (data.reportId === id && token) {
+        getReportDetail(id, token)
+          .then(detail => setReportStatus(detail.status))
+          .catch(() => {});
+      }
+    };
 
     const handleNewMessage = (raw: RawSocketMessage) => {
       const msg = adaptSocketMessage(raw, id);
@@ -160,11 +180,13 @@ export default function ResidentChatScreen() {
 
     socketService.on<RawSocketMessage>('new-message', handleNewMessage);
     socketService.on<TypingUser>('typing-update', handleTypingUpdate);
+    socketService.on<{ reportId: string }>('report-status', handleStatusChange);
 
     return () => {
       socketService.leaveReport(id);
       socketService.off<RawSocketMessage>('new-message', handleNewMessage);
       socketService.off<TypingUser>('typing-update', handleTypingUpdate);
+      socketService.off<{ reportId: string }>('report-status', handleStatusChange);
       typingClearTimers.current.forEach(t => clearTimeout(t));
       typingClearTimers.current.clear();
     };
@@ -355,49 +377,67 @@ export default function ResidentChatScreen() {
         />
       )}
 
-      {/* Input bar */}
-      <View style={[
-        s.inputBarWrap,
-        {
-          paddingBottom: insets.bottom + 8,
-          backgroundColor: isDark ? colors.dark.surface : colors.white,
-          borderTopColor: isDark ? colors.dark.border : colors.slate[100],
-        },
-      ]}>
-        {typingUsers.length > 0 && (
-          <View style={s.typingIndicator}>
-            <TypingDots />
-            <Text style={[s.typingText, isDark && { color: colors.slate[500] }]}>
-              {typingUsers.map(u => u.name).join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+      {/* Input bar or resolved banner */}
+      {isChatClosed ? (
+        <View style={[
+          s.closedBanner,
+          {
+            paddingBottom: insets.bottom + 8,
+            backgroundColor: isDark ? colors.dark.surface : colors.white,
+            borderTopColor: isDark ? colors.dark.border : colors.slate[100],
+          },
+        ]}>
+          <View style={s.closedBannerInner}>
+            <Ionicons name="checkmark-circle" size={18} color={colors.severity.low} />
+            <Text style={[s.closedBannerText, isDark && { color: colors.slate[400] }]}>
+              This report has been resolved. Chat is now closed.
             </Text>
           </View>
-        )}
-        <View style={s.inputBar}>
-          <TextInput
-            style={[
-              s.input,
-              isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border, color: colors.white },
-            ]}
-            placeholder="Type a message..."
-            placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
-            value={text}
-            onChangeText={handleTextChange}
-            multiline
-            maxLength={1000}
-          />
-          <Pressable
-            onPress={handleSend}
-            disabled={!text.trim()}
-            style={({ pressed }) => [
-              s.sendBtn,
-              !text.trim() && { opacity: 0.4 },
-              pressed && { transform: [{ scale: 0.9 }] },
-            ]}
-          >
-            <Ionicons name="send" size={18} color={colors.white} />
-          </Pressable>
         </View>
-      </View>
+      ) : (
+        <View style={[
+          s.inputBarWrap,
+          {
+            paddingBottom: insets.bottom + 8,
+            backgroundColor: isDark ? colors.dark.surface : colors.white,
+            borderTopColor: isDark ? colors.dark.border : colors.slate[100],
+          },
+        ]}>
+          {typingUsers.length > 0 && (
+            <View style={s.typingIndicator}>
+              <TypingDots />
+              <Text style={[s.typingText, isDark && { color: colors.slate[500] }]}>
+                {typingUsers.map(u => u.name).join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+              </Text>
+            </View>
+          )}
+          <View style={s.inputBar}>
+            <TextInput
+              style={[
+                s.input,
+                isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border, color: colors.white },
+              ]}
+              placeholder="Type a message..."
+              placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
+              value={text}
+              onChangeText={handleTextChange}
+              multiline
+              maxLength={1000}
+            />
+            <Pressable
+              onPress={handleSend}
+              disabled={!text.trim()}
+              style={({ pressed }) => [
+                s.sendBtn,
+                !text.trim() && { opacity: 0.4 },
+                pressed && { transform: [{ scale: 0.9 }] },
+              ]}
+            >
+              <Ionicons name="send" size={18} color={colors.white} />
+            </Pressable>
+          </View>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -502,4 +542,19 @@ const s = StyleSheet.create({
     backgroundColor: colors.severity.critical, paddingVertical: 6,
   },
   offlineBannerText: { fontSize: 12, fontWeight: '700', color: colors.white },
+
+  // Closed chat banner
+  closedBanner: {
+    paddingHorizontal: 16, paddingTop: 12,
+    borderTopWidth: 1,
+  },
+  closedBannerInner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 12, paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(16,185,129,0.08)',
+  },
+  closedBannerText: {
+    fontSize: 13, fontWeight: '600', color: colors.slate[500],
+  },
 });
