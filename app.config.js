@@ -25,6 +25,7 @@ export default {
 
   android: {
     package: 'com.gianpaolo29.floodtrack',
+    usesCleartextTraffic: true,
     config: {
       googleMaps: {
         apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID,
