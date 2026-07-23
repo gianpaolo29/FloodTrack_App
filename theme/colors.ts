@@ -45,8 +45,8 @@ export const colors = {
     pending:  { bg: '#FCF1DC', text: '#8A5A00' },
     verified: { bg: '#E7F0FB', text: '#124577' },
     assigned: { bg: '#DCF3F0', text: '#0A6E64' },
-    resolved: { bg: '#E7F6EC', text: '#1B7A3D' },
-    rejected: { bg: '#F2EFEF', text: '#5A6675' },
+    resolved: { bg: '#DCFCE7', text: '#166534' },
+    rejected: { bg: '#FEE2E2', text: '#B91C1C' },
   },
   heatmap: ['#3B82C4', '#2E9E5B', '#F4B400', '#EA6A0C', '#D32F2F'],
   floodDepth: {

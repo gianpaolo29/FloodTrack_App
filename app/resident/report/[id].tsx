@@ -40,6 +40,22 @@ function sevColor(s: Severity) {
   return colors.severity[s] ?? colors.severity.low;
 }
 
+// ─── Report-type icon mapping ───────────────────────────────────────────────
+
+const TYPE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+  'Flood':           'water-outline',
+  'Flood report':    'water-outline',
+  'Flash flood':     'thunderstorm-outline',
+  'River flood':     'water-outline',
+  'Coastal flood':   'boat-outline',
+  'Urban flood':     'business-outline',
+  'flood':           'water-outline',
+};
+
+function getTypeIcon(type: string): keyof typeof Ionicons.glyphMap {
+  return TYPE_ICONS[type] ?? 'document-text-outline';
+}
+
 // ─── Meta Row (icon + label + value) ─────────────────────────────────────────
 
 function MetaRow({
@@ -61,7 +77,7 @@ function MetaRow({
       <View style={{ flex: 1, gap: 1 }}>
         <Text style={[metaStyles.label, isDark && { color: colors.slate[500] }]}>{label}</Text>
         <Text style={[metaStyles.value, isDark && { color: colors.white }]} numberOfLines={2}>
-          {value}
+          {value || 'Not specified'}
         </Text>
       </View>
     </View>
@@ -439,33 +455,12 @@ function AiStatusCard({
         isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
       ]}
     >
-      <View style={aiS.headerRow}>
-        <LinearGradient
-          colors={[colors.brand[500], colors.accent[500]]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={aiS.sparkleWrap}
-        >
-          <Ionicons name="sparkles" size={11} color={colors.white} />
-        </LinearGradient>
-        <Text style={[aiS.headerLabel, isDark && { color: colors.slate[300] }]}>AI Analysis</Text>
-      </View>
-      <View style={{ gap: 10 }}>
+      <SectionLabel text="AI Analysis" icon="sparkles" iconColor={colors.accent[500]} isDark={isDark} />
+      <View style={{ gap: 8 }}>
         {entries.map((entry, i) => (
-          <View
-            key={i}
-            style={[
-              aiS.card,
-              {
-                borderColor: entry.color + '25',
-                backgroundColor: isDark ? entry.color + '0C' : entry.color + '08',
-              },
-            ]}
-          >
-            <View style={[aiS.iconWrap, { backgroundColor: entry.color + '15' }]}>
-              <Ionicons name={entry.icon as any} size={20} color={entry.color} />
-            </View>
-            <View style={{ flex: 1, gap: 3 }}>
+          <View key={i} style={aiS.row}>
+            <View style={[aiS.dot, { backgroundColor: entry.color }]} />
+            <View style={{ flex: 1, gap: 1 }}>
               <Text style={[aiS.title, { color: entry.color }]}>{entry.title}</Text>
               <Text style={[aiS.note, isDark && { color: colors.slate[400] }]}>{entry.note}</Text>
             </View>
@@ -479,7 +474,7 @@ function AiStatusCard({
 const aiS = StyleSheet.create({
   outerCard: {
     borderRadius: 20,
-    padding: 16,
+    padding: 18,
     gap: 14,
     backgroundColor: colors.white,
     borderWidth: 1,
@@ -490,35 +485,17 @@ const aiS = StyleSheet.create({
     shadowRadius: 12,
     elevation: 2,
   },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sparkleWrap: {
-    width: 22,
-    height: 22,
-    borderRadius: 7,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.slate[500],
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  card: {
+  row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
+    gap: 10,
+    paddingVertical: 6,
   },
-  iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginTop: 5,
     flexShrink: 0,
   },
   title: { fontSize: 13, fontWeight: '700' },
@@ -550,9 +527,26 @@ function SectionCard({
   );
 }
 
-function SectionLabel({ text, isDark }: { text: string; isDark: boolean }) {
+function SectionLabel({
+  text,
+  icon,
+  iconColor,
+  isDark,
+}: {
+  text: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  iconColor?: string;
+  isDark: boolean;
+}) {
   return (
-    <Text style={[s.sectionTitle, isDark && { color: colors.white }]}>{text}</Text>
+    <View style={s.sectionLabelRow}>
+      {icon && (
+        <View style={[s.sectionIcon, { backgroundColor: (iconColor ?? colors.brand[500]) + '15' }]}>
+          <Ionicons name={icon} size={14} color={iconColor ?? colors.brand[500]} />
+        </View>
+      )}
+      <Text style={[s.sectionTitle, isDark && { color: colors.white }]}>{text}</Text>
+    </View>
   );
 }
 
@@ -696,12 +690,15 @@ export default function ReportDetailScreen() {
     <View style={[s.root, { backgroundColor: screenBg }]}>
       {/* ── Hero Header ── */}
       <LinearGradient
-        colors={[colors.brand[600], colors.brand[700], colors.brand[900]]}
+        colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[s.header, { paddingTop: insets.top + 8 }]}
+        style={[s.header, { paddingTop: insets.top + 16 }]}
       >
-        {/* Top row: back + actions */}
+        <View style={[s.orb, s.orb1]} />
+        <View style={[s.orb, s.orb2]} />
+
+        {/* Top row: back + title + actions */}
         <View style={s.headerTopRow}>
           <Pressable
             onPress={() => router.back()}
@@ -712,6 +709,10 @@ export default function ReportDetailScreen() {
           >
             <Ionicons name="chevron-back" size={20} color={colors.white} />
           </Pressable>
+
+          <Text style={s.headerInlineTitle} numberOfLines={1}>
+            {report?.title ?? 'Report detail'}
+          </Text>
 
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {report && isPending && !editing && (
@@ -750,7 +751,7 @@ export default function ReportDetailScreen() {
           </View>
         </View>
 
-        {/* Title area */}
+        {/* Reference + chips */}
         {report && (
           <View style={s.headerContent}>
             <View style={s.headerRefRow}>
@@ -758,21 +759,24 @@ export default function ReportDetailScreen() {
                 <Text style={s.refPillText}>{report.reference}</Text>
               </View>
             </View>
-            <Text style={s.headerTitle} numberOfLines={2}>
-              {report.title}
-            </Text>
             <View style={s.headerChips}>
               <SeverityChip level={report.severity} />
               <StatusBadge status={report.status} />
             </View>
           </View>
         )}
-        {!report && !loading && (
-          <View style={s.headerContent}>
-            <Text style={s.headerTitle}>Report detail</Text>
-          </View>
-        )}
       </LinearGradient>
+
+      {/* Wave transition */}
+      <View style={[s.waveWrap, { backgroundColor: screenBg }]}>
+        <LinearGradient
+          colors={['#5E52EF', '#7C3AED']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={[s.waveShape, { backgroundColor: screenBg }]} />
+      </View>
 
       {/* Loading */}
       {loading && (
@@ -808,7 +812,7 @@ export default function ReportDetailScreen() {
           {editing && (
             <>
               <SectionCard isDark={isDark}>
-                <SectionLabel text="Edit Report" isDark={isDark} />
+                <SectionLabel text="Edit Report" icon="create-outline" iconColor={colors.brand[500]} isDark={isDark} />
 
                 <Text
                   style={[
@@ -902,7 +906,7 @@ export default function ReportDetailScreen() {
               </SectionCard>
 
               <SectionCard isDark={isDark}>
-                <SectionLabel text="Photos" isDark={isDark} />
+                <SectionLabel text="Photos" icon="images-outline" iconColor="#0EA5E9" isDark={isDark} />
                 {editMedia.length === 0 ? (
                   <View
                     style={[gal.empty, isDark && { backgroundColor: colors.dark.elevated }]}
@@ -954,15 +958,28 @@ export default function ReportDetailScreen() {
             </>
           )}
 
-          {/* ── Details card (meta rows with icons) ── */}
+          {/* ── Details card (meta rows + description merged) ── */}
           {!editing && (
             <SectionCard isDark={isDark}>
-              <SectionLabel text="Details" isDark={isDark} />
+              <SectionLabel text="Details" icon="information-circle-outline" iconColor={colors.brand[500]} isDark={isDark} />
               <View style={{ gap: 14 }}>
-                <MetaRow icon="water-outline" label="Hazard Type" value={report.type} isDark={isDark} />
                 <MetaRow icon="person-outline" label="Reported by" value={report.reportedBy} isDark={isDark} />
+                <MetaRow icon="speedometer-outline" label="Severity" value={report.severity.charAt(0).toUpperCase() + report.severity.slice(1)} isDark={isDark} />
                 <MetaRow icon="location-outline" label="Location" value={report.address} isDark={isDark} />
                 <MetaRow icon="time-outline" label="Reported at" value={report.reportedAt} isDark={isDark} />
+                {report.description ? (
+                  <View style={s.descriptionRow}>
+                    <View style={[metaStyles.iconWrap, isDark && { backgroundColor: colors.dark.elevated }]}>
+                      <Ionicons name="document-text-outline" size={16} color={colors.brand[500]} />
+                    </View>
+                    <View style={{ flex: 1, gap: 1 }}>
+                      <Text style={[metaStyles.label, isDark && { color: colors.slate[500] }]}>Description</Text>
+                      <Text style={[s.description, isDark && { color: colors.slate[400] }]}>
+                        {report.description}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
               </View>
             </SectionCard>
           )}
@@ -970,31 +987,11 @@ export default function ReportDetailScreen() {
           {/* ── AI Analysis ── */}
           {!editing && <AiStatusCard report={report} isDark={isDark} />}
 
-          {/* ── Map snippet ── */}
-          {!editing && (
-            <SectionCard isDark={isDark}>
-              <SectionLabel text="Location" isDark={isDark} />
-              <View
-                style={[s.mapSnippet, isDark && { backgroundColor: colors.dark.elevated }]}
-              >
-                <View style={s.mapPinWrap}>
-                  <Ionicons name="location" size={24} color={colors.brand[500]} />
-                </View>
-                <Text
-                  style={[s.mapSnippetText, isDark && { color: colors.slate[400] }]}
-                  numberOfLines={2}
-                >
-                  {report.address}
-                </Text>
-              </View>
-            </SectionCard>
-          )}
-
           {/* ── Photo evidence ── */}
           {!editing && (
             <SectionCard isDark={isDark}>
               <View style={s.sectionTitleRow}>
-                <SectionLabel text="Evidence" isDark={isDark} />
+                <SectionLabel text="Evidence" icon="camera-outline" iconColor="#0EA5E9" isDark={isDark} />
                 {(report.mediaUrls?.length ?? 0) > 0 && (
                   <View style={s.countPill}>
                     <Text style={s.countPillText}>{report.mediaUrls.length}</Text>
@@ -1005,19 +1002,9 @@ export default function ReportDetailScreen() {
             </SectionCard>
           )}
 
-          {/* ── Description ── */}
-          {!editing && report.description ? (
-            <SectionCard isDark={isDark}>
-              <SectionLabel text="Description" isDark={isDark} />
-              <Text style={[s.description, isDark && { color: colors.slate[400] }]}>
-                {report.description}
-              </Text>
-            </SectionCard>
-          ) : null}
-
           {/* ── Status timeline ── */}
           <SectionCard isDark={isDark}>
-            <SectionLabel text="Status Timeline" isDark={isDark} />
+            <SectionLabel text="Status Timeline" icon="git-commit-outline" iconColor="#8B5CF6" isDark={isDark} />
             <View style={{ paddingTop: 4 }}>
               {report.timeline.map((evt, i) => (
                 <TimelineItem
@@ -1033,7 +1020,7 @@ export default function ReportDetailScreen() {
           {/* ── Responder updates ── */}
           {report.updates.length > 0 && (
             <SectionCard isDark={isDark}>
-              <SectionLabel text="Responder Updates" isDark={isDark} />
+              <SectionLabel text="Responder Updates" icon="chatbubble-ellipses-outline" iconColor="#10B981" isDark={isDark} />
               <View style={{ gap: 10 }}>
                 {report.updates.map((u, i) => (
                   <View
@@ -1147,13 +1134,35 @@ const s = StyleSheet.create({
   /* Header */
   header: {
     paddingHorizontal: 20,
-    paddingBottom: 22,
+    paddingBottom: 18,
+    overflow: 'hidden',
+  },
+  orb: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  orb1: { width: 180, height: 180, top: -70, right: -50 },
+  orb2: { width: 110, height: 110, bottom: 0, left: -30, backgroundColor: 'rgba(255,255,255,0.04)' },
+  waveWrap: {
+    height: 16,
+    position: 'relative',
+    marginTop: -1,
+  },
+  waveShape: {
+    position: 'absolute',
+    bottom: 0,
+    left: -12,
+    right: -12,
+    height: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   headerTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   headerIconBtn: {
     width: 38,
@@ -1162,6 +1171,14 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerInlineTitle: {
+    flex: 1,
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.white,
+    letterSpacing: -0.2,
+    textAlign: 'center',
   },
   headerContent: { gap: 10 },
   headerRefRow: { flexDirection: 'row' },
@@ -1192,7 +1209,7 @@ const s = StyleSheet.create({
   },
 
   /* Scroll */
-  scroll: { padding: 12, paddingTop: 16, gap: 14 },
+  scroll: { padding: 12, paddingTop: 4, gap: 14 },
 
   /* Card */
   card: {
@@ -1206,6 +1223,18 @@ const s = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 12,
     elevation: 2,
+  },
+  sectionLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sectionIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sectionTitle: {
     fontSize: 15,
@@ -1230,32 +1259,12 @@ const s = StyleSheet.create({
     color: colors.brand[500],
   },
 
-  /* Map */
-  mapSnippet: {
-    height: 110,
-    borderRadius: 16,
-    backgroundColor: colors.brand[50],
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+  /* Description (inside Details card) */
+  descriptionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
   },
-  mapPinWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.brand[500] + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mapSnippetText: {
-    fontSize: 13,
-    color: colors.slate[500],
-    fontWeight: '500',
-    textAlign: 'center',
-    paddingHorizontal: 24,
-  },
-
-  /* Description */
   description: {
     fontSize: 14,
     color: colors.slate[600],

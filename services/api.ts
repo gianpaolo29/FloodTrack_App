@@ -150,7 +150,7 @@ function adaptReport(raw: RawReport): Report {
   return {
     id:           String(raw.id),
     reference:    raw.reference_number,
-    title:        HAZARD_LABELS[raw.hazard_type] ?? 'Hazard report',
+    title:        HAZARD_LABELS[raw.hazard_type] ?? 'Flood report',
     type:         HAZARD_TYPE_DISPLAY[raw.hazard_type] ?? raw.hazard_type,
     severity:     raw.severity,
     status:       raw.status,

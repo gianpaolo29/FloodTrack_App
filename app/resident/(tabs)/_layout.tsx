@@ -29,7 +29,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const { unreadCount } = useAlertBadge();
   const bottom = Platform.OS === 'ios' ? 28 : Math.max(insets.bottom, 12);
 
-  const barBg = isDark ? '#111827' : '#EAF2FB';
+  const barBg = isDark ? '#111827' : colors.slate[50];
   const activeColor = isDark ? '#93C5FD' : colors.brand[500];
   const inactiveColor = isDark ? '#64748B' : colors.slate[400];
   const ringBorder = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)';
@@ -37,50 +37,52 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const fabPressed = colors.brand[600];
 
   return (
-    <View style={[st.bar, { bottom, backgroundColor: barBg }]}>
-      {state.routes.map((route, i) => {
-        const focused = state.index === i;
-        const meta = tabMeta[route.name];
-        if (!meta) return null;
+    <View style={[st.barOuter, { paddingBottom: bottom, backgroundColor: barBg }]}>
+      <View style={st.bar}>
+        {state.routes.map((route, i) => {
+          const focused = state.index === i;
+          const meta = tabMeta[route.name];
+          if (!meta) return null;
 
-        const isFab = route.name === 'report';
-        const color = focused ? activeColor : inactiveColor;
+          const isFab = route.name === 'report';
+          const color = focused ? activeColor : inactiveColor;
 
-        const onPress = () => {
-          const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-          if (!focused && !event.defaultPrevented) {
-            navigation.navigate(route.name);
-          }
-        };
+          const onPress = () => {
+            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!focused && !event.defaultPrevented) {
+              navigation.navigate(route.name);
+            }
+          };
 
-        if (isFab) {
-          return (
-            <Pressable key={route.key} onPress={onPress} style={st.fabWrap}>
-              {({ pressed }) => (
-                <View style={[st.fabRing, { backgroundColor: barBg, borderColor: ringBorder }]}>
-                  <View style={[st.fab, { backgroundColor: pressed ? fabPressed : fabColor }]}>
-                    <Ionicons name="add" size={30} color="#fff" />
+          if (isFab) {
+            return (
+              <Pressable key={route.key} onPress={onPress} style={st.fabWrap}>
+                {({ pressed }) => (
+                  <View style={[st.fabRing, { backgroundColor: barBg, borderColor: ringBorder }]}>
+                    <View style={[st.fab, { backgroundColor: pressed ? fabPressed : fabColor }]}>
+                      <Ionicons name="add" size={30} color="#fff" />
+                    </View>
                   </View>
-                </View>
-              )}
+                )}
+              </Pressable>
+            );
+          }
+
+          return (
+            <Pressable key={route.key} onPress={onPress} style={st.tab} android_ripple={null}>
+              <View>
+                <Ionicons name={focused ? meta.iconFocused : meta.icon} size={23} color={color} />
+                {route.name === 'alerts' && unreadCount > 0 && (
+                  <View style={st.badge}>
+                    <Text style={st.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[st.label, { color }]}>{meta.label}</Text>
             </Pressable>
           );
-        }
-
-        return (
-          <Pressable key={route.key} onPress={onPress} style={st.tab} android_ripple={null}>
-            <View>
-              <Ionicons name={focused ? meta.iconFocused : meta.icon} size={23} color={color} />
-              {route.name === 'alerts' && unreadCount > 0 && (
-                <View style={st.badge}>
-                  <Text style={st.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-                </View>
-              )}
-            </View>
-            <Text style={[st.label, { color }]}>{meta.label}</Text>
-          </Pressable>
-        );
-      })}
+        })}
+      </View>
     </View>
   );
 }
@@ -98,19 +100,14 @@ export default function ResidentTabLayout() {
 }
 
 const st = StyleSheet.create({
+  barOuter: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.06)',
+  },
   bar: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
     height: BAR_H,
-    borderRadius: 26,
     flexDirection: 'row',
     alignItems: 'center',
-    elevation: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
   },
   tab: {
     flex: 1,

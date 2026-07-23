@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
   Dimensions,
   Easing,
+  FlatList,
   Image,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -35,6 +36,22 @@ type FilterTab = 'all' | 'active' | 'resolved';
 
 const ACTIVE_STATUSES: ReportStatus[] = ['pending', 'verified', 'assigned'];
 
+/* ── Report‑type icon mapping ── */
+const TYPE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+  'Flood':           'water-outline',
+  'Flood report':    'water-outline',
+  'Flash flood':     'thunderstorm-outline',
+  'River flood':     'water-outline',
+  'Coastal flood':   'boat-outline',
+  'Urban flood':     'business-outline',
+  'flood':           'water-outline',
+};
+
+function getTypeIcon(type: string): keyof typeof Ionicons.glyphMap {
+  return TYPE_ICONS[type] ?? 'document-text-outline';
+}
+
+/* ── Compact Report Card ── */
 function ReportCard({
   report,
   onPress,
@@ -47,6 +64,7 @@ function ReportCard({
   animValue: Animated.Value;
 }) {
   const hasPhoto = !!report.thumbnailUrl;
+  const severityColor = colors.severity[report.severity];
 
   const cardStyle = {
     opacity: animValue,
@@ -66,8 +84,6 @@ function ReportCard({
     ],
   };
 
-  const severityColor = colors.severity[report.severity];
-
   return (
     <Animated.View style={cardStyle}>
       <Pressable
@@ -84,40 +100,29 @@ function ReportCard({
         accessibilityRole="button"
         accessibilityLabel={`${report.title}, ${report.severity} severity, status ${report.status}`}
       >
-        {hasPhoto && (
-          <View style={styles.photoHeader}>
-            <Image
-              source={{ uri: report.thumbnailUrl }}
-              style={styles.photoHeaderImg}
-              resizeMode="cover"
-            />
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.45)']}
-              style={StyleSheet.absoluteFillObject}
-            />
-            <View
-              style={[styles.photoSeverityBar, { backgroundColor: severityColor }]}
-            />
-            {(report.mediaCount ?? 0) > 1 && (
-              <View style={styles.photoBadge}>
-                <Ionicons name="camera" size={10} color={colors.white} />
-                <Text style={styles.photoBadgeText}>{report.mediaCount}</Text>
-              </View>
-            )}
-          </View>
-        )}
+        {/* Severity left bar */}
+        <View style={[styles.severityBar, { backgroundColor: severityColor }]} />
 
         <View style={styles.cardRow}>
-          {!hasPhoto && (
-            <LinearGradient
-              colors={[severityColor, severityColor + 'AA']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={styles.cardBar}
-            />
+          {/* Thumbnail */}
+          {hasPhoto && (
+            <View style={styles.thumbWrap}>
+              <Image
+                source={{ uri: report.thumbnailUrl }}
+                style={styles.thumbImg}
+                resizeMode="cover"
+              />
+              {(report.mediaCount ?? 0) > 1 && (
+                <View style={styles.photoBadge}>
+                  <Ionicons name="camera" size={9} color={colors.white} />
+                  <Text style={styles.photoBadgeText}>{report.mediaCount}</Text>
+                </View>
+              )}
+            </View>
           )}
 
-          <View style={styles.cardBody}>
+          {/* Body */}
+          <View style={[styles.cardBody, !hasPhoto && { paddingLeft: 12 }]}>
             <View style={styles.cardTopRow}>
               <Text
                 style={[styles.cardTitle, isDark && { color: colors.white }]}
@@ -132,7 +137,7 @@ function ReportCard({
 
             <View style={styles.cardMeta}>
               <View style={styles.metaItem}>
-                <Ionicons name="layers-outline" size={12} color={colors.slate[400]} />
+                <Ionicons name={getTypeIcon(report.type)} size={12} color={isDark ? colors.slate[400] : colors.slate[500]} />
                 <Text style={[styles.metaText, isDark && { color: colors.slate[400] }]}>
                   {report.type}
                 </Text>
@@ -141,7 +146,7 @@ function ReportCard({
                 <Ionicons name="location-outline" size={12} color={colors.slate[400]} />
                 <Text
                   style={[styles.metaText, isDark && { color: colors.slate[400] }]}
-                  numberOfLines={1}
+                  numberOfLines={2}
                 >
                   {report.address}
                 </Text>
@@ -239,6 +244,7 @@ export default function MyReportsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [tab, setTab]               = useState<FilterTab>('all');
+  const [search, setSearch]         = useState('');
 
   const cardAnims = useRef<Animated.Value[]>([]);
 
@@ -288,11 +294,25 @@ export default function MyReportsScreen() {
     load(true);
   }
 
-  const filtered = reports.filter(r => {
-    if (tab === 'active')   return ACTIVE_STATUSES.includes(r.status);
-    if (tab === 'resolved') return r.status === 'resolved' || r.status === 'rejected';
-    return true;
-  });
+  const filtered = useMemo(() => {
+    let list = reports;
+
+    // Tab filter
+    if (tab === 'active')   list = list.filter(r => ACTIVE_STATUSES.includes(r.status));
+    if (tab === 'resolved') list = list.filter(r => r.status === 'resolved' || r.status === 'rejected');
+
+    // Search filter
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(r =>
+        r.title.toLowerCase().includes(q) ||
+        r.reference.toLowerCase().includes(q) ||
+        r.address.toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }, [reports, tab, search]);
 
   useEffect(() => {
     cardAnims.current = filtered.map(() => new Animated.Value(0));
@@ -313,14 +333,56 @@ export default function MyReportsScreen() {
   const activeCount   = reports.filter(r => ACTIVE_STATUSES.includes(r.status)).length;
   const resolvedCount = reports.filter(r => ['resolved', 'rejected'].includes(r.status)).length;
 
-  const TABS: { key: FilterTab; label: string; count: number }[] = [
-    { key: 'all',      label: 'All',    count: allCount      },
-    { key: 'active',   label: 'Active', count: activeCount   },
-    { key: 'resolved', label: 'Closed', count: resolvedCount },
+  const TABS: { key: FilterTab; label: string; count: number; icon: keyof typeof Ionicons.glyphMap }[] = [
+    { key: 'all',      label: 'All',    count: allCount,      icon: 'layers-outline'        },
+    { key: 'active',   label: 'Active', count: activeCount,   icon: 'radio-button-on'       },
+    { key: 'resolved', label: 'Closed', count: resolvedCount, icon: 'checkmark-circle-outline' },
   ];
+
+  const renderCard = useCallback(({ item, index }: { item: Report; index: number }) => (
+    <ReportCard
+      report={item}
+      isDark={isDark}
+      animValue={cardAnims.current[index] ?? new Animated.Value(1)}
+      onPress={() => router.push(`/resident/report/${item.id}`)}
+    />
+  ), [isDark]);
+
+  const itemSeparator = useCallback(() => <View style={{ height: 10 }} />, []);
+
+  const listEmpty = useMemo(() => (
+    <EmptyState tab={tab} isDark={isDark}>
+      <Text style={[styles.emptySub, isDark && { color: colors.slate[400] }]}>
+        {tab === 'active'
+          ? 'All your reports are resolved or awaiting submission.'
+          : tab === 'resolved'
+          ? "Reports that have been closed will appear here."
+          : search.trim()
+          ? 'No reports match your search.'
+          : 'Use the report button below to submit your first flood report.'}
+      </Text>
+      {tab === 'all' && !search.trim() && (
+        <Pressable
+          onPress={() => router.push('/resident/report')}
+          style={({ pressed }) => [pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]}
+        >
+          <LinearGradient
+            colors={['#4A6CF7', '#7C3AED']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.emptyActionBtn}
+          >
+            <Ionicons name="add-circle-outline" size={17} color={colors.white} />
+            <Text style={styles.emptyActionText}>Submit a Report</Text>
+          </LinearGradient>
+        </Pressable>
+      )}
+    </EmptyState>
+  ), [tab, isDark, search]);
 
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
+      {/* Header */}
       <Animated.View
         style={{
           opacity: headerAnim,
@@ -344,16 +406,7 @@ export default function MyReportsScreen() {
           <View style={[styles.orb, styles.orb2]} />
 
           <View style={styles.headerContent}>
-            <View>
-              <Text style={styles.headerTitle}>My Reports</Text>
-              {!loading && (
-                <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeText}>
-                    {allCount} {allCount === 1 ? 'report' : 'reports'}
-                  </Text>
-                </View>
-              )}
-            </View>
+            <Text style={styles.headerTitle}>My Reports</Text>
           </View>
         </LinearGradient>
 
@@ -373,6 +426,7 @@ export default function MyReportsScreen() {
         </View>
       </Animated.View>
 
+      {/* Tabs */}
       <Animated.View
         style={[
           styles.tabRow,
@@ -395,49 +449,87 @@ export default function MyReportsScreen() {
             <Pressable
               key={t.key}
               onPress={() => setTab(t.key)}
-              style={styles.tabItemWrap}
               accessibilityRole="tab"
               accessibilityState={{ selected: isActive }}
+              style={({ pressed }) => [{ flex: 1 }, pressed && { opacity: 0.8 }]}
             >
-              {isActive ? (
-                <LinearGradient
-                  colors={['#4A6CF7', '#7C3AED']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.tabChipActive}
-                >
-                  <Text style={styles.tabLabelActive}>{t.label}</Text>
-                  <View style={styles.tabCountBubble}>
-                    <Text style={styles.tabCountActive}>{t.count}</Text>
-                  </View>
-                </LinearGradient>
-              ) : (
-                <View
+              <View
+                style={[
+                  styles.tabChip,
+                  isActive && styles.tabChipActive,
+                  isDark && !isActive && { backgroundColor: colors.dark.elevated, borderColor: colors.dark.border },
+                  isDark && isActive && { backgroundColor: '#1E1B4B', borderColor: '#4A6CF7' },
+                ]}
+              >
+                {isActive && <View style={styles.tabAccent} />}
+                <Ionicons
+                  name={t.icon}
+                  size={14}
+                  color={isActive ? '#4A6CF7' : (isDark ? colors.slate[400] : colors.slate[500])}
+                />
+                <Text
                   style={[
-                    styles.tabChip,
-                    isDark && { backgroundColor: colors.dark.elevated, borderColor: colors.dark.border },
+                    styles.tabLabel,
+                    isActive && styles.tabLabelActive,
+                    isDark && !isActive && { color: colors.slate[400] },
                   ]}
                 >
-                  <Text style={[styles.tabLabel, isDark && { color: colors.slate[400] }]}>
-                    {t.label}
-                  </Text>
-                  <View
+                  {t.label}
+                </Text>
+                <View
+                  style={[
+                    styles.tabCountBubble,
+                    isActive && styles.tabCountBubbleActive,
+                    isDark && !isActive && { backgroundColor: colors.dark.border },
+                  ]}
+                >
+                  <Text
                     style={[
-                      styles.tabCountBubbleInactive,
-                      isDark && { backgroundColor: colors.dark.border },
+                      styles.tabCountText,
+                      isActive && styles.tabCountTextActive,
+                      isDark && !isActive && { color: colors.slate[400] },
                     ]}
                   >
-                    <Text style={[styles.tabCountInactive, isDark && { color: colors.slate[400] }]}>
-                      {t.count}
-                    </Text>
-                  </View>
+                    {t.count}
+                  </Text>
                 </View>
-              )}
+              </View>
             </Pressable>
           );
         })}
       </Animated.View>
 
+      {/* Search bar */}
+      <View style={styles.searchRow}>
+        <View
+          style={[
+            styles.searchContainer,
+            isDark && { backgroundColor: colors.dark.elevated, borderColor: colors.dark.border },
+          ]}
+        >
+          <Ionicons
+            name="search-outline"
+            size={16}
+            color={isDark ? colors.slate[400] : colors.slate[400]}
+          />
+          <TextInput
+            style={[styles.searchInput, isDark && { color: colors.white }]}
+            placeholder="Search by title, reference, or address..."
+            placeholderTextColor={isDark ? colors.slate[500] : colors.slate[400]}
+            value={search}
+            onChangeText={setSearch}
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+          {search.length > 0 && (
+            <Pressable onPress={() => setSearch('')} hitSlop={8}>
+              <Ionicons name="close-circle" size={16} color={isDark ? colors.slate[400] : colors.slate[400]} />
+            </Pressable>
+          )}
+        </View>
+      </View>
+
+      {/* Content */}
       {loading && (
         <View style={styles.centered}>
           <View style={styles.loadingBadge}>
@@ -482,10 +574,13 @@ export default function MyReportsScreen() {
       )}
 
       {!loading && !error && (
-        <ScrollView
+        <FlatList
+          data={filtered}
+          keyExtractor={item => item.id}
+          renderItem={renderCard}
           contentContainerStyle={[
             styles.list,
-            { paddingBottom: insets.bottom + 24 },
+            { paddingBottom: 16 },
             filtered.length === 0 && styles.listEmpty,
           ]}
           refreshControl={
@@ -497,45 +592,9 @@ export default function MyReportsScreen() {
             />
           }
           showsVerticalScrollIndicator={false}
-        >
-          {filtered.length === 0 ? (
-            <EmptyState tab={tab} isDark={isDark}>
-              <Text style={[styles.emptySub, isDark && { color: colors.slate[400] }]}>
-                {tab === 'active'
-                  ? 'All your reports are resolved or awaiting submission.'
-                  : tab === 'resolved'
-                  ? "Reports that have been closed will appear here."
-                  : 'Use the report button below to submit your first flood report.'}
-              </Text>
-              {tab === 'all' && (
-                <Pressable
-                  onPress={() => router.push('/resident/report')}
-                  style={({ pressed }) => [pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]}
-                >
-                  <LinearGradient
-                    colors={['#4A6CF7', '#7C3AED']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.emptyActionBtn}
-                  >
-                    <Ionicons name="add-circle-outline" size={17} color={colors.white} />
-                    <Text style={styles.emptyActionText}>Submit a Report</Text>
-                  </LinearGradient>
-                </Pressable>
-              )}
-            </EmptyState>
-          ) : (
-            filtered.map((r, i) => (
-              <ReportCard
-                key={r.id}
-                report={r}
-                isDark={isDark}
-                animValue={cardAnims.current[i] ?? new Animated.Value(1)}
-                onPress={() => router.push(`/resident/report/${r.id}`)}
-              />
-            ))
-          )}
-        </ScrollView>
+          ItemSeparatorComponent={itemSeparator}
+          ListEmptyComponent={listEmpty}
+        />
       )}
     </View>
   );
@@ -569,21 +628,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     marginBottom: 6,
   },
-  countBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-  },
-  countBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.9)',
-    letterSpacing: 0.3,
-  },
   orb: {
     position: 'absolute',
     borderRadius: 999,
@@ -612,149 +656,172 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 4,
     paddingBottom: 10,
-    gap: 10,
+    gap: 8,
     backgroundColor: 'transparent',
   },
-  tabItemWrap: { flex: 1 },
   tabChip: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: 24,
-    backgroundColor: colors.slate[100],
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.slate[200],
+    overflow: 'hidden',
   },
   tabChipActive: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: 24,
-    shadowColor: '#4A6CF7',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 6,
+    backgroundColor: '#EEF2FF',
+    borderColor: '#C7D2FE',
+  },
+  tabAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 3,
+    backgroundColor: '#4A6CF7',
+    borderTopLeftRadius: 10,
+    borderBottomLeftRadius: 10,
   },
   tabLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: colors.slate[500],
   },
   tabLabelActive: {
-    fontSize: 12,
+    color: '#4A6CF7',
     fontWeight: '700',
-    color: colors.white,
   },
   tabCountBubble: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    borderRadius: 10,
+    backgroundColor: colors.slate[100],
+    borderRadius: 8,
     paddingHorizontal: 6,
     paddingVertical: 1,
     minWidth: 20,
     alignItems: 'center',
   },
-  tabCountActive: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: colors.white,
+  tabCountBubbleActive: {
+    backgroundColor: '#C7D2FE',
   },
-  tabCountBubbleInactive: {
-    backgroundColor: colors.slate[200],
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    minWidth: 20,
-    alignItems: 'center',
-  },
-  tabCountInactive: {
+  tabCountText: {
     fontSize: 11,
     fontWeight: '700',
     color: colors.slate[500],
   },
+  tabCountTextActive: {
+    color: '#4A6CF7',
+  },
 
-  list:      { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 16, gap: 12 },
+  /* Search */
+  searchRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.white,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: colors.slate[200],
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.slate[900],
+    padding: 0,
+  },
+
+  /* List */
+  list:      { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 16 },
   listEmpty: { flex: 1 },
 
+  /* Card – compact horizontal layout */
   card: {
     backgroundColor: colors.white,
-    borderRadius: 18,
+    borderRadius: 14,
     overflow: 'hidden',
+    flexDirection: 'row',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
   },
-  photoHeader: {
+  severityBar: {
+    width: 5,
+    borderTopLeftRadius: 14,
+    borderBottomLeftRadius: 14,
+  },
+  cardRow: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+
+  /* Thumbnail */
+  thumbWrap: {
+    width: 88,
+    alignSelf: 'stretch',
     position: 'relative',
-    height: 150,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
     overflow: 'hidden',
   },
-  photoHeaderImg:    { width: '100%', height: '100%' },
-  photoSeverityBar: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0,
-    height: 4,
+  thumbImg: {
+    ...StyleSheet.absoluteFillObject,
+    width: undefined,
+    height: undefined,
   },
   photoBadge: {
-    position: 'absolute', bottom: 10, right: 12,
-    flexDirection: 'row', alignItems: 'center', gap: 4,
+    position: 'absolute', bottom: 6, right: 6,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
     backgroundColor: 'rgba(0,0,0,0.55)',
-    paddingHorizontal: 9, paddingVertical: 5,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 6, paddingVertical: 3,
+    borderRadius: 10,
   },
-  photoBadgeText: { color: colors.white, fontSize: 11, fontWeight: '700' },
+  photoBadgeText: { color: colors.white, fontSize: 9, fontWeight: '700' },
 
-  cardRow:  { flexDirection: 'row' },
-  cardBar:  { width: 4 },
-  cardBody: { flex: 1, padding: 14, gap: 8 },
+  cardBody: { flex: 1, padding: 10, gap: 6 },
   cardTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 6,
   },
   cardTitle: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: colors.slate[900],
     letterSpacing: 0.1,
   },
   chevronWrap: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 7,
     backgroundColor: colors.slate[100],
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cardMeta:  { gap: 5 },
-  metaItem:  { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  metaText:  { fontSize: 12, color: colors.slate[500], flex: 1 },
-  cardChips: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  cardMeta:  { gap: 3 },
+  metaItem:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText:  { fontSize: 11, color: colors.slate[500], flex: 1 },
+  cardChips: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: colors.slate[100],
-    paddingTop: 8,
+    paddingTop: 6,
     marginTop: 0,
   },
-  cardRef:  { fontSize: 11, color: colors.slate[400], fontWeight: '600', letterSpacing: 0.2 },
-  cardTime: { fontSize: 11, color: colors.slate[400] },
+  cardRef:  { fontSize: 10, color: colors.slate[400], fontWeight: '600', letterSpacing: 0.2 },
+  cardTime: { fontSize: 10, color: colors.slate[400] },
 
   loadingBadge: {
     width: 72, height: 72, borderRadius: 22,
