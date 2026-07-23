@@ -274,8 +274,8 @@ function MapTypeModal({
   onClose: () => void;
   isDark: boolean;
 }) {
-  const bg   = isDark ? colors.dark.elevated : colors.white;
-  const bg2  = isDark ? colors.dark.card     : colors.slate[50];
+  const bg   = isDark ? colors.responder.dark.elevated : colors.white;
+  const bg2  = isDark ? colors.responder.dark.card     : colors.slate[50];
   const text = isDark ? colors.white         : colors.slate[900];
 
   return (
@@ -295,7 +295,7 @@ function MapTypeModal({
                   mtm.tile,
                   { backgroundColor: active ? colors.brand[500] + '18' : bg2 },
                   active && { borderColor: colors.brand[500], borderWidth: 2 },
-                  !active && { borderColor: isDark ? colors.dark.border : colors.slate[200], borderWidth: 1 },
+                  !active && { borderColor: isDark ? colors.responder.dark.border : colors.slate[200], borderWidth: 1 },
                 ]}
               >
                 <View style={[mtm.tileIcon, { backgroundColor: active ? colors.brand[500] : colors.slate[200] }]}>
@@ -348,10 +348,10 @@ function IncidentSheet({
 }) {
   const [updating, setUpdating] = useState(false);
 
-  const bg       = isDark ? colors.dark.elevated : colors.white;
+  const bg       = isDark ? colors.responder.dark.elevated : colors.white;
   const textMain = isDark ? colors.white         : colors.slate[900];
   const textSub  = isDark ? colors.slate[400]    : colors.slate[500];
-  const sepColor = isDark ? colors.dark.border   : colors.slate[100];
+  const sepColor = isDark ? colors.responder.dark.border   : colors.slate[100];
   const sevColor = colors.severity[incident.severity];
   const statusColor = STATUS_COLORS[incident.responderStatus];
   const statusIcon  = STATUS_ICONS[incident.responderStatus];
@@ -414,7 +414,7 @@ function IncidentSheet({
         </View>
         <Pressable
           onPress={onClose}
-          style={[sheetStyles.closeBtn, { backgroundColor: isDark ? colors.dark.card : colors.slate[100] }]}
+          style={[sheetStyles.closeBtn, { backgroundColor: isDark ? colors.responder.dark.card : colors.slate[100] }]}
           hitSlop={8} accessibilityLabel="Close"
         >
           <Ionicons name="close" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
@@ -433,7 +433,7 @@ function IncidentSheet({
           </Text>
         </View>
         {distanceKm !== null && (
-          <View style={[sheetStyles.distPill, isDark && { backgroundColor: colors.dark.card }]}>
+          <View style={[sheetStyles.distPill, isDark && { backgroundColor: colors.responder.dark.card }]}>
             <Ionicons name="navigate" size={10} color={colors.brand[500]} />
             <Text style={[sheetStyles.distText, { color: colors.brand[500] }]}>{fmtDist(distanceKm)}</Text>
           </View>
@@ -459,7 +459,7 @@ function IncidentSheet({
             const current = i === currentIdx;
             const dotColor = done || current
               ? STATUS_COLORS[step]
-              : (isDark ? colors.dark.border : colors.slate[200]);
+              : (isDark ? colors.responder.dark.border : colors.slate[200]);
             return (
               <View key={step} style={sheetStyles.stepWrapper}>
                 <View style={sheetStyles.stepCol}>
@@ -483,7 +483,7 @@ function IncidentSheet({
                 {i < STATUS_STEPS.length - 1 && (
                   <View style={[
                     sheetStyles.stepLine,
-                    { backgroundColor: done ? colors.brand[500] : (isDark ? colors.dark.border : colors.slate[200]) },
+                    { backgroundColor: done ? colors.brand[500] : (isDark ? colors.responder.dark.border : colors.slate[200]) },
                   ]} />
                 )}
               </View>
@@ -656,10 +656,10 @@ function EvacSheet({
   bottomInset: number;
   distanceKm: number | null;
 }) {
-  const bg       = isDark ? colors.dark.elevated : colors.white;
+  const bg       = isDark ? colors.responder.dark.elevated : colors.white;
   const textMain = isDark ? colors.white         : colors.slate[900];
   const textSub  = isDark ? colors.slate[400]    : colors.slate[500];
-  const sepColor = isDark ? colors.dark.border   : colors.slate[100];
+  const sepColor = isDark ? colors.responder.dark.border   : colors.slate[100];
   const meta     = EVAC_TYPE_META[center.type] ?? { icon: 'location' as const, label: center.type };
 
   return (
@@ -687,7 +687,7 @@ function EvacSheet({
         </View>
         <Pressable
           onPress={onClose}
-          style={[evacSheet.closeBtn, { backgroundColor: isDark ? colors.dark.card : colors.slate[100] }]}
+          style={[evacSheet.closeBtn, { backgroundColor: isDark ? colors.responder.dark.card : colors.slate[100] }]}
           hitSlop={8} accessibilityLabel="Close"
         >
           <Ionicons name="close" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
@@ -828,7 +828,7 @@ function SearchPinSheet({
   bottomInset: number;
   distanceKm: number | null;
 }) {
-  const bg       = isDark ? colors.dark.elevated : colors.white;
+  const bg       = isDark ? colors.responder.dark.elevated : colors.white;
   const textMain = isDark ? colors.white         : colors.slate[900];
   const textSub  = isDark ? colors.slate[400]    : colors.slate[500];
 
@@ -854,7 +854,7 @@ function SearchPinSheet({
         </View>
         <Pressable
           onPress={onClose}
-          style={[spSheet.closeBtn, { backgroundColor: isDark ? colors.dark.card : colors.slate[100] }]}
+          style={[spSheet.closeBtn, { backgroundColor: isDark ? colors.responder.dark.card : colors.slate[100] }]}
           hitSlop={8}
           accessibilityLabel="Close"
         >
@@ -1489,7 +1489,7 @@ export default function ResponderMapScreen() {
                 marginTop: -1,
               }} />
               <View style={{
-                backgroundColor: isDark ? '#1E293B' : '#fff',
+                backgroundColor: isDark ? colors.responder.dark.card : '#fff',
                 paddingHorizontal: 8,
                 paddingVertical: 3,
                 borderRadius: 8,
@@ -1516,12 +1516,12 @@ export default function ResponderMapScreen() {
         <View style={s.searchRow}>
           <Animated.View style={[
             s.searchBar,
-            isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
+            isDark && { backgroundColor: colors.responder.dark.card, borderColor: colors.responder.dark.border },
             searchQuery.length > 0 && { borderColor: EVAC_COLOR },
             {
               borderColor: searchFocusAnim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [isDark ? colors.dark.border : colors.slate[200], colors.brand[500]],
+                outputRange: [isDark ? colors.responder.dark.border : colors.slate[200], colors.brand[500]],
               }),
               shadowOpacity: searchFocusAnim.interpolate({
                 inputRange: [0, 1],
@@ -1603,7 +1603,7 @@ export default function ResponderMapScreen() {
 
           <Pressable
             onPress={load}
-            style={[s.refreshBtn, isDark && { backgroundColor: colors.dark.card }]}
+            style={[s.refreshBtn, isDark && { backgroundColor: colors.responder.dark.card }]}
             accessibilityLabel="Refresh" hitSlop={6}
           >
             {loading
@@ -1613,7 +1613,7 @@ export default function ResponderMapScreen() {
           </Pressable>
         </View>
 
-        <View style={[s.chipDivider, { backgroundColor: isDark ? colors.dark.border : colors.slate[100] }]} />
+        <View style={[s.chipDivider, { backgroundColor: isDark ? colors.responder.dark.border : colors.slate[100] }]} />
 
         <ScrollView
           horizontal showsHorizontalScrollIndicator={false}
@@ -1633,9 +1633,9 @@ export default function ResponderMapScreen() {
                   isActive
                     ? { backgroundColor: f.color }
                     : {
-                        backgroundColor: isDark ? colors.dark.card : colors.white,
+                        backgroundColor: isDark ? colors.responder.dark.card : colors.white,
                         borderWidth: 1,
-                        borderColor: isDark ? colors.dark.border : colors.slate[200],
+                        borderColor: isDark ? colors.responder.dark.border : colors.slate[200],
                       },
                 ]}
               >
@@ -1668,7 +1668,7 @@ export default function ResponderMapScreen() {
           s.dropdown,
           {
             top: topCardHeight,
-            backgroundColor: isDark ? colors.dark.surface : colors.white,
+            backgroundColor: isDark ? colors.responder.dark.surface : colors.white,
             opacity: dropdownAnim,
             transform: [{
               translateY: dropdownAnim.interpolate({
@@ -1687,7 +1687,7 @@ export default function ResponderMapScreen() {
 
           {trimmed.length < 2 ? (
             <>
-              <View style={[s.dropdownSuggestHeader, { borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
+              <View style={[s.dropdownSuggestHeader, { borderBottomColor: isDark ? colors.responder.dark.border : colors.slate[100] }]}>
                 <View style={s.dropdownSparkleWrap}>
                   <Ionicons name="sparkles" size={12} color={colors.brand[500]} />
                 </View>
@@ -1705,8 +1705,8 @@ export default function ResponderMapScreen() {
                   key={s2.query}
                   style={({ pressed }) => [
                     s.dropdownItem,
-                    idx < arr.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] },
-                    pressed && { backgroundColor: isDark ? colors.dark.card : colors.brand[500] + '08', transform: [{ scale: 0.98 }] },
+                    idx < arr.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.responder.dark.border : colors.slate[100] },
+                    pressed && { backgroundColor: isDark ? colors.responder.dark.card : colors.brand[500] + '08', transform: [{ scale: 0.98 }] },
                   ]}
                   onPress={() => handleSearchChange(s2.query)}
                 >
@@ -1730,11 +1730,11 @@ export default function ResponderMapScreen() {
           ) : searchLoading ? (
             <View style={s.shimmerContainer}>
               {[0, 1, 2].map(i => (
-                <View key={i} style={[s.shimmerRow, i < 2 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
+                <View key={i} style={[s.shimmerRow, i < 2 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.responder.dark.border : colors.slate[100] }]}>
                   <Animated.View style={[
                     s.shimmerIcon,
                     {
-                      backgroundColor: isDark ? colors.dark.card : colors.slate[200],
+                      backgroundColor: isDark ? colors.responder.dark.card : colors.slate[200],
                       opacity: shimmerAnim.interpolate({
                         inputRange: [0, 0.5, 1],
                         outputRange: [0.4, 1, 0.4],
@@ -1744,12 +1744,12 @@ export default function ResponderMapScreen() {
                   <View style={{ flex: 1, gap: 8 }}>
                     <Animated.View style={[
                       s.shimmerLine,
-                      { width: `${70 - i * 12}%` as any, backgroundColor: isDark ? colors.dark.card : colors.slate[200] },
+                      { width: `${70 - i * 12}%` as any, backgroundColor: isDark ? colors.responder.dark.card : colors.slate[200] },
                       { opacity: shimmerAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.4, 1, 0.4] }) },
                     ]} />
                     <Animated.View style={[
                       s.shimmerLine,
-                      { width: `${90 - i * 8}%` as any, height: 8, backgroundColor: isDark ? colors.dark.card : colors.slate[200] },
+                      { width: `${90 - i * 8}%` as any, height: 8, backgroundColor: isDark ? colors.responder.dark.card : colors.slate[200] },
                       { opacity: shimmerAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.3, 0.8, 0.3] }) },
                     ]} />
                   </View>
@@ -1766,7 +1766,7 @@ export default function ResponderMapScreen() {
             <>
               {/* Place suggestions */}
               {placeSuggestions.length > 0 && (
-                <View style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }}>
+                <View style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.responder.dark.border : colors.slate[100] }}>
                   <View style={[s.dropdownSuggestHeader, { borderBottomColor: 'transparent' }]}>
                     <Ionicons name="location" size={12} color={colors.iconAccents?.amber ?? '#F59E0B'} />
                     <Text style={[s.dropdownSuggestTitle, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
@@ -1783,10 +1783,10 @@ export default function ResponderMapScreen() {
                           paddingVertical: 6,
                           borderRadius: 16,
                           backgroundColor: pressed
-                            ? (isDark ? colors.dark.elevated : colors.brand[100])
-                            : (isDark ? colors.dark.card : colors.slate[50]),
+                            ? (isDark ? colors.responder.dark.elevated : colors.brand[100])
+                            : (isDark ? colors.responder.dark.card : colors.slate[50]),
                           borderWidth: 1,
-                          borderColor: isDark ? colors.dark.border : colors.slate[200],
+                          borderColor: isDark ? colors.responder.dark.border : colors.slate[200],
                           flexDirection: 'row',
                           alignItems: 'center',
                           gap: 4,
@@ -1814,7 +1814,7 @@ export default function ResponderMapScreen() {
             </View>
           ) : (
             <>
-              <View style={[s.resultCountHeader, { borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
+              <View style={[s.resultCountHeader, { borderBottomColor: isDark ? colors.responder.dark.border : colors.slate[100] }]}>
                 <View style={s.resultCountBadge}>
                   <Text style={s.resultCountText}>{searchResults.length}</Text>
                 </View>
@@ -1844,8 +1844,8 @@ export default function ResponderMapScreen() {
                     <Pressable
                       style={({ pressed }) => [
                         s.dropdownItem,
-                        !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] },
-                        pressed && { backgroundColor: isDark ? colors.dark.card : EVAC_COLOR + '08', transform: [{ scale: 0.98 }] },
+                        !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.responder.dark.border : colors.slate[100] },
+                        pressed && { backgroundColor: isDark ? colors.responder.dark.card : EVAC_COLOR + '08', transform: [{ scale: 0.98 }] },
                       ]}
                       onPress={() => handleEvacResultPress(center)}
                       accessibilityLabel={center.name}
@@ -1885,8 +1885,8 @@ export default function ResponderMapScreen() {
 
               {/* ── Google Places results ── */}
               {googlePlaces.length > 0 && (
-                <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: isDark ? colors.dark.border : colors.slate[100] }}>
-                  <View style={[s.dropdownSuggestHeader, { borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
+                <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: isDark ? colors.responder.dark.border : colors.slate[100] }}>
+                  <View style={[s.dropdownSuggestHeader, { borderBottomColor: isDark ? colors.responder.dark.border : colors.slate[100] }]}>
                     <Ionicons name="globe-outline" size={12} color={colors.brand[500]} />
                     <Text style={[s.dropdownSuggestTitle, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
                       Google Places
@@ -1897,8 +1897,8 @@ export default function ResponderMapScreen() {
                       key={place.placeId}
                       style={({ pressed }) => [
                         s.dropdownItem,
-                        idx < googlePlaces.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] },
-                        pressed && { backgroundColor: isDark ? colors.dark.card : colors.brand[500] + '08', transform: [{ scale: 0.98 }] },
+                        idx < googlePlaces.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.responder.dark.border : colors.slate[100] },
+                        pressed && { backgroundColor: isDark ? colors.responder.dark.card : colors.brand[500] + '08', transform: [{ scale: 0.98 }] },
                       ]}
                       onPress={() => handleGooglePlacePress(place.placeId, place.main)}
                       accessibilityLabel={place.main}
@@ -1969,7 +1969,7 @@ export default function ResponderMapScreen() {
 
       {!loading && active.length === 0 && !selected && !selectedEvac && (
         <View style={[s.emptyOverlay, { bottom: tabClear + 14 }]}>
-          <View style={[s.emptyCard, { backgroundColor: isDark ? colors.dark.card : colors.white }]}>
+          <View style={[s.emptyCard, { backgroundColor: isDark ? colors.responder.dark.card : colors.white }]}>
             <View style={[s.emptyCardIcon, { backgroundColor: colors.severity.low + '18' }]}>
               <Ionicons name="checkmark-circle" size={22} color={colors.severity.low} />
             </View>

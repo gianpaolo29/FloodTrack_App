@@ -117,7 +117,7 @@ function UpdateModal({
     }
   }
 
-  const modalBg = isDark ? colors.dark.elevated : colors.white;
+  const modalBg = isDark ? colors.responder.dark.elevated : colors.white;
   const overlay = isDark ? 'rgba(0,0,0,0.75)' : 'rgba(0,0,0,0.5)';
 
   return (
@@ -154,7 +154,7 @@ function UpdateModal({
                   disabled={disabled}
                   style={[
                     ms.stepCard,
-                    isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
+                    isDark && { backgroundColor: colors.responder.dark.card, borderColor: colors.responder.dark.border },
                     active && { borderColor: stepColor, backgroundColor: stepColor + '0C' },
                     disabled && { opacity: 0.4 },
                   ]}
@@ -163,7 +163,7 @@ function UpdateModal({
                 >
                   <View style={[
                     ms.stepNum,
-                    { backgroundColor: active ? stepColor : isDark ? colors.dark.elevated : colors.slate[100] },
+                    { backgroundColor: active ? stepColor : isDark ? colors.responder.dark.elevated : colors.slate[100] },
                     completed && { backgroundColor: colors.severity.low },
                   ]}>
                     {completed ? (
@@ -206,8 +206,8 @@ function UpdateModal({
               style={[
                 ms.notes,
                 isDark && {
-                  backgroundColor: colors.dark.card,
-                  borderColor: colors.dark.border,
+                  backgroundColor: colors.responder.dark.card,
+                  borderColor: colors.responder.dark.border,
                   color: colors.white,
                 },
               ]}
@@ -246,7 +246,7 @@ function UpdateModal({
                 <View style={ms.mediaAddBtns}>
                   <Pressable
                     onPress={() => pickMedia('camera')}
-                    style={[ms.mediaAddBtn, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
+                    style={[ms.mediaAddBtn, isDark && { backgroundColor: colors.responder.dark.card, borderColor: colors.responder.dark.border }]}
                     accessibilityRole="button"
                     accessibilityLabel="Take photo"
                   >
@@ -255,7 +255,7 @@ function UpdateModal({
                   </Pressable>
                   <Pressable
                     onPress={() => pickMedia('library')}
-                    style={[ms.mediaAddBtn, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
+                    style={[ms.mediaAddBtn, isDark && { backgroundColor: colors.responder.dark.card, borderColor: colors.responder.dark.border }]}
                     accessibilityRole="button"
                     accessibilityLabel="Choose from gallery"
                   >
@@ -268,7 +268,7 @@ function UpdateModal({
           </View>
 
           <View style={ms.actions}>
-            <Pressable onPress={onClose} style={[ms.cancelBtn, isDark && { borderColor: colors.dark.border }]}>
+            <Pressable onPress={onClose} style={[ms.cancelBtn, isDark && { borderColor: colors.responder.dark.border }]}>
               <Text style={[ms.cancelText, isDark && { color: colors.slate[400] }]}>Cancel</Text>
             </Pressable>
             <View style={{ flex: 1 }}>
@@ -390,7 +390,7 @@ function StatusStepper({ current, isDark }: { current: ResponderStatus; isDark: 
                 st.stepDot,
                 isDone && { backgroundColor: colors.severity.low },
                 isCurrent && { backgroundColor: color, borderColor: color + '40', borderWidth: 3 },
-                !isDone && !isCurrent && { backgroundColor: isDark ? colors.dark.border : colors.slate[200] },
+                !isDone && !isCurrent && { backgroundColor: isDark ? colors.responder.dark.border : colors.slate[200] },
               ]}>
                 {isDone && <Ionicons name="checkmark" size={10} color={colors.white} />}
                 {isCurrent && <View style={[st.stepDotInner, { backgroundColor: colors.white }]} />}
@@ -399,7 +399,7 @@ function StatusStepper({ current, isDark }: { current: ResponderStatus; isDark: 
                 <View style={[
                   st.stepLine,
                   isDone && { backgroundColor: colors.severity.low },
-                  !isDone && { backgroundColor: isDark ? colors.dark.border : colors.slate[200] },
+                  !isDone && { backgroundColor: isDark ? colors.responder.dark.border : colors.slate[200] },
                 ]} />
               )}
             </View>
@@ -447,8 +447,8 @@ export default function IncidentDetailScreen() {
   const [error, setError]         = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
 
-  const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
-  const cardBg   = isDark ? colors.dark.card : colors.white;
+  const screenBg = isDark ? colors.responder.dark.bg : '#F4F6F9';
+  const cardBg   = isDark ? colors.responder.dark.card : colors.white;
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -517,7 +517,7 @@ export default function IncidentDetailScreen() {
     <View style={[styles.root, { backgroundColor: screenBg }]}>
 
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <View style={[styles.headerBg, { backgroundColor: isDark ? colors.dark.surface : colors.brand[700] }]} />
+        <View style={[styles.headerBg, { backgroundColor: isDark ? colors.responder.dark.surface : colors.brand[700] }]} />
 
         <View style={styles.headerContent}>
           <Pressable
@@ -554,7 +554,7 @@ export default function IncidentDetailScreen() {
 
       {!loading && error && (
         <View style={styles.centered}>
-          <View style={[styles.errorIconWrap, isDark && { backgroundColor: colors.dark.card }]}>
+          <View style={[styles.errorIconWrap, isDark && { backgroundColor: colors.responder.dark.card }]}>
             <Ionicons name="cloud-offline-outline" size={36} color={colors.slate[400]} />
           </View>
           <Text style={[styles.errorTitle, isDark && { color: colors.white }]}>Connection issue</Text>
@@ -577,7 +577,7 @@ export default function IncidentDetailScreen() {
                 <SeverityChip level={incident.severity} size="lg" />
                 <View style={{ flex: 1, gap: 4 }}>
                   <View style={styles.typeRow}>
-                    <View style={[styles.typePill, isDark && { backgroundColor: colors.dark.elevated }]}>
+                    <View style={[styles.typePill, isDark && { backgroundColor: colors.responder.dark.elevated }]}>
                       <Text style={[styles.typeText, isDark && { color: colors.slate[400] }]}>
                         {incident.type}
                       </Text>
@@ -592,7 +592,7 @@ export default function IncidentDetailScreen() {
                 </View>
               </View>
 
-              <View style={[styles.descDivider, isDark && { backgroundColor: colors.dark.border }]} />
+              <View style={[styles.descDivider, isDark && { backgroundColor: colors.responder.dark.border }]} />
 
               <Text style={[styles.description, isDark && { color: colors.slate[400] }]}>
                 {incident.description}
@@ -630,7 +630,7 @@ export default function IncidentDetailScreen() {
                 </Pressable>
               </View>
 
-              <View style={[styles.routeBlock, isDark && { backgroundColor: colors.dark.elevated }]}>
+              <View style={[styles.routeBlock, isDark && { backgroundColor: colors.responder.dark.elevated }]}>
                 <View style={styles.routeVisual}>
                   <View style={styles.routeStart}>
                     <Ionicons name="car" size={20} color={colors.brand[500]} />
@@ -671,14 +671,14 @@ export default function IncidentDetailScreen() {
                 <Text style={[styles.cardHeaderTitle, isDark && { color: colors.white }]}>
                   Submitted evidence
                 </Text>
-                <View style={[styles.evidenceCountPill, isDark && { backgroundColor: colors.dark.elevated }]}>
+                <View style={[styles.evidenceCountPill, isDark && { backgroundColor: colors.responder.dark.elevated }]}>
                   <Text style={[styles.evidenceCountText, isDark && { color: colors.slate[400] }]}>
                     {incident.evidenceCount}
                   </Text>
                 </View>
               </View>
 
-              <View style={[styles.evidenceGrid, isDark && { backgroundColor: colors.dark.elevated }]}>
+              <View style={[styles.evidenceGrid, isDark && { backgroundColor: colors.responder.dark.elevated }]}>
                 <Ionicons name="images-outline" size={28} color={colors.slate[400]} />
                 <Text style={[styles.evidenceText, isDark && { color: colors.slate[500] }]}>
                   {incident.evidenceCount} photo{incident.evidenceCount !== 1 ? 's' : ''} attached
@@ -697,7 +697,7 @@ export default function IncidentDetailScreen() {
               </View>
 
               <View style={styles.reporterRow}>
-                <View style={[styles.reporterAvatar, isDark && { backgroundColor: colors.dark.elevated }]}>
+                <View style={[styles.reporterAvatar, isDark && { backgroundColor: colors.responder.dark.elevated }]}>
                   <Text style={[styles.reporterInitials, isDark && { color: colors.brand[300] }]}>
                     {incident.reportedBy.split(' ').map(n => n[0]).join('').slice(0, 2)}
                   </Text>
@@ -715,7 +715,7 @@ export default function IncidentDetailScreen() {
                 </View>
                 <Pressable
                   onPress={callReporter}
-                  style={[styles.callBtn, isDark && { backgroundColor: colors.dark.elevated }]}
+                  style={[styles.callBtn, isDark && { backgroundColor: colors.responder.dark.elevated }]}
                   accessibilityRole="button"
                   accessibilityLabel={`Call ${incident.reportedBy}`}
                 >
@@ -739,7 +739,7 @@ export default function IncidentDetailScreen() {
                   onPress={() => router.push(`/responder/incident/${id}/chat` as never)}
                   style={({ pressed }) => [
                     styles.quickActionBtn,
-                    isDark && { backgroundColor: colors.dark.elevated, borderColor: colors.dark.border },
+                    isDark && { backgroundColor: colors.responder.dark.elevated, borderColor: colors.responder.dark.border },
                     pressed && { opacity: 0.88, transform: [{ scale: 0.96 }] },
                   ]}
                 >
@@ -755,7 +755,7 @@ export default function IncidentDetailScreen() {
                   onPress={() => router.push(`/responder/incident/${id}/field-report` as never)}
                   style={({ pressed }) => [
                     styles.quickActionBtn,
-                    isDark && { backgroundColor: colors.dark.elevated, borderColor: colors.dark.border },
+                    isDark && { backgroundColor: colors.responder.dark.elevated, borderColor: colors.responder.dark.border },
                     pressed && { opacity: 0.88, transform: [{ scale: 0.96 }] },
                   ]}
                 >
@@ -774,8 +774,8 @@ export default function IncidentDetailScreen() {
             styles.actionBar,
             {
               paddingBottom: insets.bottom + 14,
-              backgroundColor: isDark ? colors.dark.surface : colors.white,
-              borderTopColor: isDark ? colors.dark.border : colors.slate[100],
+              backgroundColor: isDark ? colors.responder.dark.surface : colors.white,
+              borderTopColor: isDark ? colors.responder.dark.border : colors.slate[100],
             },
           ]}>
             {isResolved ? (
@@ -791,7 +791,7 @@ export default function IncidentDetailScreen() {
                   onPress={openNativeMaps}
                   style={({ pressed }) => [
                     styles.navActionBtn,
-                    isDark && { borderColor: colors.dark.border },
+                    isDark && { borderColor: colors.responder.dark.border },
                     pressed && { transform: [{ scale: 0.92 }], opacity: 0.8 },
                   ]}
                   accessibilityRole="button"
@@ -803,7 +803,7 @@ export default function IncidentDetailScreen() {
                   onPress={callReporter}
                   style={({ pressed }) => [
                     styles.callActionBtn,
-                    isDark && { borderColor: colors.dark.border },
+                    isDark && { borderColor: colors.responder.dark.border },
                     pressed && { transform: [{ scale: 0.92 }], opacity: 0.8 },
                   ]}
                   accessibilityRole="button"

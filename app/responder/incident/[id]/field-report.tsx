@@ -120,7 +120,7 @@ function ChecklistRow({
         style={[
           s.checkBox,
           checked && { backgroundColor: colors.brand[500], borderColor: colors.brand[500] },
-          isDark && !checked && { borderColor: colors.dark.border },
+          isDark && !checked && { borderColor: colors.responder.dark.border },
         ]}
       >
         <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
@@ -180,8 +180,8 @@ export default function FieldReportScreen() {
 
   const progressAnim = useRef(new Animated.Value(0)).current;
 
-  const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
-  const cardBg = isDark ? colors.dark.card : colors.white;
+  const screenBg = isDark ? colors.responder.dark.bg : '#F4F6F9';
+  const cardBg = isDark ? colors.responder.dark.card : colors.white;
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -280,7 +280,7 @@ export default function FieldReportScreen() {
         <View
           style={[
             s.headerBg,
-            { backgroundColor: isDark ? colors.dark.surface : colors.brand[700] },
+            { backgroundColor: isDark ? colors.responder.dark.surface : colors.brand[700] },
           ]}
         />
         <View style={s.headerContent}>
@@ -295,7 +295,7 @@ export default function FieldReportScreen() {
       </View>
 
       <View style={s.progressBarContainer}>
-        <View style={[s.progressBarTrack, isDark && { backgroundColor: colors.dark.border }]}>
+        <View style={[s.progressBarTrack, isDark && { backgroundColor: colors.responder.dark.border }]}>
           <Animated.View
             style={[
               s.progressBarFill,
@@ -341,7 +341,7 @@ export default function FieldReportScreen() {
             </View>
             <FocusableInput
               isDark={isDark}
-              style={[s.textArea, isDark && { backgroundColor: colors.dark.elevated, borderColor: colors.dark.border, color: colors.white }]}
+              style={[s.textArea, isDark && { backgroundColor: colors.responder.dark.elevated, borderColor: colors.responder.dark.border, color: colors.white }]}
               placeholder="Describe what actions were taken to resolve the incident..."
               placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
               multiline numberOfLines={4} textAlignVertical="top"
@@ -361,7 +361,7 @@ export default function FieldReportScreen() {
             </View>
             <FocusableInput
               isDark={isDark}
-              style={[s.textArea, isDark && { backgroundColor: colors.dark.elevated, borderColor: colors.dark.border, color: colors.white }]}
+              style={[s.textArea, isDark && { backgroundColor: colors.responder.dark.elevated, borderColor: colors.responder.dark.border, color: colors.white }]}
               placeholder="Equipment, vehicles, supplies deployed..."
               placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
               multiline numberOfLines={3} textAlignVertical="top"
@@ -384,7 +384,7 @@ export default function FieldReportScreen() {
                 onPress={decrementPeople}
                 style={[
                   s.circleBtn,
-                  isDark && { backgroundColor: colors.dark.elevated, borderColor: colors.dark.border },
+                  isDark && { backgroundColor: colors.responder.dark.elevated, borderColor: colors.responder.dark.border },
                 ]}
               >
                 <Ionicons name="remove" size={20} color={isDark ? colors.white : colors.slate[700]} />
@@ -413,7 +413,7 @@ export default function FieldReportScreen() {
             </View>
             <FocusableInput
               isDark={isDark}
-              style={[s.textArea, isDark && { backgroundColor: colors.dark.elevated, borderColor: colors.dark.border, color: colors.white }]}
+              style={[s.textArea, isDark && { backgroundColor: colors.responder.dark.elevated, borderColor: colors.responder.dark.border, color: colors.white }]}
               placeholder="Describe the extent of damage observed..."
               placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
               multiline numberOfLines={3} textAlignVertical="top"
@@ -428,7 +428,7 @@ export default function FieldReportScreen() {
           s.bottomBar,
           {
             paddingBottom: insets.bottom + 14,
-            backgroundColor: isDark ? colors.dark.surface : colors.white,
+            backgroundColor: isDark ? colors.responder.dark.surface : colors.white,
           },
         ]}
       >

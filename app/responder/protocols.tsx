@@ -212,8 +212,8 @@ export default function ProtocolsScreen() {
     load();
   }, [load]);
 
-  const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
-  const cardBg = isDark ? colors.dark.card : colors.white;
+  const screenBg = isDark ? colors.responder.dark.bg : '#F4F6F9';
+  const cardBg = isDark ? colors.responder.dark.card : colors.white;
 
   if (loading) {
     return (
@@ -229,7 +229,7 @@ export default function ProtocolsScreen() {
         <View
           style={[
             s.headerBg,
-            { backgroundColor: isDark ? colors.dark.surface : colors.brand[700] },
+            { backgroundColor: isDark ? colors.responder.dark.surface : colors.brand[700] },
           ]}
         />
         <View style={s.headerContent}>
@@ -289,7 +289,7 @@ export default function ProtocolsScreen() {
                   key={idx}
                   style={({ pressed }) => [
                     s.trainingItem,
-                    { backgroundColor: isDark ? colors.dark.elevated : colors.brand[500] + '08' },
+                    { backgroundColor: isDark ? colors.responder.dark.elevated : colors.brand[500] + '08' },
                     pressed && { opacity: 0.92, transform: [{ scale: 0.98 }] },
                   ]}
                 >

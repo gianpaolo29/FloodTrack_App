@@ -98,8 +98,8 @@ function StatChip({
       style={[
         $.statChip,
         {
-          backgroundColor: isDark ? colors.dark.card : colors.white,
-          borderColor: isDark ? colors.dark.border : 'rgba(0,0,0,0.04)',
+          backgroundColor: isDark ? colors.responder.dark.card : colors.white,
+          borderColor: isDark ? colors.responder.dark.border : 'rgba(0,0,0,0.04)',
         },
       ]}
     >
@@ -111,10 +111,10 @@ function StatChip({
       >
         <Ionicons name={icon} size={14} color="#fff" />
       </LinearGradient>
-      <Text style={[$.statChipValue, { color: isDark ? colors.white : colors.slate[900] }]}>
+      <Text style={[$.statChipValue, { color: isDark ? colors.responder.dark.text : colors.slate[900] }]}>
         {value}
       </Text>
-      <Text style={[$.statChipLabel, { color: isDark ? colors.slate[500] : colors.slate[400] }]}>
+      <Text style={[$.statChipLabel, { color: isDark ? colors.responder.dark.muted : colors.slate[400] }]}>
         {label}
       </Text>
     </View>
@@ -141,8 +141,8 @@ function QuickAction({
       style={({ pressed }) => [
         $.quickAction,
         {
-          backgroundColor: isDark ? colors.dark.card : colors.white,
-          borderColor: isDark ? colors.dark.border : 'rgba(0,0,0,0.04)',
+          backgroundColor: isDark ? colors.responder.dark.card : colors.white,
+          borderColor: isDark ? colors.responder.dark.border : 'rgba(0,0,0,0.04)',
         },
         pressed && { transform: [{ scale: 0.95 }], opacity: 0.85 },
       ]}
@@ -156,7 +156,7 @@ function QuickAction({
         <Ionicons name={icon} size={18} color="#fff" />
       </LinearGradient>
       <Text
-        style={[$.quickActionLabel, { color: isDark ? colors.slate[300] : colors.slate[700] }]}
+        style={[$.quickActionLabel, { color: isDark ? colors.responder.dark.subtext : colors.slate[700] }]}
         numberOfLines={1}
       >
         {label}
@@ -167,12 +167,12 @@ function QuickAction({
 
 /* ── weather detail tile colors ── */
 const WEATHER_TILES = {
-  humidity:   { icon: 'water-outline'       as const, label: 'Humidity',   lightBg: '#E8F4FD', darkBg: '#0E2A4A', color: colors.brand[500] },
-  wind:       { icon: 'leaf-outline'        as const, label: 'Wind',       lightBg: '#E6F7F1', darkBg: '#1A2E3A', color: '#0FA896' },
-  tempLow:    { icon: 'thermometer-outline' as const, label: 'Low',        lightBg: '#EDE9FE', darkBg: '#1E1E3A', color: '#7C3AED' },
-  tempHigh:   { icon: 'thermometer-outline' as const, label: 'High',       lightBg: '#FEF3E2', darkBg: '#2A1A0A', color: '#D97706' },
-  rainTotal:  { icon: 'water'              as const, label: 'Rain/h',     lightBg: '#E0F2FE', darkBg: '#0A2540', color: '#0284C7' },
-  rainChance: { icon: 'umbrella-outline'   as const, label: 'Rain %',     lightBg: '#FCE7F3', darkBg: '#1A1A2E', color: '#DB2777' },
+  humidity:   { icon: 'water-outline'       as const, label: 'Humidity',   lightBg: '#E8F4FD', darkBg: colors.responder.dark.surface, color: colors.brand[500] },
+  wind:       { icon: 'leaf-outline'        as const, label: 'Wind',       lightBg: '#E6F7F1', darkBg: colors.responder.dark.surface, color: '#0FA896' },
+  tempLow:    { icon: 'thermometer-outline' as const, label: 'Low',        lightBg: '#EDE9FE', darkBg: colors.responder.dark.surface, color: '#7C3AED' },
+  tempHigh:   { icon: 'thermometer-outline' as const, label: 'High',       lightBg: '#FEF3E2', darkBg: colors.responder.dark.surface, color: '#D97706' },
+  rainTotal:  { icon: 'water'              as const, label: 'Rain/h',     lightBg: '#E0F2FE', darkBg: colors.responder.dark.surface, color: '#0284C7' },
+  rainChance: { icon: 'umbrella-outline'   as const, label: 'Rain %',     lightBg: '#FCE7F3', darkBg: colors.responder.dark.surface, color: '#DB2777' },
 };
 
 export default function HomeTab() {
@@ -204,12 +204,12 @@ export default function HomeTab() {
     ]).start();
   }, []);
 
-  const bg = isDark ? colors.dark.bg : colors.responder.pageBg;
-  const cardBg = isDark ? colors.dark.card : colors.white;
-  const cardBorder = isDark ? colors.dark.border : 'rgba(0,0,0,0.04)';
-  const textPrimary = isDark ? colors.white : colors.slate[900];
-  const textSecondary = isDark ? colors.slate[400] : colors.slate[500];
-  const textTertiary = isDark ? colors.slate[500] : colors.slate[400];
+  const bg = isDark ? colors.responder.dark.bg : colors.responder.pageBg;
+  const cardBg = isDark ? colors.responder.dark.card : colors.white;
+  const cardBorder = isDark ? colors.responder.dark.border : 'rgba(0,0,0,0.04)';
+  const textPrimary = isDark ? colors.responder.dark.text : colors.slate[900];
+  const textSecondary = isDark ? colors.responder.dark.subtext : colors.slate[500];
+  const textTertiary = isDark ? colors.responder.dark.muted : colors.slate[400];
 
   const loadIncidents = useCallback(
     async (isRefresh = false) => {
@@ -333,7 +333,7 @@ export default function HomeTab() {
           <View style={{ alignItems: 'center', gap: 16 }}>
             <View style={{
               width: 64, height: 64, borderRadius: 20,
-              backgroundColor: isDark ? colors.dark.card : colors.brand[500] + '10',
+              backgroundColor: isDark ? colors.responder.dark.card : colors.brand[500] + '10',
               alignItems: 'center', justifyContent: 'center',
             }}>
               <ActivityIndicator size="large" color={colors.brand[500]} />
@@ -364,7 +364,7 @@ export default function HomeTab() {
             }}
           >
             <LinearGradient
-              colors={isDark ? ['#0D1A37', '#070E18', '#07090F'] : ['#00D2FF', '#4A6CF7', '#7C3AED']}
+              colors={isDark ? [colors.responder.dark.elevated, colors.responder.dark.card, colors.responder.dark.bg] : ['#00D2FF', '#4A6CF7', '#7C3AED']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={[$.hero, { paddingTop: insets.top + 16 }]}
@@ -424,7 +424,7 @@ export default function HomeTab() {
 
                 {weather && weather.current.rainH > 0 && (
                   <>
-                    <View style={[$.wSep, { backgroundColor: isDark ? colors.dark.border : colors.slate[200] }]} />
+                    <View style={[$.wSep, { backgroundColor: isDark ? colors.responder.dark.border : colors.slate[200] }]} />
                     <Ionicons name="water" size={11} color={colors.brand[300]} />
                     <Text style={{ fontSize: 12, fontWeight: '600', color: colors.brand[500] }}>{weather.current.rainH} mm/h</Text>
                   </>
@@ -432,7 +432,7 @@ export default function HomeTab() {
 
                 {hasStorm && (
                   <>
-                    <View style={[$.wSep, { backgroundColor: isDark ? colors.dark.border : colors.slate[200] }]} />
+                    <View style={[$.wSep, { backgroundColor: isDark ? colors.responder.dark.border : colors.slate[200] }]} />
                     <Ionicons name="warning" size={12} color={colors.severity.critical} />
                   </>
                 )}
@@ -447,11 +447,11 @@ export default function HomeTab() {
             </View>
 
             {weatherExpanded && weather && (
-              <Animated.View style={[$.wDropdown, { backgroundColor: isDark ? colors.dark.card : colors.white, borderColor: cardBorder, opacity: expandAnim }]}>
+              <Animated.View style={[$.wDropdown, { backgroundColor: isDark ? colors.responder.dark.card : colors.white, borderColor: cardBorder, opacity: expandAnim }]}>
                 <Text style={[$.wSectionTitle, { color: textSecondary }]}>Today's Weather</Text>
                 <View style={$.wTileGrid}>
                   {weatherTiles.map(tile => (
-                    <View key={tile.label} style={[$.wTile, { backgroundColor: isDark ? tile.darkBg : tile.lightBg, borderColor: isDark ? colors.dark.border : colors.slate[100] }]}>
+                    <View key={tile.label} style={[$.wTile, { backgroundColor: isDark ? tile.darkBg : tile.lightBg, borderColor: isDark ? colors.responder.dark.border : colors.slate[100] }]}>
                       <View style={[$.wTileIcon, { backgroundColor: tile.color + '20' }]}>
                         <Ionicons name={tile.icon} size={15} color={tile.color} />
                       </View>
@@ -517,7 +517,7 @@ export default function HomeTab() {
                 style={({ pressed }) => [
                   $.glassCard,
                   {
-                    backgroundColor: isDark ? colors.dark.card : colors.white,
+                    backgroundColor: isDark ? colors.responder.dark.card : colors.white,
                     borderColor: cardBorder,
                     flex: 1,
                   },
@@ -553,7 +553,7 @@ export default function HomeTab() {
                 style={[
                   $.glassCard,
                   {
-                    backgroundColor: isDark ? colors.dark.card : colors.white,
+                    backgroundColor: isDark ? colors.responder.dark.card : colors.white,
                     borderColor: cardBorder,
                     flex: 1,
                   },
@@ -587,7 +587,7 @@ export default function HomeTab() {
                   Resolve Rate
                 </Text>
                 {/* progress bar */}
-                <View style={[$.progressTrack, { backgroundColor: isDark ? colors.dark.border : colors.slate[100] }]}>
+                <View style={[$.progressTrack, { backgroundColor: isDark ? colors.responder.dark.border : colors.slate[100] }]}>
                   <LinearGradient
                     colors={resolveRate >= 50 ? ['#10B981', '#34D399'] : resolveRate >= 25 ? ['#F59E0B', '#FBBF24'] : ['#EF4444', '#F87171']}
                     start={{ x: 0, y: 0 }}
@@ -723,7 +723,7 @@ export default function HomeTab() {
                       {
                         backgroundColor: isActive
                           ? colors.brand[500]
-                          : (isDark ? colors.dark.card : colors.white),
+                          : (isDark ? colors.responder.dark.card : colors.white),
                         borderColor: isActive ? 'transparent' : cardBorder,
                       },
                       pressed && !isActive && { opacity: 0.7 },
@@ -742,7 +742,7 @@ export default function HomeTab() {
                         style={[
                           $.tabPillBadge,
                           {
-                            backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : (isDark ? colors.dark.border : colors.slate[100]),
+                            backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : (isDark ? colors.responder.dark.border : colors.slate[100]),
                           },
                         ]}
                       >
@@ -804,7 +804,7 @@ export default function HomeTab() {
                             {incident.title}
                           </Text>
                           {/* time ago */}
-                          <View style={[$.timePill, { backgroundColor: isDark ? colors.dark.border : colors.slate[50] }]}>
+                          <View style={[$.timePill, { backgroundColor: isDark ? colors.responder.dark.border : colors.slate[50] }]}>
                             <Ionicons name="time-outline" size={9} color={textTertiary} />
                             <Text style={[$.timeText, { color: textTertiary }]}>
                               {timeAgo(incident.reportedAt)}
@@ -835,7 +835,7 @@ export default function HomeTab() {
             ) : (
               <View style={$.emptyState}>
                 <LinearGradient
-                  colors={isDark ? ['#1E293B', '#0F172A'] : [colors.slate[50], '#E2E8F0']}
+                    colors={isDark ? [colors.responder.dark.elevated, colors.responder.dark.card] : [colors.slate[50], '#E2E8F0']}
                   style={$.emptyIcon}
                 >
                   <Ionicons name="checkmark-circle" size={40} color={colors.severity.low} />

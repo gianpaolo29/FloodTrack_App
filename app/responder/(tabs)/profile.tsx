@@ -58,7 +58,7 @@ function PasswordStrengthBar({
             key={i}
             style={{
               flex: 1, height: 4, borderRadius: 2,
-              backgroundColor: i <= score ? color : isDark ? colors.dark.border : colors.slate[200],
+              backgroundColor: i <= score ? color : isDark ? colors.responder.dark.border : colors.slate[200],
             }}
           />
         ))}
@@ -113,9 +113,9 @@ function SettingRow({
         onPress={onPress}
         style={({ pressed }) => [
           styles.row,
-          isDark && { backgroundColor: colors.dark.card },
+          isDark && { backgroundColor: colors.responder.dark.card },
           pressed && onPress && {
-            backgroundColor: isDark ? colors.dark.elevated : '#F0F4FF',
+            backgroundColor: isDark ? colors.responder.dark.elevated : '#F0F4FF',
           },
         ]}
         accessibilityRole={onPress ? 'button' : 'none'}
@@ -175,7 +175,7 @@ function StatTile({
     <Animated.View
       style={[
         styles.statTile,
-        isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
+        isDark && { backgroundColor: colors.responder.dark.card, borderColor: colors.responder.dark.border },
         {
           opacity: animValue,
           transform: [{
@@ -459,7 +459,7 @@ export default function ProfileScreen() {
     }
   }
 
-  const screenBg    = isDark ? colors.dark.bg : '#F0F4FA';
+  const screenBg    = isDark ? colors.responder.dark.bg : '#F0F4FA';
   const roleColor   = colors.brand[500];
   const accentBrand = colors.brand[500];
 
@@ -584,10 +584,10 @@ export default function ProfileScreen() {
           <SectionLabel title="Duty Status" isDark={isDark} />
           <View style={[
             styles.card,
-            isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
+            isDark && { backgroundColor: colors.responder.dark.card, borderColor: colors.responder.dark.border },
             isOnDuty && { borderWidth: 1.5, borderColor: colors.severity.low + '40' },
           ]}>
-            <View style={[styles.row, isDark && { backgroundColor: colors.dark.card }]}>
+            <View style={[styles.row, isDark && { backgroundColor: colors.responder.dark.card }]}>
               <View style={[
                 styles.rowIcon,
                 { backgroundColor: (isOnDuty ? colors.severity.low : colors.slate[400]) + '18' },
@@ -633,7 +633,7 @@ export default function ProfileScreen() {
           </View>
 
           <SectionLabel title="Account" isDark={isDark} />
-          <View style={[styles.card, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
+          <View style={[styles.card, isDark && { backgroundColor: colors.responder.dark.card, borderColor: colors.responder.dark.border }]}>
             <SettingRow
               icon="person-outline"
               label="Edit profile"
@@ -652,7 +652,7 @@ export default function ProfileScreen() {
           </View>
 
           <SectionLabel title="Notifications" isDark={isDark} />
-          <View style={[styles.card, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
+          <View style={[styles.card, isDark && { backgroundColor: colors.responder.dark.card, borderColor: colors.responder.dark.border }]}>
             <SettingRow
               icon="alert-circle-outline"
               label="Critical alerts"
@@ -705,7 +705,7 @@ export default function ProfileScreen() {
           </View>
 
           <SectionLabel title="About" isDark={isDark} />
-          <View style={[styles.card, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
+          <View style={[styles.card, isDark && { backgroundColor: colors.responder.dark.card, borderColor: colors.responder.dark.border }]}>
             <SettingRow
               icon="shield-outline"
               label="Privacy policy"
@@ -750,7 +750,7 @@ export default function ProfileScreen() {
 
       <Modal visible={showEditProfile} transparent animationType="slide" onRequestClose={() => setShowEditProfile(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }]}>
+          <View style={[styles.modalSheet, isDark && { backgroundColor: colors.responder.dark.elevated }]}>
             <LinearGradient
               colors={['#4A6CF7', '#7C3AED']}
               start={{ x: 0, y: 0 }}
@@ -820,7 +820,7 @@ export default function ProfileScreen() {
 
               <View style={styles.modalActions}>
                 <Pressable
-                  style={[styles.modalCancelBtn, isDark && { borderColor: colors.dark.border }]}
+                  style={[styles.modalCancelBtn, isDark && { borderColor: colors.responder.dark.border }]}
                   onPress={() => setShowEditProfile(false)}
                 >
                   <Text style={[styles.modalCancelText, isDark && { color: colors.slate[400] }]}>Cancel</Text>
@@ -846,7 +846,7 @@ export default function ProfileScreen() {
 
       <Modal visible={showChangePwd} transparent animationType="slide" onRequestClose={() => setShowChangePwd(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }]}>
+          <View style={[styles.modalSheet, isDark && { backgroundColor: colors.responder.dark.elevated }]}>
             <LinearGradient
               colors={['#A855F7', '#6366F1']}
               start={{ x: 0, y: 0 }}
@@ -944,7 +944,7 @@ export default function ProfileScreen() {
 
               <View style={styles.modalActions}>
                 <Pressable
-                  style={[styles.modalCancelBtn, isDark && { borderColor: colors.dark.border }]}
+                  style={[styles.modalCancelBtn, isDark && { borderColor: colors.responder.dark.border }]}
                   onPress={() => setShowChangePwd(false)}
                 >
                   <Text style={[styles.modalCancelText, isDark && { color: colors.slate[400] }]}>Cancel</Text>

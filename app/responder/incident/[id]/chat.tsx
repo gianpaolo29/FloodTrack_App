@@ -135,7 +135,7 @@ export default function IncidentChatScreen() {
 
   const isChatClosed = incidentStatus === 'resolved';
 
-  const screenBg = isDark ? colors.dark.bg : '#F4F6F9';
+  const screenBg = isDark ? colors.responder.dark.bg : '#F4F6F9';
 
   // Fetch incident status to check if resolved
   useEffect(() => {
@@ -275,7 +275,7 @@ export default function IncidentChatScreen() {
       keyboardVerticalOffset={0}
     >
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
-        <View style={[s.headerBg, { backgroundColor: isDark ? colors.dark.surface : colors.brand[700] }]} />
+        <View style={[s.headerBg, { backgroundColor: isDark ? colors.responder.dark.surface : colors.brand[700] }]} />
         <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
           <Ionicons name="chevron-back" size={20} color={colors.white} />
         </Pressable>
@@ -294,7 +294,7 @@ export default function IncidentChatScreen() {
       </View>
 
       {showQuickReplies && (
-        <View style={[s.quickReplies, isDark && { backgroundColor: colors.dark.card }]}>
+        <View style={[s.quickReplies, isDark && { backgroundColor: colors.responder.dark.card }]}>
           <Text style={[s.quickLabel, isDark && { color: colors.slate[400] }]}>Quick replies</Text>
           <View style={s.quickGrid}>
             {QUICK_REPLIES.map(qr => (
@@ -303,7 +303,7 @@ export default function IncidentChatScreen() {
                 onPress={() => handleSend(qr, true)}
                 style={({ pressed }) => [
                   s.quickChip,
-                  isDark && { backgroundColor: colors.dark.elevated, borderColor: colors.dark.border },
+                  isDark && { backgroundColor: colors.responder.dark.elevated, borderColor: colors.responder.dark.border },
                   pressed && { transform: [{ scale: 0.95 }] },
                 ]}
               >
@@ -340,7 +340,7 @@ export default function IncidentChatScreen() {
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
           ListEmptyComponent={
             <View style={s.emptyChat}>
-              <View style={[s.emptyIconBg, isDark && { backgroundColor: colors.dark.card }]}>
+              <View style={[s.emptyIconBg, isDark && { backgroundColor: colors.responder.dark.card }]}>
                 <Ionicons name="chatbubbles-outline" size={40} color={colors.brand[300]} />
               </View>
               <Text style={[s.emptyChatTitle, isDark && { color: colors.white }]}>
@@ -375,7 +375,7 @@ export default function IncidentChatScreen() {
                           borderBottomRightRadius: 4,
                         }
                       : {
-                          backgroundColor: isDark ? colors.dark.card : colors.white,
+                          backgroundColor: isDark ? colors.responder.dark.card : colors.white,
                           borderBottomLeftRadius: 4,
                           borderLeftWidth: 3,
                           borderLeftColor: item.userRole === 'admin' ? colors.iconAccents.admin : colors.brand[500],
@@ -425,7 +425,7 @@ export default function IncidentChatScreen() {
           s.closedBanner,
           {
             paddingBottom: insets.bottom + 8,
-            backgroundColor: isDark ? colors.dark.surface : colors.white,
+            backgroundColor: isDark ? colors.responder.dark.surface : colors.white,
           },
         ]}>
           <View style={s.closedBannerInner}>
@@ -441,7 +441,7 @@ export default function IncidentChatScreen() {
             s.inputBar,
             {
               paddingBottom: insets.bottom + 8,
-              backgroundColor: isDark ? colors.dark.surface : colors.white,
+              backgroundColor: isDark ? colors.responder.dark.surface : colors.white,
             },
           ]}
         >
@@ -450,8 +450,8 @@ export default function IncidentChatScreen() {
               style={[
                 s.input,
                 isDark && {
-                  backgroundColor: colors.dark.card,
-                  borderColor: colors.dark.border,
+                  backgroundColor: colors.responder.dark.card,
+                  borderColor: colors.responder.dark.border,
                   color: colors.white,
                 },
               ]}

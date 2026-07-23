@@ -72,7 +72,7 @@ function AlertCard({
     ? 'checkmark-circle'
     : 'information-circle';
 
-  const cardBg = isDark ? colors.dark.elevated : colors.white;
+  const cardBg = isDark ? colors.responder.dark.elevated : colors.white;
 
   const titleColor = alert.read
     ? (isDark ? colors.slate[400] : colors.slate[500])
@@ -136,8 +136,8 @@ function AlertDetail({ alert, isDark, screenBg, bottomInset, onBack, onViewRepor
   const accentColor = isCritical ? colors.severity.critical : isStatusUpdate ? colors.severity.low : colors.gradients.cta[0];
   const iconName: keyof typeof Ionicons.glyphMap = isCritical ? 'alert-circle' : isStatusUpdate ? 'checkmark-circle' : 'information-circle';
   const kindLabel = isCritical ? 'Critical Alert' : isStatusUpdate ? 'Status Update' : 'Advisory';
-  const cardBg = isDark ? colors.dark.card : colors.white;
-  const borderColor = isDark ? colors.dark.border : colors.slate[100];
+  const cardBg = isDark ? colors.responder.dark.card : colors.white;
+  const borderColor = isDark ? colors.responder.dark.border : colors.slate[100];
 
   return (
     <ScrollView
@@ -407,7 +407,7 @@ export default function AlertsScreen() {
 
   let cardSlot = 0;
 
-  const screenBg = isDark ? colors.dark.bg : colors.slate[50];
+  const screenBg = isDark ? colors.responder.dark.bg : colors.slate[50];
 
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>

@@ -132,13 +132,30 @@ export const colors = {
   // Evacuation center color
   evac: '#0E9E6E',
 
-  // Responder light-mode card backgrounds
+  // Responder colors
   responder: {
     locationCardBg: '#D6EAF8',
     resolveCardBg:  '#E8F8F5',
     activeCardBg:   '#EBF5FB',
     pageBg:         '#F2F4F7',
     cardBorder:     '#E8ECF0',
+
+    // Dark blue mode palette
+    dark: {
+      bg:         '#0A1628',
+      surface:    '#0D1D30',
+      card:       '#0F2035',
+      elevated:   '#152A42',
+      border:     '#1C3355',
+      text:       '#E8EDF5',
+      subtext:    '#7B93B0',
+      muted:      '#5A7291',
+      accent:     '#60A5FA',
+      accentDim:  '#3B82F6',
+      success:    '#34D399',
+      warning:    '#FBBF24',
+      danger:     '#F87171',
+    },
   },
 
   // Overlay & glass tokens
