@@ -7,7 +7,7 @@ import { getNotificationPrefs } from '@/services/notifications';
 
 interface AlertBadgeContextValue {
   unreadCount: number;
-  setUnreadCount: (n: number) => void;
+  setUnreadCount: (n: number | ((prev: number) => number)) => void;
 }
 
 const AlertBadgeContext = createContext<AlertBadgeContextValue>({

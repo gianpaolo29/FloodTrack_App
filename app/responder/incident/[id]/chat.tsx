@@ -141,7 +141,7 @@ export default function IncidentChatScreen() {
   useEffect(() => {
     if (!token) return;
     getIncidentDetail(id, token)
-      .then(detail => setIncidentStatus(detail.status))
+      .then(detail => setIncidentStatus(detail.reportStatus))
       .catch(() => {});
   }, [id, token]);
 
@@ -154,7 +154,7 @@ export default function IncidentChatScreen() {
     const handleStatusChange = (data: { reportId: string }) => {
       if (data.reportId === id && token) {
         getIncidentDetail(id, token)
-          .then(detail => setIncidentStatus(detail.status))
+          .then(detail => setIncidentStatus(detail.reportStatus))
           .catch(() => {});
       }
     };
