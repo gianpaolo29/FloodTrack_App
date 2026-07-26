@@ -5,6 +5,7 @@ import {
   Dimensions,
   Easing,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -22,12 +23,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/context/AuthContext';
 import { AppAlert, AlertConfig } from '@/components/AppAlert';
 import { colors } from '@/theme/colors';
-import { apiCheckEmail } from '@/services/api';
+import { apiCheckEmail, apiRegister, apiSendEmailOtp, apiVerifyEmailOtp } from '@/services/api';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const HERO_H = SCREEN_H * 0.30;
 
-const PH_MOBILE_RE = /^(\+639|09)\d{9}$/;
+
 const EMAIL_RE     = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type Role = 'Resident' | 'Responder';
@@ -68,7 +69,7 @@ function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: numb
 export default function SignUpScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { register } = useAuth();
+  const { login } = useAuth();
 
   // ── Entrance animations ──────────────────────────────────────────────────
   const heroOpacity  = useRef(new Animated.Value(0)).current;
@@ -120,6 +121,20 @@ export default function SignUpScreen() {
   const [isGoogleLoading, setIsGoogleLoading]   = useState(false);
   const [alertConfig, setAlertConfig]           = useState<AlertConfig | null>(null);
 
+  // Pending auth (held until OTP verified)
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
+
+  // OTP verification
+  const [showOtp, setShowOtp]           = useState(false);
+  const [otpDigits, setOtpDigits]       = useState(['', '', '', '', '', '']);
+  const [otpLoading, setOtpLoading]     = useState(false);
+  const [otpResending, setOtpResending] = useState(false);
+  const [otpError, setOtpError]         = useState('');
+  const [otpCooldown, setOtpCooldown]   = useState(0);
+  const otpRefs = useRef<(TextInput | null)[]>([]);
+  const otpFadeAnim = useRef(new Animated.Value(0)).current;
+  const otpSlideAnim = useRef(new Animated.Value(300)).current;
+
   // ── Password strength ────────────────────────────────────────────────────
   const pwdLen  = password.length;
   const strength = pwdLen === 0 ? 0 : pwdLen < 6 ? 1 : pwdLen < 10 ? 2 : 3;
@@ -148,9 +163,9 @@ export default function SignUpScreen() {
     } finally {
       setIsLoading(false);
     }
-    const phone = contact.replace(/\s/g, '');
-    if (!phone || !PH_MOBILE_RE.test(phone)) {
-      setAlertConfig({ type: 'warning', title: 'Invalid Number', message: 'Enter a valid PH mobile number (09XX or +639XX).', confirmText: 'OK' });
+    const phone = '09' + contact.replace(/[^0-9]/g, '');
+    if (contact.length !== 9) {
+      setAlertConfig({ type: 'warning', title: 'Invalid Number', message: 'Enter 9 digits after 09.', confirmText: 'OK' });
       return;
     }
     if (!password || password.length < 8 || password.length > 16) {
@@ -163,7 +178,7 @@ export default function SignUpScreen() {
     }
     setIsLoading(true);
     try {
-      await register({
+      const { token: t } = await apiRegister({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
@@ -171,12 +186,96 @@ export default function SignUpScreen() {
         password,
         role,
       });
+      // Hold the token — don't persist yet (prevents auto-navigation)
+      setPendingToken(t);
+      // Send OTP and show verification modal
+      try { await apiSendEmailOtp(email.trim()); } catch {}
+      setOtpDigits(['', '', '', '', '', '']);
+      setOtpError('');
+      setShowOtp(true);
+      setOtpCooldown(60);
+      otpSlideAnim.setValue(300);
+      otpFadeAnim.setValue(0);
+      Animated.parallel([
+        Animated.spring(otpSlideAnim, { toValue: 0, damping: 20, stiffness: 200, useNativeDriver: true }),
+        Animated.timing(otpFadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      ]).start();
+      setTimeout(() => otpRefs.current[0]?.focus(), 400);
     } catch (e: any) {
       setAlertConfig({ type: 'error', title: 'Registration Failed', message: e?.message ?? 'Something went wrong. Please try again.', confirmText: 'Try Again' });
     } finally {
       setIsLoading(false);
     }
-  }, [firstName, lastName, email, contact, password, confirmPassword, role, register]);
+  }, [firstName, lastName, email, contact, password, confirmPassword, role, otpSlideAnim, otpFadeAnim]);
+
+  // ── OTP cooldown timer ──
+  useEffect(() => {
+    if (otpCooldown <= 0) return;
+    const t = setTimeout(() => setOtpCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [otpCooldown]);
+
+  function handleOtpChange(text: string, idx: number) {
+    const digit = text.replace(/[^0-9]/g, '').slice(-1);
+    const next = [...otpDigits];
+    next[idx] = digit;
+    setOtpDigits(next);
+    setOtpError('');
+    if (digit && idx < 5) {
+      otpRefs.current[idx + 1]?.focus();
+    }
+    // Auto-submit when all 6 digits entered
+    if (digit && idx === 5 && next.every(d => d)) {
+      handleOtpSubmit(next.join(''));
+    }
+  }
+
+  function handleOtpKeyPress(key: string, idx: number) {
+    if (key === 'Backspace' && !otpDigits[idx] && idx > 0) {
+      const next = [...otpDigits];
+      next[idx - 1] = '';
+      setOtpDigits(next);
+      otpRefs.current[idx - 1]?.focus();
+    }
+  }
+
+  async function handleOtpSubmit(code?: string) {
+    const otp = code ?? otpDigits.join('');
+    if (otp.length !== 6) {
+      setOtpError('Please enter all 6 digits');
+      return;
+    }
+    setOtpLoading(true);
+    setOtpError('');
+    try {
+      await apiVerifyEmailOtp(email.trim(), otp);
+      // Email verified — now log in to persist auth and navigate
+      await login({ email: email.trim(), password });
+      setShowOtp(false);
+    } catch (e: any) {
+      setOtpError(e?.message ?? 'Invalid code. Please try again.');
+      setOtpDigits(['', '', '', '', '', '']);
+      setTimeout(() => otpRefs.current[0]?.focus(), 100);
+    } finally {
+      setOtpLoading(false);
+    }
+  }
+
+  async function handleResendOtp() {
+    if (otpCooldown > 0 || otpResending) return;
+    setOtpResending(true);
+    try {
+      await apiSendEmailOtp(email.trim());
+      setOtpCooldown(60);
+      setOtpError('');
+      setOtpDigits(['', '', '', '', '', '']);
+      setTimeout(() => otpRefs.current[0]?.focus(), 100);
+    } catch {
+      setOtpError('Failed to resend code.');
+    } finally {
+      setOtpResending(false);
+    }
+  }
 
   const handleGoogleSignUp = useCallback(async () => {
     setIsGoogleLoading(true);
@@ -307,14 +406,15 @@ export default function SignUpScreen() {
                 <View style={s.inputIconWrap}>
                   <Ionicons name="call-outline" size={18} color={colors.auth.muted} />
                 </View>
+                <Text style={{ fontSize: 15, color: colors.auth.heading, marginLeft: 12 }}>09</Text>
                 <TextInput
-                  style={s.input}
-                  placeholder="Mobile number (09XX)"
+                  style={[s.input, { paddingLeft: 2 }]}
+                  placeholder="XX XXX XXXX"
                   placeholderTextColor={colors.auth.placeholder}
                   keyboardType="phone-pad"
                   value={contact}
-                  onChangeText={setContact}
-                  maxLength={16}
+                  onChangeText={(t) => setContact(t.replace(/[^0-9]/g, '').slice(0, 9))}
+                  maxLength={9}
                 />
               </View>
             </View>
@@ -446,6 +546,110 @@ export default function SignUpScreen() {
       {alertConfig && (
         <AppAlert config={alertConfig} onDismiss={() => setAlertConfig(null)} />
       )}
+
+      {/* ── OTP Verification Modal ── */}
+      <Modal transparent visible={showOtp} animationType="none" onRequestClose={() => {}}>
+        <Animated.View style={[otp.backdrop, { opacity: otpFadeAnim }]}>
+          <Animated.View style={[otp.sheet, { transform: [{ translateY: otpSlideAnim }] }]}>
+            {/* Accent bar */}
+            <LinearGradient
+              colors={[colors.auth.primary, '#7C3AED']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={otp.accent}
+            />
+            <View style={otp.handle} />
+
+            {/* Icon */}
+            <View style={otp.iconWrap}>
+              <LinearGradient
+                colors={[colors.auth.primary, '#7C3AED']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={otp.iconGrad}
+              >
+                <Ionicons name="mail-outline" size={28} color="#fff" />
+              </LinearGradient>
+            </View>
+
+            <Text style={otp.title}>Verify your email</Text>
+            <Text style={otp.sub}>
+              We sent a 6-digit code to{'\n'}
+              <Text style={otp.emailHighlight}>{email.trim()}</Text>
+            </Text>
+
+            {/* OTP inputs */}
+            <View style={otp.digitRow}>
+              {otpDigits.map((d, i) => (
+                <TextInput
+                  key={i}
+                  ref={r => { otpRefs.current[i] = r; }}
+                  style={[
+                    otp.digitInput,
+                    d ? otp.digitFilled : null,
+                    otpError ? otp.digitError : null,
+                  ]}
+                  value={d}
+                  onChangeText={t => handleOtpChange(t, i)}
+                  onKeyPress={({ nativeEvent }) => handleOtpKeyPress(nativeEvent.key, i)}
+                  keyboardType="number-pad"
+                  maxLength={1}
+                  selectTextOnFocus
+                  editable={!otpLoading}
+                />
+              ))}
+            </View>
+
+            {otpError ? (
+              <View style={otp.errorRow}>
+                <Ionicons name="alert-circle" size={13} color={colors.feedback.error} />
+                <Text style={otp.errorText}>{otpError}</Text>
+              </View>
+            ) : null}
+
+            {/* Verify button */}
+            <Pressable
+              onPress={() => handleOtpSubmit()}
+              disabled={otpLoading || otpDigits.some(d => !d)}
+              style={({ pressed }) => [
+                otp.verifyBtn,
+                (otpLoading || otpDigits.some(d => !d)) && { opacity: 0.5 },
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <LinearGradient
+                colors={[colors.auth.primary, '#7C3AED']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={otp.verifyGrad}
+              >
+                {otpLoading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                    <Text style={otp.verifyText}>Verify Email</Text>
+                  </>
+                )}
+              </LinearGradient>
+            </Pressable>
+
+            {/* Resend */}
+            <View style={otp.resendRow}>
+              <Text style={otp.resendLabel}>Didn't receive it?</Text>
+              {otpCooldown > 0 ? (
+                <Text style={otp.resendCooldown}>Resend in {otpCooldown}s</Text>
+              ) : (
+                <Pressable onPress={handleResendOtp} disabled={otpResending}>
+                  <Text style={otp.resendLink}>
+                    {otpResending ? 'Sending...' : 'Resend Code'}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
     </View>
   );
 }
@@ -581,4 +785,145 @@ const s = StyleSheet.create({
   },
   footerText: { fontSize: 14, color: colors.auth.muted },
   footerLink: { fontSize: 14, fontWeight: '800', color: colors.auth.primary },
+});
+
+const otp = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  sheet: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: colors.white,
+    borderRadius: 28,
+    padding: 28,
+    paddingTop: 0,
+    alignItems: 'center',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.2,
+    shadowRadius: 28,
+    elevation: 24,
+  },
+  accent: {
+    height: 4,
+    width: '100%',
+    marginBottom: 16,
+    marginHorizontal: -28,
+    alignSelf: 'stretch',
+  },
+  handle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: colors.slate[200],
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  iconWrap: {
+    marginBottom: 16,
+  },
+  iconGrad: {
+    width: 60, height: 60, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: colors.auth.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.slate[900],
+    letterSpacing: -0.3,
+    marginBottom: 6,
+  },
+  sub: {
+    fontSize: 13,
+    color: colors.slate[500],
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 24,
+  },
+  emailHighlight: {
+    fontWeight: '700',
+    color: colors.slate[700],
+  },
+  digitRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  digitInput: {
+    width: 46,
+    height: 54,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: colors.slate[200],
+    backgroundColor: colors.slate[50],
+    textAlign: 'center',
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.slate[900],
+  },
+  digitFilled: {
+    borderColor: colors.auth.primary,
+    backgroundColor: colors.auth.primary + '08',
+  },
+  digitError: {
+    borderColor: colors.feedback.error,
+    backgroundColor: colors.feedback.error + '08',
+  },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 12,
+  },
+  errorText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.feedback.error,
+  },
+  verifyBtn: {
+    width: '100%',
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  verifyGrad: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 15,
+  },
+  verifyText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  resendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  resendLabel: {
+    fontSize: 12,
+    color: colors.slate[400],
+  },
+  resendCooldown: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.slate[400],
+  },
+  resendLink: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.auth.primary,
+  },
 });

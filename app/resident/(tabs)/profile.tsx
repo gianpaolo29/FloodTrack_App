@@ -11,6 +11,7 @@ import {
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import * as Storage from '@/utils/storage';
@@ -25,7 +26,7 @@ import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
-import { updateProfile, changePassword, uploadAvatar } from '@/services/api';
+import { updateProfile, changePassword, uploadAvatar, syncNotificationPrefs } from '@/services/api';
 
 function getStrengthLevel(len: number): { score: number; label: string; color: string } {
   if (len === 0) return { score: 0, label: '', color: '' };
@@ -244,6 +245,7 @@ export default function ProfileScreen() {
   const isDark = scheme === 'dark';
   const { user, token, logout, updateUser, setHomeAddress } = useAuth();
   const { showAlert } = useAlert();
+  const { height: screenH } = useWindowDimensions();
 
   const [notifCritical,    setNotifCritical]    = useState(true);
   const [notifAdvisory,    setNotifAdvisory]    = useState(true);
@@ -432,9 +434,27 @@ export default function ProfileScreen() {
     }).catch(() => {});
   }, []);
 
-  useEffect(() => { Storage.setItem('ft_notif_critical', String(notifCritical)); }, [notifCritical]);
-  useEffect(() => { Storage.setItem('ft_notif_advisory', String(notifAdvisory)); }, [notifAdvisory]);
-  useEffect(() => { Storage.setItem('ft_notif_reports',  String(notifMyReports)); }, [notifMyReports]);
+  function handleToggleNotif(key: 'critical' | 'advisory' | 'reports', value: boolean) {
+    if (key === 'critical')  setNotifCritical(value);
+    if (key === 'advisory')  setNotifAdvisory(value);
+    if (key === 'reports')   setNotifMyReports(value);
+
+    const label = key === 'critical' ? 'Critical alerts' : key === 'advisory' ? 'Advisories' : 'Report updates';
+    Storage.setItem(`ft_notif_${key}`, String(value));
+    showAlert({
+      type: value ? 'success' : 'info',
+      title: value ? `${label} enabled` : `${label} disabled`,
+      message: value ? `You will receive ${label.toLowerCase()}.` : `You won't receive ${label.toLowerCase()}.`,
+    });
+
+    if (token) {
+      syncNotificationPrefs({
+        critical:   key === 'critical'  ? value : notifCritical,
+        advisory:   key === 'advisory'  ? value : notifAdvisory,
+        my_reports: key === 'reports'   ? value : notifMyReports,
+      }, token);
+    }
+  }
 
   const screenBg    = isDark ? colors.dark.bg : colors.slate[50];
   const roleColor   = user?.role === 'Responder' ? colors.accent[500] : colors.brand[200];
@@ -453,7 +473,7 @@ export default function ProfileScreen() {
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 30 }}
         showsVerticalScrollIndicator={false}
       >
 
@@ -604,7 +624,7 @@ export default function ProfileScreen() {
               right={
                 <Switch
                   value={notifCritical}
-                  onValueChange={setNotifCritical}
+                  onValueChange={(v) => handleToggleNotif('critical', v)}
                   trackColor={switchTrack}
                   thumbColor={colors.white}
                   ios_backgroundColor={colors.slate[200]}
@@ -620,7 +640,7 @@ export default function ProfileScreen() {
               right={
                 <Switch
                   value={notifAdvisory}
-                  onValueChange={setNotifAdvisory}
+                  onValueChange={(v) => handleToggleNotif('advisory', v)}
                   trackColor={switchTrack}
                   thumbColor={colors.white}
                   ios_backgroundColor={colors.slate[200]}
@@ -637,7 +657,7 @@ export default function ProfileScreen() {
               right={
                 <Switch
                   value={notifMyReports}
-                  onValueChange={setNotifMyReports}
+                  onValueChange={(v) => handleToggleNotif('reports', v)}
                   trackColor={switchTrack}
                   thumbColor={colors.white}
                   ios_backgroundColor={colors.slate[200]}
@@ -693,7 +713,7 @@ export default function ProfileScreen() {
 
       <Modal visible={showEditProfile} transparent animationType="slide" onRequestClose={() => setShowEditProfile(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }]}>
+          <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }, { maxHeight: screenH * 0.85 }]}>
             <LinearGradient
               colors={colors.gradients.cta}
               start={{ x: 0, y: 0 }}
@@ -789,7 +809,7 @@ export default function ProfileScreen() {
 
       <Modal visible={showChangePwd} transparent animationType="slide" onRequestClose={() => setShowChangePwd(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }]}>
+          <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }, { maxHeight: screenH * 0.85 }]}>
             <LinearGradient
               colors={colors.gradients.password}
               start={{ x: 0, y: 0 }}
@@ -806,7 +826,7 @@ export default function ProfileScreen() {
             </LinearGradient>
 
             <View style={styles.modalBody}>
-              <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+              <ScrollView style={{ maxHeight: screenH * 0.5 }} showsVerticalScrollIndicator={false}>
               <View style={styles.modalFields}>
                 <GlassInput icon="lock-closed-outline" isDark={isDark}>
                   <TextInput

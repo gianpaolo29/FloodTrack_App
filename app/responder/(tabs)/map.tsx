@@ -34,13 +34,13 @@ import { SeverityChip } from '@/components/SeverityChip';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getAssignedIncidents, getEvacuationCenters, getActiveHazards, updateIncidentStatus } from '@/services/api';
+import { getAssignedIncidents, getEvacuationCenters, getActiveHazards, updateIncidentStatus, getAppConfig } from '@/services/api';
 import type { Incident, ResponderStatus, Severity, Hazard } from '@/types';
 import { HeatmapLegend } from '@/components/HeatmapLegend';
 import { HeatmapZoneSummary } from '@/components/HeatmapZoneSummary';
 import { HeatmapTimeScrubber } from '@/components/HeatmapTimeScrubber';
 
-const INITIAL_REGION: Region = {
+const DEFAULT_REGION: Region = {
   latitude: 14.0771, longitude: 120.6361,
   latitudeDelta: 0.06, longitudeDelta: 0.06,
 };
@@ -111,7 +111,6 @@ const MAP_TYPES: { key: MapTypeKey; label: string; icon: keyof typeof Ionicons.g
   { key: 'satellite', label: 'Satellite', icon: 'planet-outline', desc: 'Aerial imagery'     },
   { key: 'hybrid',    label: 'Hybrid',    icon: 'globe-outline',  desc: 'Satellite + labels' },
   { key: 'terrain',   label: 'Terrain',   icon: 'layers-outline', desc: 'Topographic'        },
-  { key: 'flood',     label: 'Flood',     icon: 'water',          desc: 'Severity heatmap'   },
 ];
 
 const HAZARD_MARKER_META: Record<string, { icon: keyof typeof Ionicons.glyphMap; color: string }> = {
@@ -147,22 +146,6 @@ const EVAC_TYPE_META: Record<string, { icon: keyof typeof Ionicons.glyphMap; lab
 
 const EVAC_COLOR = '#0E9E6E';
 
-const FALLBACK_EVAC_CENTERS: EvacCenter[] = [
-  { id: 'evac-1', name: 'Nasugbu Municipal Gymnasium', address: 'J.P. Laurel St., Poblacion, Nasugbu, Batangas', type: 'gymnasium', capacity: 1200, latitude: 14.07780, longitude: 120.63820 },
-  { id: 'evac-2', name: 'Nasugbu West Central School', address: 'Concepcion St., Brgy. IV, Nasugbu, Batangas', type: 'school', capacity: 2000, latitude: 14.07362, longitude: 120.63332 },
-  { id: 'evac-3', name: 'Nasugbu East Central School', address: 'Poblacion, Nasugbu, Batangas', type: 'school', capacity: 900, latitude: 14.07620, longitude: 120.63680 },
-  { id: 'evac-4', name: 'Nasugbu National High School', address: 'Brgy. Poblacion, Nasugbu, Batangas', type: 'school', capacity: 1500, latitude: 14.08100, longitude: 120.63900 },
-  { id: 'evac-5', name: 'Pantalan Elementary School', address: 'Brgy. Pantalan, Nasugbu, Batangas', type: 'school', capacity: 450, latitude: 14.08560, longitude: 120.62950 },
-  { id: 'evac-6', name: 'Pantalan Senior High School', address: 'Brgy. Pantalan, Nasugbu, Batangas', type: 'school', capacity: 600, latitude: 14.08720, longitude: 120.62870 },
-  { id: 'evac-7', name: 'Banilad Elementary School', address: 'Brgy. Banilad, Nasugbu, Batangas', type: 'school', capacity: 380, latitude: 14.07920, longitude: 120.62780 },
-  { id: 'evac-8', name: 'Munting Indang Elementary School', address: 'Brgy. Munting Indang, Nasugbu, Batangas', type: 'school', capacity: 350, latitude: 14.06650, longitude: 120.64220 },
-  { id: 'evac-9', name: 'Kaylaway Elementary School', address: 'Brgy. Kaylaway, Nasugbu, Batangas', type: 'school', capacity: 420, latitude: 14.09750, longitude: 120.64780 },
-  { id: 'evac-10', name: 'Kaylaway National High School', address: 'Brgy. Kaylaway, Nasugbu, Batangas', type: 'school', capacity: 700, latitude: 14.09650, longitude: 120.64950 },
-  { id: 'evac-11', name: 'Riparo Elementary School', address: 'Brgy. Riparo, Nasugbu, Batangas', type: 'school', capacity: 320, latitude: 14.05650, longitude: 120.64480 },
-  { id: 'evac-12', name: 'Bilaran High School', address: 'Catandaan, Brgy. Bilaran, Nasugbu, Batangas', type: 'school', capacity: 550, latitude: 14.05400, longitude: 120.63100 },
-  { id: 'evac-13', name: 'BatStateU Nasugbu Campus', address: 'Brgy. Lanas, Nasugbu, Batangas', type: 'school', capacity: 1800, latitude: 14.07450, longitude: 120.63560 },
-  { id: 'evac-14', name: 'Aga Elementary School', address: 'Brgy. Aga, Nasugbu, Batangas', type: 'school', capacity: 280, latitude: 14.06300, longitude: 120.62600 },
-];
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -242,28 +225,28 @@ const markerStyles = StyleSheet.create({
   },
 });
 
-function EvacuationMarker() {
+function EvacuationMarker({ small }: { small?: boolean }) {
+  const size = small ? 20 : 30;
+  const iconSize = small ? 9 : 13;
+  const radius = small ? 7 : 10;
+  const border = small ? 1.5 : 2;
   return (
-    <View style={evacMarker.wrapper}>
-      <View style={evacMarker.circle}>
-        <Ionicons name="shield-checkmark" size={13} color={colors.white} />
+    <View style={{ width: size + 6, height: size + 6, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{
+        width: size, height: size, borderRadius: radius,
+        backgroundColor: EVAC_COLOR,
+        borderWidth: border, borderColor: colors.white,
+        alignItems: 'center', justifyContent: 'center',
+        shadowColor: EVAC_COLOR,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.4, shadowRadius: 4, elevation: 5,
+      }}>
+        <Ionicons name="shield-checkmark" size={iconSize} color={colors.white} />
       </View>
     </View>
   );
 }
 
-const evacMarker = StyleSheet.create({
-  wrapper: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  circle: {
-    width: 30, height: 30, borderRadius: 10,
-    backgroundColor: EVAC_COLOR,
-    borderWidth: 2, borderColor: colors.white,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: EVAC_COLOR,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4, shadowRadius: 4, elevation: 5,
-  },
-});
 
 function MapTypeModal({
   visible, current, onSelect, onClose, isDark,
@@ -938,9 +921,10 @@ export default function ResponderMapScreen() {
   const mapRef  = useRef<MapView>(null);
   const { token } = useAuth();
 
+  const [initialRegion,  setInitialRegion]  = useState<Region>(DEFAULT_REGION);
   const [incidents,      setIncidents]      = useState<Incident[]>([]);
   const [adminHazards,   setAdminHazards]   = useState<Hazard[]>([]);
-  const [evacCenters,    setEvacCenters]    = useState<EvacCenter[]>(FALLBACK_EVAC_CENTERS);
+  const [evacCenters,    setEvacCenters]    = useState<EvacCenter[]>([]);
   const [loading,        setLoading]        = useState(true);
   const [filter,         setFilter]         = useState<StatusFilter>('all');
   const [mapTypeKey,     setMapTypeKey]     = useState<MapTypeKey>('standard');
@@ -954,6 +938,7 @@ export default function ResponderMapScreen() {
   const [searchPin,      setSearchPin]      = useState<{ name: string; latitude: number; longitude: number } | null>(null);
   const [googlePlaces, setGooglePlaces] = useState<{ placeId: string; main: string; secondary: string }[]>([]);
   const [googlePlaceLoading, setGooglePlaceLoading] = useState<string | null>(null);
+  const [zoomedOut, setZoomedOut] = useState(false);
   const [topCardHeight,  setTopCardHeight]  = useState(0);
   const [searchQuery,    setSearchQuery]    = useState('');
   const [searchFocused,  setSearchFocused]  = useState(false);
@@ -1014,17 +999,17 @@ export default function ResponderMapScreen() {
 
   function handleSearchChange(text: string) {
     setSearchQuery(text);
-    if (text.trim().length >= 2) {
+    if (text.trim().length >= 1) {
       setSearchLoading(true);
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
       searchDebounceRef.current = setTimeout(async () => {
         try {
           const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID;
           if (key) {
-            const loc = userLocation ?? { latitude: INITIAL_REGION.latitude, longitude: INITIAL_REGION.longitude };
+            const loc = userLocation ?? { latitude: initialRegion.latitude, longitude: initialRegion.longitude };
             const url =
               `https://maps.googleapis.com/maps/api/place/autocomplete/json` +
-              `?input=${encodeURIComponent(text.trim() + ' Nasugbu')}` +
+              `?input=${encodeURIComponent(text.trim())}` +
               `&location=${loc.latitude},${loc.longitude}` +
               `&radius=15000` +
               `&strictbounds=true` +
@@ -1032,8 +1017,11 @@ export default function ResponderMapScreen() {
             const res = await fetch(url);
             const json = await res.json();
             if (json.status === 'OK' && json.predictions) {
+              const nasugbuOnly = json.predictions.filter((p: any) =>
+                (p.description ?? '').toLowerCase().includes('nasugbu')
+              );
               setGooglePlaces(
-                json.predictions.slice(0, 5).map((p: any) => ({
+                nasugbuOnly.slice(0, 5).map((p: any) => ({
                   placeId: p.place_id,
                   main: p.structured_formatting?.main_text ?? p.description,
                   secondary: p.structured_formatting?.secondary_text ?? '',
@@ -1137,12 +1125,19 @@ export default function ResponderMapScreen() {
   useEffect(() => {
     if (!token) return;
     getEvacuationCenters(token)
-      .then(centers => {
-        if (centers.length > 0) setEvacCenters(centers);
-      })
+      .then(setEvacCenters)
       .catch(() => {});
     getActiveHazards(token)
       .then(setAdminHazards)
+      .catch(() => {});
+    getAppConfig(token)
+      .then(config => {
+        setInitialRegion(prev => ({
+          ...prev,
+          latitude: config.defaultLatitude,
+          longitude: config.defaultLongitude,
+        }));
+      })
       .catch(() => {});
   }, [token]);
 
@@ -1230,7 +1225,7 @@ export default function ResponderMapScreen() {
 
   const trimmed = searchQuery.trim().toLowerCase();
   const isGenericEvacQuery = ['evacuation', 'center', 'shelter', 'evac'].some(kw => kw.includes(trimmed) || trimmed.includes(kw));
-  const searchResults: EvacCenter[] = trimmed.length >= 2
+  const searchResults: EvacCenter[] = trimmed.length >= 1
     ? evacCenters.filter(c =>
         c.name.toLowerCase().includes(trimmed) ||
         c.address.toLowerCase().includes(trimmed) ||
@@ -1239,39 +1234,6 @@ export default function ResponderMapScreen() {
       )
     : [];
 
-  // Nasugbu place suggestions with coordinates for map pinning
-  const nasugbuPlaces: { name: string; latitude: number; longitude: number }[] = [
-    { name: 'Poblacion',        latitude: 14.0735, longitude: 120.6340 },
-    { name: 'Bucana',           latitude: 14.0620, longitude: 120.6260 },
-    { name: 'Wawa',             latitude: 14.0850, longitude: 120.6420 },
-    { name: 'Lian',             latitude: 14.0375, longitude: 120.6491 },
-    { name: 'Calatagan',        latitude: 13.8325, longitude: 120.6322 },
-    { name: 'Balayan',          latitude: 13.9370, longitude: 120.7314 },
-    { name: 'Calaca',           latitude: 13.9306, longitude: 120.8131 },
-    { name: 'Tuy',              latitude: 14.0175, longitude: 120.7269 },
-    { name: 'Nasugbu',          latitude: 14.0771, longitude: 120.6361 },
-    { name: 'Pantalan',         latitude: 14.0690, longitude: 120.6290 },
-    { name: 'Putat',            latitude: 14.0880, longitude: 120.6500 },
-    { name: 'Dayap',            latitude: 14.0960, longitude: 120.6530 },
-    { name: 'Cogunan',          latitude: 14.0810, longitude: 120.6480 },
-    { name: 'Lumbangan',        latitude: 14.0780, longitude: 120.6270 },
-    { name: 'San Diego',        latitude: 14.0640, longitude: 120.6390 },
-    { name: 'Bilaran',          latitude: 14.0550, longitude: 120.6350 },
-    { name: 'Natipuan',         latitude: 14.0480, longitude: 120.6240 },
-    { name: 'Kaylaway',         latitude: 14.1020, longitude: 120.6570 },
-    { name: 'Papaya',           latitude: 14.0920, longitude: 120.6600 },
-    { name: 'Tumalim',          latitude: 14.1080, longitude: 120.6350 },
-    { name: 'Banilad',          latitude: 14.0670, longitude: 120.6450 },
-    { name: 'Malapad na Bato',  latitude: 14.0430, longitude: 120.6280 },
-    { name: 'Looc',             latitude: 14.0700, longitude: 120.6200 },
-    { name: 'Aga',              latitude: 14.0820, longitude: 120.6550 },
-    { name: 'Bunducan',         latitude: 14.0600, longitude: 120.6180 },
-    { name: 'Catandaan',        latitude: 14.0530, longitude: 120.6310 },
-    { name: 'Calayo',           latitude: 14.0410, longitude: 120.6200 },
-  ];
-  const placeSuggestions = trimmed.length >= 2
-    ? nasugbuPlaces.filter(p => p.name.toLowerCase().includes(trimmed)).slice(0, 4)
-    : [];
 
   function handlePlacePress(place: { name: string; latitude: number; longitude: number }) {
     Keyboard.dismiss();
@@ -1328,12 +1290,13 @@ export default function ResponderMapScreen() {
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
         provider={PROVIDER_GOOGLE}
-        initialRegion={INITIAL_REGION}
+        initialRegion={initialRegion}
         mapType={mapType}
         showsUserLocation
         showsMyLocationButton={false}
         showsCompass={false}
         showsScale={false}
+        onRegionChangeComplete={(r: any) => setZoomedOut(r.latitudeDelta > 0.05)}
         onPress={(e: any) => {
           setSelected(null);
           setSelectedEvac(null);
@@ -1411,7 +1374,7 @@ export default function ResponderMapScreen() {
           );
         })()}
 
-        {timeFiltered.map(incident => (
+        {showFloodHeatmap && timeFiltered.map(incident => (
           <Marker
             key={incident.id}
             coordinate={{ latitude: incident.latitude, longitude: incident.longitude }}
@@ -1431,15 +1394,15 @@ export default function ResponderMapScreen() {
             <Marker
               key={`hz-${hz.id}`}
               coordinate={{ latitude: hz.latitude, longitude: hz.longitude }}
-              tracksViewChanges={false}
+              tracksViewChanges={true}
               anchor={{ x: 0.5, y: 1 }}
               zIndex={5}
             >
               <View style={{ alignItems: 'center' }}>
-                <View style={[s.hazardPin, { backgroundColor: hzColor }]}>
-                  <Ionicons name={meta?.icon ?? 'alert'} size={14} color="#fff" />
+                <View style={[s.hazardPin, { backgroundColor: hzColor }, zoomedOut && { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5 }]}>
+                  <Ionicons name={meta?.icon ?? 'alert'} size={zoomedOut ? 9 : 14} color="#fff" />
                 </View>
-                <View style={[s.hazardPinTail, { borderTopColor: hzColor }]} />
+                {!zoomedOut && <View style={[s.hazardPinTail, { borderTopColor: hzColor }]} />}
               </View>
             </Marker>
           );
@@ -1449,11 +1412,11 @@ export default function ResponderMapScreen() {
           <Marker
             key={selectedEvac.id}
             coordinate={{ latitude: selectedEvac.latitude, longitude: selectedEvac.longitude }}
-            tracksViewChanges={false}
+            tracksViewChanges={true}
             anchor={{ x: 0.5, y: 0.5 }}
             zIndex={10}
           >
-            <EvacuationMarker />
+            <EvacuationMarker small={zoomedOut} />
           </Marker>
         )}
 
@@ -1461,51 +1424,11 @@ export default function ResponderMapScreen() {
           <Marker
             key={`search-pin-${searchPin.name}`}
             coordinate={{ latitude: searchPin.latitude, longitude: searchPin.longitude }}
-            tracksViewChanges={false}
+            tracksViewChanges={true}
             anchor={{ x: 0.5, y: 1 }}
             zIndex={12}
-          >
-            <View style={{ alignItems: 'center' }}>
-              <View style={{
-                backgroundColor: colors.brand[500],
-                borderRadius: 20,
-                width: 36,
-                height: 36,
-                alignItems: 'center',
-                justifyContent: 'center',
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.3,
-                shadowRadius: 4,
-                elevation: 6,
-              }}>
-                <Ionicons name="location" size={20} color="#fff" />
-              </View>
-              <View style={{
-                width: 0, height: 0,
-                borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8,
-                borderLeftColor: 'transparent', borderRightColor: 'transparent',
-                borderTopColor: colors.brand[500],
-                marginTop: -1,
-              }} />
-              <View style={{
-                backgroundColor: isDark ? '#1E293B' : '#fff',
-                paddingHorizontal: 8,
-                paddingVertical: 3,
-                borderRadius: 8,
-                marginTop: 2,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.15,
-                shadowRadius: 2,
-                elevation: 3,
-              }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#fff' : colors.slate[800] }}>
-                  {searchPin.name}
-                </Text>
-              </View>
-            </View>
-          </Marker>
+            pinColor="red"
+          />
         )}
       </MapView>
 
@@ -1663,7 +1586,7 @@ export default function ResponderMapScreen() {
         </ScrollView>
       </View>
 
-      {searchFocused && topCardHeight > 0 && (
+      {(searchFocused || searchQuery.length > 0) && topCardHeight > 0 && (
         <Animated.View style={[
           s.dropdown,
           {
@@ -1685,7 +1608,7 @@ export default function ResponderMapScreen() {
             style={{ height: 2 }}
           />
 
-          {trimmed.length < 2 ? (
+          {trimmed.length < 1 ? (
             <>
               <View style={[s.dropdownSuggestHeader, { borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
                 <View style={s.dropdownSparkleWrap}>
@@ -1764,43 +1687,7 @@ export default function ResponderMapScreen() {
             </View>
           ) : (
             <>
-              {/* Place suggestions */}
-              {placeSuggestions.length > 0 && (
-                <View style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }}>
-                  <View style={[s.dropdownSuggestHeader, { borderBottomColor: 'transparent' }]}>
-                    <Ionicons name="location" size={12} color={colors.iconAccents?.amber ?? '#F59E0B'} />
-                    <Text style={[s.dropdownSuggestTitle, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
-                      Places in Nasugbu
-                    </Text>
-                  </View>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 10, gap: 8 }}>
-                    {placeSuggestions.map(place => (
-                      <Pressable
-                        key={place.name}
-                        onPress={() => handlePlacePress(place)}
-                        style={({ pressed }) => [{
-                          paddingHorizontal: 12,
-                          paddingVertical: 6,
-                          borderRadius: 16,
-                          backgroundColor: pressed
-                            ? (isDark ? colors.dark.elevated : colors.brand[100])
-                            : (isDark ? colors.dark.card : colors.slate[50]),
-                          borderWidth: 1,
-                          borderColor: isDark ? colors.dark.border : colors.slate[200],
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: 4,
-                        }]}
-                      >
-                        <Ionicons name="navigate-outline" size={11} color={colors.brand[500]} />
-                        <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? colors.slate[300] : colors.slate[600] }}>{place.name}</Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
-
-              {searchResults.length === 0 && googlePlaces.length === 0 && placeSuggestions.length === 0 ? (
+              {searchResults.length === 0 && googlePlaces.length === 0 ? (
             <View style={s.dropdownEmpty}>
               <View style={s.emptyIconWrap}>
                 <Ionicons name="search-outline" size={28} color={isDark ? colors.slate[600] : colors.slate[300]} />
@@ -2260,18 +2147,18 @@ const s = StyleSheet.create({
   dropdownEmptyTitle: { fontSize: 15, fontWeight: '700' },
   dropdownEmptyText: { fontSize: 12.5 },
   resultCountHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 16, paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5,
+    paddingHorizontal: 14, paddingVertical: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   resultCountBadge: {
-    minWidth: 22, height: 22, borderRadius: 11,
+    minWidth: 16, height: 16, borderRadius: 8,
     backgroundColor: EVAC_COLOR,
     alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
   },
-  resultCountText: { fontSize: 11, fontWeight: '800', color: colors.white },
-  resultCountLabel: { fontSize: 12, fontWeight: '600' },
+  resultCountText: { fontSize: 9, fontWeight: '800', color: colors.white },
+  resultCountLabel: { fontSize: 10, fontWeight: '600' },
   shimmerContainer: {},
   shimmerRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,

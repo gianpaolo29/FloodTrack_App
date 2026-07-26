@@ -19,7 +19,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getProtocols } from '@/services/api';
+import { getProtocols, getTrainingResources } from '@/services/api';
+import type { TrainingResource } from '@/types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -34,34 +35,6 @@ interface Protocol {
   steps: string[];
 }
 
-const FALLBACK_PROTOCOLS: Protocol[] = [
-  {
-    id: 'flood',
-    hazard: 'Flood Response',
-    icon: 'water',
-    color: '#3B82F6',
-    safetyTip: 'Never enter floodwater above knee level. Watch for debris and fast currents.',
-    steps: [
-      'Assess water level, depth, and flow direction from a safe vantage point',
-      'Identify trapped or stranded residents — prioritize elderly, children, PWDs',
-      'Establish evacuation routes away from rising water levels',
-      'Deploy sandbags or barriers to protect critical infrastructure',
-      'Coordinate with rescue boats if water depth exceeds safe wading level',
-      'Set up temporary shelter and distribute emergency supplies',
-      'Document water marks on structures for damage assessment',
-      'Monitor weather updates for additional rainfall warnings',
-      'Ensure electrical mains are disconnected in flooded areas',
-      'Report structural damage to buildings coordination center',
-    ],
-  },
-];
-
-const TRAINING_RESOURCES = [
-  { label: 'NDRRMC Incident Command System (ICS) Manual', icon: 'document-text-outline' as const },
-  { label: 'Basic Life Support & First Aid Guidelines', icon: 'heart-outline' as const },
-  { label: 'Flood Rescue Operations Standard Procedures', icon: 'boat-outline' as const },
-  { label: 'Radio Communication Protocols', icon: 'radio-outline' as const },
-];
 
 function ProtocolCard({
   proto,
@@ -182,21 +155,26 @@ export default function ProtocolsScreen() {
   const isDark = scheme === 'dark';
   const { token } = useAuth();
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [protocols, setProtocols] = useState<Protocol[]>(FALLBACK_PROTOCOLS);
+  const [protocols, setProtocols] = useState<Protocol[]>([]);
+  const [trainingResources, setTrainingResources] = useState<TrainingResource[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const data = await getProtocols(token!);
+      const [protoData, trainingData] = await Promise.all([
+        getProtocols(token!),
+        getTrainingResources(token!).catch(() => [] as TrainingResource[]),
+      ]);
       setProtocols(
-        data.map((item) => ({
+        protoData.map((item) => ({
           ...item,
           icon: item.icon as keyof typeof Ionicons.glyphMap,
         }))
       );
+      setTrainingResources(trainingData);
     } catch {
-      setProtocols(FALLBACK_PROTOCOLS);
+      // No fallback — data comes from database only
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -272,39 +250,41 @@ export default function ProtocolsScreen() {
           />
         ))}
 
-        <View style={[s.card, { backgroundColor: cardBg }]}>
-          <View style={[s.cardAccent, { backgroundColor: colors.brand[500] }]} />
-          <View style={s.cardInner}>
-            <View style={s.cardHeader}>
-              <View style={[s.cardIcon, { backgroundColor: colors.brand[500] + '18' }]}>
-                <Ionicons name="book-outline" size={18} color={colors.brand[500]} />
+        {trainingResources.length > 0 && (
+          <View style={[s.card, { backgroundColor: cardBg }]}>
+            <View style={[s.cardAccent, { backgroundColor: colors.brand[500] }]} />
+            <View style={s.cardInner}>
+              <View style={s.cardHeader}>
+                <View style={[s.cardIcon, { backgroundColor: colors.brand[500] + '18' }]}>
+                  <Ionicons name="book-outline" size={18} color={colors.brand[500]} />
+                </View>
+                <Text style={[s.cardTitle, isDark && { color: colors.white }]}>
+                  Training Resources
+                </Text>
               </View>
-              <Text style={[s.cardTitle, isDark && { color: colors.white }]}>
-                Training Resources
-              </Text>
-            </View>
-            <View style={s.cardContent}>
-              {TRAINING_RESOURCES.map((item, idx) => (
-                <Pressable
-                  key={idx}
-                  style={({ pressed }) => [
-                    s.trainingItem,
-                    { backgroundColor: isDark ? colors.dark.elevated : colors.brand[500] + '08' },
-                    pressed && { opacity: 0.92, transform: [{ scale: 0.98 }] },
-                  ]}
-                >
-                  <View style={[s.trainingIconBg, { backgroundColor: colors.brand[500] + '14' }]}>
-                    <Ionicons name={item.icon} size={16} color={colors.brand[500]} />
-                  </View>
-                  <Text style={[s.trainingText, isDark && { color: colors.slate[300] }]}>
-                    {item.label}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={14} color={colors.slate[400]} />
-                </Pressable>
-              ))}
+              <View style={s.cardContent}>
+                {trainingResources.map((item) => (
+                  <Pressable
+                    key={item.id}
+                    style={({ pressed }) => [
+                      s.trainingItem,
+                      { backgroundColor: isDark ? colors.dark.elevated : colors.brand[500] + '08' },
+                      pressed && { opacity: 0.92, transform: [{ scale: 0.98 }] },
+                    ]}
+                  >
+                    <View style={[s.trainingIconBg, { backgroundColor: colors.brand[500] + '14' }]}>
+                      <Ionicons name={item.icon as keyof typeof Ionicons.glyphMap} size={16} color={colors.brand[500]} />
+                    </View>
+                    <Text style={[s.trainingText, isDark && { color: colors.slate[300] }]}>
+                      {item.label}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={14} color={colors.slate[400]} />
+                  </Pressable>
+                ))}
+              </View>
             </View>
           </View>
-        </View>
+        )}
       </ScrollView>
     </View>
   );

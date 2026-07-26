@@ -7,7 +7,7 @@ import { getNotificationPrefs } from '@/services/notifications';
 
 interface AlertBadgeContextValue {
   unreadCount: number;
-  setUnreadCount: (n: number) => void;
+  setUnreadCount: React.Dispatch<React.SetStateAction<number>>;
 }
 
 const AlertBadgeContext = createContext<AlertBadgeContextValue>({

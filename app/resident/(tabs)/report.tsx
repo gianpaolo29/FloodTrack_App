@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -41,7 +42,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
 import type { AlertConfig } from '@/components/AppAlert';
-import { getAllReports, submitReport } from '@/services/api';
+import { getAllReports, submitReport, getAppConfig } from '@/services/api';
 
 
 function isVideoUri(uri: string): boolean {
@@ -249,9 +250,10 @@ const DEPTH_LEVELS = [
 
 type DepthKey = typeof DEPTH_LEVELS[number]['key'];
 
-const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
-const PICKER_H = Math.max(320, Math.min(480, SCREEN_H * 0.48));
-const FIGURE_SCALE = PICKER_H / 400;
+// Initial values for StyleSheet (static); components use useWindowDimensions for live values
+const { height: INIT_SCREEN_H, width: INIT_SCREEN_W } = Dimensions.get('window');
+const INIT_PICKER_H = Math.max(280, Math.min(480, INIT_SCREEN_H * 0.45));
+const FIGURE_SCALE = INIT_PICKER_H / 400;
 
 const SNAPS = [0.12, 0.30, 0.52, 0.74];
 
@@ -261,10 +263,12 @@ function FloodDepthPicker({
   selected,
   onSelect,
   isDark,
+  pickerH,
 }: {
   selected: DepthKey | null;
   onSelect: (key: DepthKey, severity: Severity) => void;
   isDark: boolean;
+  pickerH: number;
 }) {
   const initIdx  = selected ? DEPTH_LEVELS.findIndex(d => d.key === selected) : -1;
   const initFrac = initIdx >= 0 ? SNAPS[initIdx] : 0;
@@ -309,12 +313,12 @@ function FloodDepthPicker({
   const pan = Gesture.Pan()
     .onStart(() => { dragStart.value = waterFrac.value; })
     .onUpdate(e => {
-      const delta = -e.translationY / PICKER_H;
+      const delta = -e.translationY / pickerH;
       waterFrac.value = Math.max(0.04, Math.min(0.92, dragStart.value + delta));
     })
     .onEnd(e => {
       // Apply velocity-based momentum then settle smoothly
-      const velocity = -e.velocityY / PICKER_H;
+      const velocity = -e.velocityY / pickerH;
       const projected = Math.max(0.04, Math.min(0.92, waterFrac.value + velocity * 0.08));
       waterFrac.value = withSpring(projected, { damping: 22, stiffness: 180, mass: 0.8 });
       runOnJS(onPickFromFrac)(projected);
@@ -415,7 +419,7 @@ function FloodDepthPicker({
 
       <GestureHandlerRootView style={{ flex: 0 }}>
         <GestureDetector gesture={pan}>
-          <Animated.View style={[fdp.card, { backgroundColor: bg, borderColor: border }]}>
+          <Animated.View style={[fdp.card, { backgroundColor: bg, borderColor: border, height: pickerH }]}>
 
             {/* Sky gradient overlay */}
             <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -584,15 +588,14 @@ function DepthFtText({ depthFt }: { depthFt: SharedValue<number> }) {
 const s = (v: number) => Math.round(v * FIGURE_SCALE);
 
 const fdp = StyleSheet.create({
-  stepBody:  { padding: SCREEN_W < 360 ? 16 : 24, paddingTop: SCREEN_W < 360 ? 12 : 14, gap: 14 },
-  title:     { fontSize: SCREEN_W < 360 ? 19 : 22, fontWeight: '800', letterSpacing: -0.3 },
-  subtitle:  { fontSize: SCREEN_W < 360 ? 13 : 14, lineHeight: 20, letterSpacing: 0.1, marginBottom: 2 },
+  stepBody:  { padding: INIT_SCREEN_W < 360 ? 16 : 24, paddingTop: INIT_SCREEN_W < 360 ? 12 : 14, gap: 14 },
+  title:     { fontSize: INIT_SCREEN_W < 360 ? 19 : 22, fontWeight: '800', letterSpacing: -0.3 },
+  subtitle:  { fontSize: INIT_SCREEN_W < 360 ? 13 : 14, lineHeight: 20, letterSpacing: 0.1, marginBottom: 2 },
 
   card: {
     flexDirection: 'row',
     borderRadius: 24,
     borderWidth: 1,
-    height: PICKER_H,
     overflow: 'hidden',
     shadowColor: '#1A3A5C',
     shadowOffset: { width: 0, height: 6 },
@@ -625,7 +628,7 @@ const fdp = StyleSheet.create({
     paddingLeft: 6,
   },
   tickLine: { width: 14, height: 1.5, borderRadius: 1 },
-  tickLabel: { fontSize: SCREEN_W < 360 ? 9 : 10, fontWeight: '800', letterSpacing: 0.2 },
+  tickLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.2 },
 
   centerCol: { flex: 1, position: 'relative', overflow: 'hidden', zIndex: 1 },
 
@@ -736,7 +739,7 @@ const fdp = StyleSheet.create({
   dragHintText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
 
   labelCol: {
-    width: SCREEN_W < 360 ? 86 : 102,
+    width: INIT_SCREEN_W < 360 ? 86 : 102,
     position: 'relative', zIndex: 3,
   },
   labelItem: {
@@ -759,7 +762,7 @@ const fdp = StyleSheet.create({
   labelPill: {
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1,
   },
-  labelText: { fontSize: SCREEN_W < 360 ? 10 : 11, fontWeight: '600' },
+  labelText: { fontSize: INIT_SCREEN_W < 360 ? 10 : 11, fontWeight: '600' },
   labelTextActive: { fontWeight: '800', letterSpacing: 0.2 },
 
   banner: {
@@ -952,23 +955,16 @@ function EvidenceStep({
   );
 }
 
-const QUICK_CHIPS = [
-  'Road impassable',
-  'Vehicles stranded',
-  'Rising water',
-  'Strong current',
-  'Debris blocking',
-  'Power lines down',
-];
-
 function DescriptionStep({
   value,
   onChange,
   isDark,
+  quickChips,
 }: {
   value: string;
   onChange: (v: string) => void;
   isDark: boolean;
+  quickChips: string[];
 }) {
   function addChip(chip: string) {
     const separator = value.length > 0 && !value.endsWith(' ') ? '. ' : '';
@@ -1012,10 +1008,10 @@ function DescriptionStep({
         </Text>
       </View>
 
-      <View style={styles.chipsWrap}>
+      {quickChips.length > 0 && <View style={styles.chipsWrap}>
         <Text style={[styles.chipsLabel, isDark && { color: colors.slate[400] }]}>Quick add:</Text>
         <View style={styles.chipsRow}>
-          {QUICK_CHIPS.map(chip => (
+          {quickChips.map(chip => (
             <Pressable
               key={chip}
               onPress={() => addChip(chip)}
@@ -1025,7 +1021,7 @@ function DescriptionStep({
             </Pressable>
           ))}
         </View>
-      </View>
+      </View>}
     </View>
   );
 }
@@ -1059,6 +1055,8 @@ export default function ReportScreen() {
   const isDark   = scheme === 'dark';
   const { token } = useAuth();
   const { showAlert } = useAlert();
+  const { height: screenH } = useWindowDimensions();
+  const pickerH = Math.max(280, Math.min(480, screenH * 0.42));
 
   const [step, setStep]                   = useState(0);
   const [location, setLocation]           = useState<LocationData | null>(null);
@@ -1071,6 +1069,7 @@ export default function ReportScreen() {
   const [submittedRef, setSubmittedRef]   = useState('');
   const [loading, setLoading]             = useState(false);
   const [checkingDups, setCheckingDups]   = useState(false);
+  const [quickChips, setQuickChips]       = useState<string[]>([]);
 
   const stepOpacity = useSharedValue(1);
   const stepTranslateX = useSharedValue(0);
@@ -1141,6 +1140,13 @@ export default function ReportScreen() {
   }
 
   useEffect(() => { if (!location) detectLocation(); }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    getAppConfig(token)
+      .then(config => setQuickChips(config.quickChips))
+      .catch(() => {});
+  }, [token]);
 
   function resetForm() {
     setLocation(null);
@@ -1282,7 +1288,7 @@ export default function ReportScreen() {
         contentContainerStyle={{ paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        scrollEnabled={step !== 1}
+        scrollEnabled
       >
         {step === 0 && (
           <LocationBanner
@@ -1309,6 +1315,7 @@ export default function ReportScreen() {
               setSeverity(sev);
             }}
             isDark={isDark}
+            pickerH={pickerH}
           />
         )}
         {step === 2 && (
@@ -1324,6 +1331,7 @@ export default function ReportScreen() {
             value={description}
             onChange={setDescription}
             isDark={isDark}
+            quickChips={quickChips}
           />
         )}
         </Animated.View>

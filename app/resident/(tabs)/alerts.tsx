@@ -60,6 +60,7 @@ const KIND_CONFIG: Record<string, { icon: IoniconsName; color: string; label: st
   rejected:      { icon: 'close-circle',       color: colors.severity.critical, label: 'Rejected',  pillBg: colors.severity.critical + '14' },
   status_update: { icon: 'arrow-up-circle',    color: colors.severity.low,      label: 'Update',    pillBg: colors.severity.low + '14' },
   advisory:      { icon: 'information-circle', color: colors.brand[500],        label: 'Advisory',  pillBg: colors.brand[500] + '14' },
+  welcome:       { icon: 'heart-circle',       color: colors.brand[500],        label: 'Welcome',   pillBg: colors.brand[500] + '14' },
 };
 
 // ─── HeaderOrb ───────────────────────────────────────────────────────────────
@@ -122,6 +123,7 @@ function AlertDetail({ alert, isDark, screenBg, bottomInset, onBack, onViewRepor
   const kindLabel = alert.kind === 'rejected' ? 'Report Rejected'
     : alert.kind === 'critical' ? 'Critical Alert'
     : alert.kind === 'status_update' ? 'Status Update'
+    : alert.kind === 'welcome' ? 'Welcome'
     : 'Advisory';
   const cardBg = isDark ? colors.dark.card : colors.white;
   const borderColor = isDark ? colors.dark.border : colors.slate[100];
@@ -431,7 +433,7 @@ export default function AlertsScreen() {
           data={alerts}
           renderItem={renderAlert}
           keyExtractor={a => a.id}
-          contentContainerStyle={[styles.scroll, { paddingBottom: 40 }]}
+          contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
           showsVerticalScrollIndicator={false}
           ItemSeparatorComponent={() => <View style={{ height: 6 }} />}
           refreshControl={

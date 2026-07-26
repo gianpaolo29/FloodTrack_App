@@ -2,7 +2,7 @@ export type Severity       = 'low' | 'moderate' | 'high' | 'critical';
 export type ReportStatus   = 'pending' | 'verified' | 'assigned' | 'resolved' | 'rejected';
 export type ResponderStatus = 'pending' | 'en_route' | 'on_scene' | 'resolved';
 export type UserRole       = 'Resident' | 'Responder';
-export type AlertKind      = 'critical' | 'advisory' | 'status_update' | 'rejected';
+export type AlertKind      = 'critical' | 'advisory' | 'status_update' | 'rejected' | 'welcome';
 
 export interface User {
   id: string;
@@ -54,6 +54,7 @@ export interface Report {
   latitude: number;
   longitude: number;
   reportedAt: string;
+  createdAt: string;
   thumbnailUrl?: string;
   mediaCount: number;
 }
@@ -226,6 +227,18 @@ export interface ProtocolItem {
   color: string;
   safetyTip: string;
   steps: string[];
+}
+
+export interface TrainingResource {
+  id: string;
+  label: string;
+  icon: string;
+}
+
+export interface AppConfig {
+  defaultLatitude: number;
+  defaultLongitude: number;
+  quickChips: string[];
 }
 
 export interface AdminStats {

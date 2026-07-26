@@ -361,22 +361,6 @@ export default function MyReportsScreen() {
           ? 'No reports match your search.'
           : 'Use the report button below to submit your first flood report.'}
       </Text>
-      {tab === 'all' && !search.trim() && (
-        <Pressable
-          onPress={() => router.push('/resident/report')}
-          style={({ pressed }) => [pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]}
-        >
-          <LinearGradient
-            colors={['#4A6CF7', '#7C3AED']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.emptyActionBtn}
-          >
-            <Ionicons name="add-circle-outline" size={17} color={colors.white} />
-            <Text style={styles.emptyActionText}>Submit a Report</Text>
-          </LinearGradient>
-        </Pressable>
-      )}
     </EmptyState>
   ), [tab, isDark, search]);
 

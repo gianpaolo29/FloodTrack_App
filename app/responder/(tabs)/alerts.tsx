@@ -59,17 +59,22 @@ function AlertCard({
 }) {
   const isCritical     = alert.kind === 'critical';
   const isStatusUpdate = alert.kind === 'status_update';
+  const isWelcome      = alert.kind === 'welcome';
 
   const accentColor = isCritical
     ? colors.severity.critical
     : isStatusUpdate
     ? colors.severity.low
+    : isWelcome
+    ? colors.brand[500]
     : colors.gradients.cta[0];
 
   const iconName: keyof typeof Ionicons.glyphMap = isCritical
     ? 'alert-circle'
     : isStatusUpdate
     ? 'checkmark-circle'
+    : isWelcome
+    ? 'heart-circle'
     : 'information-circle';
 
   const cardBg = isDark ? colors.dark.elevated : colors.white;
@@ -83,7 +88,7 @@ function AlertCard({
     outputRange: [-20, 0],
   });
 
-  const kindLabel = isCritical ? 'Critical' : isStatusUpdate ? 'Update' : 'Advisory';
+  const kindLabel = isCritical ? 'Critical' : isStatusUpdate ? 'Update' : isWelcome ? 'Welcome' : 'Advisory';
   const shortTime = alert.time.includes(',') ? alert.time.split(',').pop()?.trim() ?? alert.time : alert.time;
 
   return (
@@ -133,9 +138,10 @@ function AlertDetail({ alert, isDark, screenBg, bottomInset, onBack, onViewRepor
 }) {
   const isCritical     = alert.kind === 'critical';
   const isStatusUpdate = alert.kind === 'status_update';
-  const accentColor = isCritical ? colors.severity.critical : isStatusUpdate ? colors.severity.low : colors.gradients.cta[0];
-  const iconName: keyof typeof Ionicons.glyphMap = isCritical ? 'alert-circle' : isStatusUpdate ? 'checkmark-circle' : 'information-circle';
-  const kindLabel = isCritical ? 'Critical Alert' : isStatusUpdate ? 'Status Update' : 'Advisory';
+  const isWelcome      = alert.kind === 'welcome';
+  const accentColor = isCritical ? colors.severity.critical : isStatusUpdate ? colors.severity.low : isWelcome ? colors.brand[500] : colors.gradients.cta[0];
+  const iconName: keyof typeof Ionicons.glyphMap = isCritical ? 'alert-circle' : isStatusUpdate ? 'checkmark-circle' : isWelcome ? 'heart-circle' : 'information-circle';
+  const kindLabel = isCritical ? 'Critical Alert' : isStatusUpdate ? 'Status Update' : isWelcome ? 'Welcome' : 'Advisory';
   const cardBg = isDark ? colors.dark.card : colors.white;
   const borderColor = isDark ? colors.dark.border : colors.slate[100];
 

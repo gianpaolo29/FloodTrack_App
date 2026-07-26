@@ -4,6 +4,7 @@ import type {
   AdminReport,
   AdminStats,
   AlertItem,
+  AppConfig,
   ChangePasswordPayload,
   CheckInStatus,
   EvacuationCenter,
@@ -26,6 +27,7 @@ import type {
   ResponderUpdate,
   StatusUpdatePayload,
   TimelineEvent,
+  TrainingResource,
   UpdateProfilePayload,
   User,
   UserRole,
@@ -158,6 +160,7 @@ function adaptReport(raw: RawReport): Report {
     latitude:     raw.latitude,
     longitude:    raw.longitude,
     reportedAt:   formatRelativeTime(raw.created_at),
+    createdAt:    raw.created_at,
     thumbnailUrl: raw.media?.[0]?.url,
     mediaCount:   raw.media?.length ?? 0,
   };
@@ -367,7 +370,8 @@ export async function apiRegister(
   payload: RegisterPayload,
 ): Promise<{ token: string; user: User }> {
   const data = await post<{ token: string; user: RawUser }>('/register', {
-    name:            `${payload.firstName} ${payload.lastName}`.trim(),
+    first_name:      payload.firstName,
+    last_name:       payload.lastName,
     email:           payload.email,
     password:        payload.password,
     password_confirmation: payload.password,
@@ -389,6 +393,14 @@ export async function apiCheckEmail(email: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function apiSendEmailOtp(email: string): Promise<void> {
+  await post('/email/send-otp', { email });
+}
+
+export async function apiVerifyEmailOtp(email: string, otp: string): Promise<void> {
+  await post('/email/verify-otp', { email, otp });
 }
 
 export async function apiForgotPassword(email: string): Promise<void> {
@@ -491,9 +503,10 @@ function adaptUserNotification(raw: RawUserNotification): AlertItem {
   const isRejected = raw.new_status === 'rejected'
     || raw.title?.toLowerCase().includes('not verified')
     || raw.title?.toLowerCase().includes('rejected');
+  const isWelcome = raw.type === 'welcome';
   return {
     id:       `notif_${raw.id}`,
-    kind:     isRejected ? 'rejected' : 'status_update',
+    kind:     isWelcome ? 'welcome' : isRejected ? 'rejected' : 'status_update',
     title:    raw.title,
     body:     raw.message,
     area:     '',
@@ -535,6 +548,13 @@ export async function updateProfile(
 ): Promise<User> {
   const raw = await patch<RawUser>('/user/profile', payload, token);
   return adaptUser(raw);
+}
+
+export async function syncNotificationPrefs(
+  prefs: { critical: boolean; advisory: boolean; my_reports: boolean },
+  token: string,
+): Promise<void> {
+  await patch('/user/notification-preferences', prefs, token).catch(() => {});
 }
 
 export async function changePassword(
@@ -1062,5 +1082,31 @@ export async function getCurrentUser(token: string): Promise<User & { isOnDuty?:
   return {
     ...adaptUser(raw),
     isOnDuty: raw.is_on_duty ?? false,
+  };
+}
+
+export async function getTrainingResources(token: string): Promise<TrainingResource[]> {
+  const data = await get<Array<{
+    id: number | string;
+    label: string;
+    icon: string;
+  }>>('/training-resources', token);
+  return data.map(r => ({
+    id:    String(r.id),
+    label: r.label,
+    icon:  r.icon,
+  }));
+}
+
+export async function getAppConfig(token: string): Promise<AppConfig> {
+  const data = await get<{
+    default_latitude: number;
+    default_longitude: number;
+    quick_chips: string[];
+  }>('/app-config', token);
+  return {
+    defaultLatitude:  data.default_latitude,
+    defaultLongitude: data.default_longitude,
+    quickChips:       data.quick_chips,
   };
 }

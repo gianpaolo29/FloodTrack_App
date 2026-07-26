@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Easing,
   Modal,
@@ -686,51 +685,43 @@ export default function FamilyScreen() {
 
   function handleRemoveMember(member: FamilyMember) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(
-      'Remove member',
-      `Remove ${member.firstName} ${member.lastName} from the family group?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            if (!token) return;
-            try {
-              await removeFamilyMember(member.id, token);
-              await load();
-            } catch (e: any) {
-              showAlert({ type: 'error', title: 'Error', message: e?.message ?? 'Could not remove member.' });
-            }
-          },
-        },
-      ],
-    );
+    showAlert({
+      type: 'confirm',
+      title: 'Remove member?',
+      message: `${member.firstName} ${member.lastName} will be removed from the family group.`,
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        if (!token) return;
+        try {
+          await removeFamilyMember(member.id, token);
+          await load();
+        } catch (e: any) {
+          showAlert({ type: 'error', title: 'Error', message: e?.message ?? 'Could not remove member.' });
+        }
+      },
+    });
   }
 
   function handleLeave() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    Alert.alert(
-      'Leave family',
-      'Are you sure you want to leave this family group?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Leave',
-          style: 'destructive',
-          onPress: async () => {
-            if (!token) return;
-            try {
-              await leaveFamily(token);
-              setFamily(null);
-              showAlert({ type: 'success', title: 'Left family', message: 'You have left the family group.' });
-            } catch (e: any) {
-              showAlert({ type: 'error', title: 'Error', message: e?.message ?? 'Could not leave family.' });
-            }
-          },
-        },
-      ],
-    );
+    showAlert({
+      type: 'confirm',
+      title: 'Leave family?',
+      message: 'You will no longer see your family members\u2019 safety status or receive their check-in updates.',
+      confirmText: 'Leave',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        if (!token) return;
+        try {
+          await leaveFamily(token);
+          setFamily(null);
+          showAlert({ type: 'success', title: 'Left family', message: 'You have left the family group.' });
+        } catch (e: any) {
+          showAlert({ type: 'error', title: 'Error', message: e?.message ?? 'Could not leave family.' });
+        }
+      },
+    });
   }
 
   async function handleShareCode() {
@@ -1173,7 +1164,7 @@ export default function FamilyScreen() {
 
           <View style={{ flex: 1 }}>
             {family && (() => {
-              const membersWithLoc = family.members.filter(m => m.latitude != null && m.longitude != null);
+              const membersWithLoc = family.members.filter(m => typeof m.latitude === 'number' && isFinite(m.latitude) && typeof m.longitude === 'number' && isFinite(m.longitude));
               if (membersWithLoc.length === 0) {
                 return (
                   <View style={mp.emptyWrap}>
@@ -1187,8 +1178,8 @@ export default function FamilyScreen() {
                   </View>
                 );
               }
-              const avgLat = membersWithLoc.reduce((s, m) => s + m.latitude!, 0) / membersWithLoc.length;
-              const avgLng = membersWithLoc.reduce((s, m) => s + m.longitude!, 0) / membersWithLoc.length;
+              const avgLat = membersWithLoc.length > 0 ? membersWithLoc.reduce((s, m) => s + m.latitude!, 0) / membersWithLoc.length : 14.0771;
+              const avgLng = membersWithLoc.length > 0 ? membersWithLoc.reduce((s, m) => s + m.longitude!, 0) / membersWithLoc.length : 120.6361;
               return (
                 <MapView
                   provider={PROVIDER_GOOGLE}
@@ -1204,6 +1195,7 @@ export default function FamilyScreen() {
                 >
                   {membersWithLoc.map(member => {
                     const cfg = STATUS_CONFIG[member.checkInStatus];
+                    const isMe = member.id === user?.id;
                     return (
                       <Marker
                         key={member.id}
@@ -1218,6 +1210,9 @@ export default function FamilyScreen() {
                             </Text>
                           </View>
                           <View style={[mp.markerArrow, { borderTopColor: cfg.color }]} />
+                          <View style={mp.markerLabel}>
+                            <Text style={mp.markerName}>{isMe ? 'You' : member.firstName}</Text>
+                          </View>
                         </View>
                       </Marker>
                     );
@@ -1228,10 +1223,10 @@ export default function FamilyScreen() {
           </View>
 
           {/* Legend bar */}
-          {family && family.members.filter(m => m.latitude != null).length > 0 && (
+          {family && family.members.some(m => typeof m.latitude === 'number' && isFinite(m.latitude)) && (
             <View style={[mp.legend, { backgroundColor: cardBg, borderTopColor: border, paddingBottom: insets.bottom + 12 }]}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={mp.legendScroll}>
-                {family.members.filter(m => m.latitude != null && m.longitude != null).map(member => {
+                {family.members.filter(m => typeof m.latitude === 'number' && isFinite(m.latitude) && typeof m.longitude === 'number' && isFinite(m.longitude)).map(member => {
                   const cfg = STATUS_CONFIG[member.checkInStatus];
                   return (
                     <View key={member.id} style={[mp.legendItem, { backgroundColor: cfg.color + '10', borderColor: cfg.color + '25' }]}>
@@ -1292,6 +1287,19 @@ const mp = StyleSheet.create({
     width: 0, height: 0, marginTop: -2,
     borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8,
     borderLeftColor: 'transparent', borderRightColor: 'transparent',
+  },
+  markerLabel: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginTop: 2,
+  },
+  markerName: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#fff',
+    textAlign: 'center',
   },
   legend: {
     borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12,

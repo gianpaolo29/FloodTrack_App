@@ -503,6 +503,7 @@ export default function LoginScreen() {
           onDismiss={() => setAlertConfig(null)}
         />
       )}
+
     </View>
   );
 }
@@ -739,4 +740,5 @@ const s = StyleSheet.create({
     gap: 6, paddingTop: 4,
   },
   securityText: { fontSize: 11, color: colors.auth.placeholder, fontWeight: '500' },
+
 });
