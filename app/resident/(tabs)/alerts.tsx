@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -228,7 +227,6 @@ export default function AlertsScreen() {
 
   const [alerts, setAlerts]               = useState<AlertItem[]>([]);
   const [loading, setLoading]             = useState(true);
-  const [refreshing, setRefreshing]       = useState(false);
   const [error, setError]                 = useState<string | null>(null);
   const [selectedAlert, setSelectedAlert] = useState<AlertItem | null>(null);
 
@@ -243,10 +241,9 @@ export default function AlertsScreen() {
       setAlerts(data);
       queueMicrotask(() => setUnreadCount(data.filter(a => !a.read).length));
     } catch {
-      setError('Could not load alerts. Pull down to retry.');
+      setError('Could not load alerts.');
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, [token]);
 
@@ -421,12 +418,6 @@ export default function AlertsScreen() {
           <Text style={[styles.emptySub, isDark && { color: colors.slate[400] }]}>
             No active alerts right now.{'\n'}Critical incidents will appear here immediately.
           </Text>
-          <Pressable onPress={() => load()} style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.85 }]}>
-            <LinearGradient colors={colors.gradients.cta} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.retryBtnGrad}>
-              <Ionicons name="refresh-outline" size={16} color={colors.white} />
-              <Text style={styles.retryText}>Refresh</Text>
-            </LinearGradient>
-          </Pressable>
         </View>
       ) : (
         <FlatList
@@ -436,14 +427,6 @@ export default function AlertsScreen() {
           contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
           showsVerticalScrollIndicator={false}
           ItemSeparatorComponent={() => <View style={{ height: 6 }} />}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => { setRefreshing(true); load(true); }}
-              tintColor={colors.gradients.cta[0]}
-              colors={[colors.gradients.cta[0]]}
-            />
-          }
           stickyHeaderHiddenOnScroll
         />
       )}

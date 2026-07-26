@@ -403,6 +403,14 @@ export async function apiVerifyEmailOtp(email: string, otp: string): Promise<voi
   await post('/email/verify-otp', { email, otp });
 }
 
+export async function apiMarkEmailVerified(token: string): Promise<void> {
+  await post('/email/mark-verified', {}, token);
+}
+
+export async function apiDeleteAccount(token: string): Promise<void> {
+  await del('/account', token);
+}
+
 export async function apiForgotPassword(email: string): Promise<void> {
   await post('/forgot-password', { email });
 }

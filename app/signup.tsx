@@ -23,7 +23,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/context/AuthContext';
 import { AppAlert, AlertConfig } from '@/components/AppAlert';
 import { colors } from '@/theme/colors';
-import { apiCheckEmail, apiRegister, apiSendEmailOtp, apiVerifyEmailOtp } from '@/services/api';
+import { apiCheckEmail, apiRegister, apiDeleteAccount, apiMarkEmailVerified } from '@/services/api';
+import { sendEmailVerificationOtp } from '@/services/brevo';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const HERO_H = SCREEN_H * 0.30;
@@ -134,6 +135,7 @@ export default function SignUpScreen() {
   const otpRefs = useRef<(TextInput | null)[]>([]);
   const otpFadeAnim = useRef(new Animated.Value(0)).current;
   const otpSlideAnim = useRef(new Animated.Value(300)).current;
+  const generatedOtp = useRef('');
 
   // ── Password strength ────────────────────────────────────────────────────
   const pwdLen  = password.length;
@@ -188,8 +190,10 @@ export default function SignUpScreen() {
       });
       // Hold the token — don't persist yet (prevents auto-navigation)
       setPendingToken(t);
-      // Send OTP and show verification modal
-      try { await apiSendEmailOtp(email.trim()); } catch {}
+      // Generate OTP and send via Brevo
+      const otp = Math.floor(100_000 + Math.random() * 900_000).toString();
+      generatedOtp.current = otp;
+      try { await sendEmailVerificationOtp(email.trim(), otp); } catch {}
       setOtpDigits(['', '', '', '', '', '']);
       setOtpError('');
       setShowOtp(true);
@@ -248,7 +252,13 @@ export default function SignUpScreen() {
     setOtpLoading(true);
     setOtpError('');
     try {
-      await apiVerifyEmailOtp(email.trim(), otp);
+      if (otp !== generatedOtp.current) {
+        throw new Error('Invalid code. Please try again.');
+      }
+      // Mark email as verified in the backend
+      if (pendingToken) {
+        await apiMarkEmailVerified(pendingToken);
+      }
       // Email verified — now log in to persist auth and navigate
       await login({ email: email.trim(), password });
       setShowOtp(false);
@@ -265,7 +275,9 @@ export default function SignUpScreen() {
     if (otpCooldown > 0 || otpResending) return;
     setOtpResending(true);
     try {
-      await apiSendEmailOtp(email.trim());
+      const otp = Math.floor(100_000 + Math.random() * 900_000).toString();
+      generatedOtp.current = otp;
+      await sendEmailVerificationOtp(email.trim(), otp);
       setOtpCooldown(60);
       setOtpError('');
       setOtpDigits(['', '', '', '', '', '']);
@@ -275,6 +287,15 @@ export default function SignUpScreen() {
     } finally {
       setOtpResending(false);
     }
+  }
+
+  async function handleCancelOtp() {
+    if (pendingToken) {
+      try { await apiDeleteAccount(pendingToken); } catch {}
+    }
+    setPendingToken(null);
+    setShowOtp(false);
+    generatedOtp.current = '';
   }
 
   const handleGoogleSignUp = useCallback(async () => {
@@ -548,7 +569,7 @@ export default function SignUpScreen() {
       )}
 
       {/* ── OTP Verification Modal ── */}
-      <Modal transparent visible={showOtp} animationType="none" onRequestClose={() => {}}>
+      <Modal transparent visible={showOtp} animationType="none" onRequestClose={handleCancelOtp}>
         <Animated.View style={[otp.backdrop, { opacity: otpFadeAnim }]}>
           <Animated.View style={[otp.sheet, { transform: [{ translateY: otpSlideAnim }] }]}>
             {/* Accent bar */}
@@ -647,6 +668,11 @@ export default function SignUpScreen() {
                 </Pressable>
               )}
             </View>
+
+            {/* Cancel */}
+            <Pressable onPress={handleCancelOtp} style={({ pressed }) => [otp.cancelBtn, pressed && { opacity: 0.7 }]}>
+              <Text style={otp.cancelText}>Cancel</Text>
+            </Pressable>
           </Animated.View>
         </Animated.View>
       </Modal>
@@ -925,5 +951,16 @@ const otp = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: colors.auth.primary,
+  },
+  cancelBtn: {
+    marginTop: 16,
+    alignSelf: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+  },
+  cancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.slate[400],
   },
 });
