@@ -84,22 +84,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
-    if (token) {
-      const pushToken = await Storage.getItem(PUSH_TOKEN_KEY);
-      if (pushToken) {
-        await removePushToken(pushToken, token).catch(() => {});
-        await Storage.deleteItem(PUSH_TOKEN_KEY);
+    try {
+      if (token) {
+        const pushToken = await Storage.getItem(PUSH_TOKEN_KEY).catch(() => null);
+        if (pushToken) {
+          await removePushToken(pushToken, token).catch(() => {});
+          await Storage.deleteItem(PUSH_TOKEN_KEY).catch(() => {});
+        }
+        await apiLogout(token);
       }
-      await apiLogout(token);
+      socketService.disconnect();
+      await Promise.all([
+        Storage.deleteSecureItem(TOKEN_KEY),
+        Storage.deleteItem(USER_KEY),
+        Storage.deleteItem(HOME_ADDRESS_KEY),
+      ]);
+    } finally {
+      setToken(null);
+      setUser(null);
     }
-    socketService.disconnect();
-    await Promise.all([
-      Storage.deleteItem(TOKEN_KEY),
-      Storage.deleteItem(USER_KEY),
-      Storage.deleteItem(HOME_ADDRESS_KEY),
-    ]);
-    setToken(null);
-    setUser(null);
   }
 
   async function setHomeAddress(address: string | null) {

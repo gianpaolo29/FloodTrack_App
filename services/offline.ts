@@ -58,3 +58,8 @@ export async function removePendingUpdate(id: string): Promise<void> {
   const filtered = queue.filter(u => u.id !== id);
   await Storage.setItem(QUEUE_KEY, JSON.stringify(filtered));
 }
+
+export async function getPendingCount(): Promise<number> {
+  const queue = await getPendingUpdates();
+  return queue.length;
+}

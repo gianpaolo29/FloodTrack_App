@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
+  BackHandler,
   Easing,
   Image,
   Keyboard,
@@ -12,6 +15,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Share,
   Text,
   TextInput,
   View,
@@ -19,99 +23,64 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import MapView, {
+  Circle,
   Heatmap,
   Marker,
+  Polyline,
   PROVIDER_GOOGLE,
   type MapType,
   type Region,
 } from '@/components/MapView';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '@/theme/colors';
-import { SeverityChip } from '@/components/SeverityChip';
-import { PrimaryButton } from '@/components/PrimaryButton';
+import { SeverityChip, type Severity } from '@/components/SeverityChip';
+import { StatusBadge, type ReportStatus } from '@/components/StatusBadge';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getAssignedIncidents, getEvacuationCenters, getActiveHazards, updateIncidentStatus, getAppConfig } from '@/services/api';
-import type { Incident, ResponderStatus, Severity, Hazard } from '@/types';
-import { HeatmapLegend } from '@/components/HeatmapLegend';
+import { getAllReports, getReportDetail, getEvacuationCenters, getActiveHazards, getWeatherWithFallback, getAppConfig, submitMemberStatus, confirmTeamStatus, getIncidentUnreadCount } from '@/services/api';
+import * as Storage from '@/utils/storage';
+import { SESSION_KEY } from '@/app/responder/incident/[id]';
+import { socketService } from '@/services/socket';
+import type { WeatherData } from '@/services/api';
+import type { Report as ApiReport, Hazard } from '@/types';
 import { HeatmapZoneSummary } from '@/components/HeatmapZoneSummary';
-import { HeatmapTimeScrubber } from '@/components/HeatmapTimeScrubber';
+type HazardType = 'all' | 'flood';
 
-const DEFAULT_REGION: Region = {
-  latitude: 14.0771, longitude: 120.6361,
-  latitudeDelta: 0.06, longitudeDelta: 0.06,
+interface Report {
+  id: string;
+  title: string;
+  hazardType: HazardType;
+  severity: Severity;
+  status: ReportStatus;
+  address: string;
+  reportedAt: string;
+  createdAt: string;
+  latitude: number;
+  longitude: number;
+  thumbnailUrl?: string;
+  description?: string;
+}
+
+interface EvacCenter {
+  id: string;
+  name: string;
+  address: string;
+  type: string;
+  capacity: number;
+  latitude: number;
+  longitude: number;
+}
+
+const HAZARD_META: Record<string, {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+}> = {
+  flood: { label: 'Flood', icon: 'water', color: colors.brand[500] },
 };
-
-const SEVERITY_WEIGHT: Record<Severity, number> = {
-  low: 1, moderate: 3, high: 6, critical: 10,
-};
-
-const STATUS_LABELS: Record<ResponderStatus, string> = {
-  pending:  'Pending',
-  en_route: 'En route',
-  on_scene: 'On scene',
-  resolved: 'Resolved',
-};
-
-const STATUS_COLORS: Record<ResponderStatus, string> = {
-  pending:  colors.slate[400],
-  en_route: colors.brand[500],
-  on_scene: colors.brand[500],
-  resolved: colors.severity.low,
-};
-
-const STATUS_ICONS: Record<ResponderStatus, keyof typeof Ionicons.glyphMap> = {
-  pending:  'time-outline',
-  en_route: 'car-outline',
-  on_scene: 'location-outline',
-  resolved: 'checkmark-circle-outline',
-};
-
-const STATUS_STEPS: ResponderStatus[] = ['pending', 'en_route', 'on_scene', 'resolved'];
-
-const NEXT_LABEL: Record<string, string> = {
-  pending:  'Mark as En Route',
-  en_route: 'Mark as On Scene',
-  on_scene: 'Mark Resolved',
-};
-
-const STEP_SHORT: Record<ResponderStatus, string> = {
-  pending:  'Pending',
-  en_route: 'En Route',
-  on_scene: 'On Scene',
-  resolved: 'Done',
-};
-
-type StatusFilter = 'all' | 'pending' | 'en_route' | 'on_scene';
-
-const STATUS_FILTERS: { key: StatusFilter; label: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
-  { key: 'all',      label: 'All',      icon: 'grid',             color: colors.brand[500] },
-  { key: 'pending',  label: 'Pending',  icon: 'time-outline',     color: colors.slate[400] },
-  { key: 'en_route', label: 'En route', icon: 'car-outline',      color: colors.brand[500] },
-  { key: 'on_scene', label: 'On scene', icon: 'location-outline', color: colors.brand[500] },
-];
-
-// Flood-type RGB values matching web admin blue palette (dark navy → light blue)
-const FLOOD_TYPE_RGB: Record<string, string> = {
-  flash_flood:   '13,71,161',   // #0D47A1 dark navy
-  river_flood:   '21,101,192',  // #1565C0 medium blue
-  coastal_flood: '2,119,189',   // #0277BD sky blue
-  urban_flood:   '66,165,245',  // #42A5F5 light blue
-};
-const FLOOD_TYPE_DEFAULT_RGB = '21,101,192'; // fallback for unclassified flood incidents
-
-
-type MapTypeKey = MapType | 'flood';
-
-const MAP_TYPES: { key: MapTypeKey; label: string; icon: keyof typeof Ionicons.glyphMap; desc: string }[] = [
-  { key: 'standard',  label: 'Default',   icon: 'map-outline',    desc: 'Road map'           },
-  { key: 'satellite', label: 'Satellite', icon: 'planet-outline', desc: 'Aerial imagery'     },
-  { key: 'hybrid',    label: 'Hybrid',    icon: 'globe-outline',  desc: 'Satellite + labels' },
-  { key: 'terrain',   label: 'Terrain',   icon: 'layers-outline', desc: 'Topographic'        },
-];
 
 const HAZARD_MARKER_META: Record<string, { icon: keyof typeof Ionicons.glyphMap; color: string }> = {
   flash_flood:   { icon: 'thunderstorm', color: colors.floodHazard.flashFlood },
@@ -125,15 +94,79 @@ const HAZARD_MARKER_META: Record<string, { icon: keyof typeof Ionicons.glyphMap;
   slow_zone:     { icon: 'speedometer',  color: colors.roadHazard.slowDown },
 };
 
-interface EvacCenter {
-  id: string;
-  name: string;
-  address: string;
-  type: string;
-  capacity: number;
-  latitude: number;
-  longitude: number;
+type MapTypeKey = MapType | 'flood';
+
+const MAP_TYPES: { key: MapTypeKey; label: string; icon: keyof typeof Ionicons.glyphMap; desc: string }[] = [
+  { key: 'standard',  label: 'Default',   icon: 'map-outline',    desc: 'Road map'           },
+  { key: 'satellite', label: 'Satellite', icon: 'planet-outline', desc: 'Aerial imagery'     },
+  { key: 'hybrid',    label: 'Hybrid',    icon: 'globe-outline',  desc: 'Satellite + labels' },
+  { key: 'terrain',   label: 'Terrain',   icon: 'layers-outline', desc: 'Topographic'        },
+  { key: 'flood',     label: 'Flood',     icon: 'water',          desc: 'Severity heatmap'   },
+];
+
+const SEVERITY_WEIGHT: Record<Severity, number> = {
+  low: 1, moderate: 3, high: 6, critical: 10,
+};
+
+// Weather-radar heatmap: green → yellow → orange → red by severity
+const FLOOD_HEATMAP: Record<Severity, Array<{ fill: string; stroke: string; radius: number }>> = {
+  low: [
+    { fill: 'rgba(34,197,94,0.06)',  stroke: 'transparent',          radius: 250 },
+    { fill: 'rgba(34,197,94,0.12)',  stroke: 'transparent',          radius: 150 },
+    { fill: 'rgba(34,197,94,0.22)',  stroke: 'rgba(34,197,94,0.25)', radius: 80  },
+    { fill: 'rgba(34,197,94,0.38)',  stroke: 'rgba(34,197,94,0.5)',  radius: 30  },
+  ],
+  moderate: [
+    { fill: 'rgba(245,158,11,0.06)', stroke: 'transparent',           radius: 300 },
+    { fill: 'rgba(245,158,11,0.14)', stroke: 'transparent',           radius: 180 },
+    { fill: 'rgba(245,158,11,0.26)', stroke: 'rgba(245,158,11,0.3)', radius: 100 },
+    { fill: 'rgba(245,158,11,0.44)', stroke: 'rgba(245,158,11,0.5)', radius: 40  },
+  ],
+  high: [
+    { fill: 'rgba(249,115,22,0.08)', stroke: 'transparent',           radius: 380 },
+    { fill: 'rgba(249,115,22,0.16)', stroke: 'transparent',           radius: 230 },
+    { fill: 'rgba(249,115,22,0.30)', stroke: 'rgba(249,115,22,0.35)', radius: 120 },
+    { fill: 'rgba(249,115,22,0.50)', stroke: 'rgba(249,115,22,0.6)',  radius: 50  },
+  ],
+  critical: [
+    { fill: 'rgba(239,68,68,0.10)',  stroke: 'transparent',          radius: 450 },
+    { fill: 'rgba(239,68,68,0.18)',  stroke: 'transparent',          radius: 280 },
+    { fill: 'rgba(239,68,68,0.34)',  stroke: 'rgba(239,68,68,0.4)', radius: 150 },
+    { fill: 'rgba(239,68,68,0.55)',  stroke: 'rgba(239,68,68,0.7)', radius: 60  },
+  ],
+};
+
+const FLOOD_DEPTH: Record<Severity, string> = {
+  low:      '~ 1 ft (ankle-deep)',
+  moderate: '~ 1.5–2 ft (knee-deep)',
+  high:     '~ 3 ft (waist-deep)',
+  critical: '> 4 ft — dangerous',
+};
+
+const API_TYPE_TO_HAZARD: Record<string, Exclude<HazardType, 'all'>> = {
+  'Flood': 'flood',
+};
+
+function fromApiReport(r: ApiReport): Report {
+  return {
+    id:           r.id,
+    title:        r.title,
+    hazardType:   API_TYPE_TO_HAZARD[r.type] ?? 'flood',
+    severity:     r.severity,
+    status:       r.status,
+    address:      r.address,
+    reportedAt:   r.reportedAt,
+    createdAt:    r.createdAt,
+    latitude:     r.latitude,
+    longitude:    r.longitude,
+    thumbnailUrl: r.thumbnailUrl,
+  };
 }
+
+const DEFAULT_REGION: Region = {
+  latitude: 14.0771, longitude: 120.6361,
+  latitudeDelta: 0.06, longitudeDelta: 0.06,
+};
 
 const EVAC_TYPE_META: Record<string, { icon: keyof typeof Ionicons.glyphMap; label: string }> = {
   school:           { icon: 'school',          label: 'School'           },
@@ -144,8 +177,7 @@ const EVAC_TYPE_META: Record<string, { icon: keyof typeof Ionicons.glyphMap; lab
   community_center: { icon: 'people',          label: 'Community Center' },
 };
 
-const EVAC_COLOR = '#0E9E6E';
-
+const EVAC_COLOR = colors.evac;
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -162,66 +194,168 @@ function fmtDist(km: number): string {
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
 }
 
-function PulseRing({ color }: { color: string }) {
-  const scale   = useRef(new Animated.Value(1)).current;
-  const opacity = useRef(new Animated.Value(0.5)).current;
+// ─── Sweet Alert ──────────────────────────────────────────────────────────────
+type SweetAlertType = 'success' | 'warning' | 'info';
+type SweetAlertBtn  = { text: string; style?: 'primary' | 'cancel' | 'destructive'; onPress?: () => void };
+export type SweetAlertConfig = { type: SweetAlertType; title: string; message: string; buttons: SweetAlertBtn[] };
 
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(scale,   { toValue: 1.8, duration: 900, useNativeDriver: true }),
-          Animated.timing(scale,   { toValue: 1,   duration: 900, useNativeDriver: true }),
-        ]),
-        Animated.sequence([
-          Animated.timing(opacity, { toValue: 0,   duration: 900, useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 0.5, duration: 900, useNativeDriver: true }),
-        ]),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [scale, opacity]);
+const SWEET_META: Record<SweetAlertType, { icon: keyof typeof Ionicons.glyphMap; color: string; bg: string }> = {
+  success: { icon: 'checkmark-circle',  color: '#10B981', bg: '#D1FAE5' },
+  warning: { icon: 'warning',           color: '#F59E0B', bg: '#FEF3C7' },
+  info:    { icon: 'information-circle', color: '#4A6CF7', bg: '#EEF2FF' },
+};
+
+function SweetAlert({ config, onDismiss, isDark }: { config: SweetAlertConfig; onDismiss: () => void; isDark: boolean }) {
+  const meta = SWEET_META[config.type];
+  const cardBg   = isDark ? '#1E293B' : '#FFFFFF';
+  const titleClr = isDark ? '#F1F5F9' : '#0F172A';
+  const msgClr   = isDark ? '#94A3B8' : '#64748B';
 
   return (
-    <Animated.View style={{
-      position: 'absolute',
-      width: 38, height: 38, borderRadius: 19,
-      borderWidth: 2, borderColor: color,
-      opacity, transform: [{ scale }],
-    }} />
+    <Modal transparent animationType="fade" visible statusBarTranslucent>
+      <Pressable style={sa.backdrop} onPress={onDismiss}>
+        <Pressable style={[sa.card, { backgroundColor: cardBg }]} onPress={() => {}}>
+          {/* Icon */}
+          <View style={[sa.iconCircle, { backgroundColor: meta.bg }]}>
+            <Ionicons name={meta.icon} size={44} color={meta.color} />
+          </View>
+          <Text style={[sa.title, { color: titleClr }]}>{config.title}</Text>
+          <Text style={[sa.message, { color: msgClr }]}>{config.message}</Text>
+          {/* Buttons */}
+          <View style={sa.btnRow}>
+            {config.buttons.map((btn, i) => {
+              const isPrimary     = btn.style === 'primary' || (!btn.style && i === config.buttons.length - 1);
+              const isDestructive = btn.style === 'destructive';
+              const btnBg = isDestructive ? '#EF4444' : isPrimary ? meta.color : (isDark ? '#334155' : '#F1F5F9');
+              const btnText = isDestructive || isPrimary ? '#FFFFFF' : (isDark ? '#CBD5E1' : '#475569');
+              return (
+                <Pressable
+                  key={i}
+                  style={({ pressed }) => [sa.btn, { backgroundColor: btnBg, flex: 1 }, pressed && { opacity: 0.82 }]}
+                  onPress={() => { onDismiss(); btn.onPress?.(); }}
+                >
+                  <Text style={[sa.btnText, { color: btnText }]}>{btn.text}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
-function IncidentMarker({ incident }: { incident: Incident }) {
-  const sevColor    = colors.severity[incident.severity];
-  const isCrit      = incident.severity === 'critical';
-  const statusColor = STATUS_COLORS[incident.responderStatus];
+const sa = StyleSheet.create({
+  backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 32 },
+  card:       { width: '100%', borderRadius: 24, alignItems: 'center', paddingTop: 32, paddingBottom: 24, paddingHorizontal: 24, gap: 8,
+                shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 16 },
+  iconCircle: { width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  title:      { fontSize: 20, fontWeight: '800', textAlign: 'center', letterSpacing: 0.1 },
+  message:    { fontSize: 14, textAlign: 'center', lineHeight: 20, marginTop: 2, marginBottom: 8 },
+  btnRow:     { flexDirection: 'row', gap: 10, marginTop: 8, width: '100%' },
+  btn:        { paddingVertical: 13, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  btnText:    { fontSize: 15, fontWeight: '700' },
+});
+
+/** Decode Google encoded polyline string into array of coordinates */
+function decodePolyline(encoded: string): { latitude: number; longitude: number }[] {
+  const points: { latitude: number; longitude: number }[] = [];
+  let index = 0, lat = 0, lng = 0;
+  while (index < encoded.length) {
+    let shift = 0, result = 0, byte: number;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    lat += result & 1 ? ~(result >> 1) : result >> 1;
+
+    shift = 0; result = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    lng += result & 1 ? ~(result >> 1) : result >> 1;
+
+    points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+  }
+  return points;
+}
+
+/** Build flood-avoidance waypoints: find intermediate point that steers away from critical flood zones */
+function buildAvoidanceWaypoints(
+  origin: { latitude: number; longitude: number },
+  dest: { latitude: number; longitude: number },
+  floodReports: Report[],
+): string | undefined {
+  // Only avoid critical floods that are verified and reported today
+  const today = new Date().toISOString().slice(0, 10);
+  const active = floodReports.filter(r =>
+    r.severity === 'critical' && r.status === 'verified' && r.reportedAt.slice(0, 10) === today,
+  );
+  if (active.length === 0) return undefined;
+
+  // Check if any flood zone is within ~500m of the straight-line path
+  const midLat = (origin.latitude + dest.latitude) / 2;
+  const midLng = (origin.longitude + dest.longitude) / 2;
+  const corridorRadius = haversineKm(origin.latitude, origin.longitude, dest.latitude, dest.longitude) / 2 + 0.3;
+
+  const nearbyFloods = active.filter(r => {
+    const d = haversineKm(midLat, midLng, r.latitude, r.longitude);
+    return d < corridorRadius;
+  });
+
+  if (nearbyFloods.length === 0) return undefined;
+
+  // Compute centroid of flood zones to avoid
+  const floodCentroid = {
+    lat: nearbyFloods.reduce((s, r) => s + r.latitude, 0) / nearbyFloods.length,
+    lng: nearbyFloods.reduce((s, r) => s + r.longitude, 0) / nearbyFloods.length,
+  };
+
+  // Push midpoint away from flood centroid
+  const offsetLat = midLat - floodCentroid.lat;
+  const offsetLng = midLng - floodCentroid.lng;
+  const norm = Math.sqrt(offsetLat ** 2 + offsetLng ** 2) || 0.001;
+  const pushDist = 0.004; // ~400m push
+  const waypointLat = midLat + (offsetLat / norm) * pushDist;
+  const waypointLng = midLng + (offsetLng / norm) * pushDist;
+
+  return `${waypointLat},${waypointLng}`;
+}
+
+
+function HazardMarker({ report, small }: { report: Report; small?: boolean }) {
+  const meta     = report.hazardType !== 'all' ? HAZARD_META[report.hazardType] : null;
+  const color    = meta?.color ?? colors.brand[500];
+  const iconName = (meta?.icon ?? 'alert-circle') as keyof typeof Ionicons.glyphMap;
+  const isCrit   = report.severity === 'critical';
+  const sz = small ? 18 : 28;
+  const wr = small ? 24 : 36;
 
   return (
-    <View style={markerStyles.wrapper}>
-      {isCrit && <PulseRing color={sevColor} />}
-      <View style={[markerStyles.circle, { backgroundColor: sevColor }]}>
-        <Ionicons name="shield-checkmark" size={13} color={colors.white} />
+    <View style={{ width: wr, height: wr, alignItems: 'center', justifyContent: 'center' }}>
+      {isCrit && !small && <View style={[mk.pulse, { borderColor: color }]} />}
+      <View style={[mk.circle, { backgroundColor: color, width: sz, height: sz, borderRadius: sz / 2 }]}>
+        <Ionicons name={iconName} size={small ? 9 : 13} color={colors.white} />
       </View>
-      <View style={[markerStyles.statusRing, { backgroundColor: statusColor, borderColor: colors.white }]} />
     </View>
   );
 }
 
-const markerStyles = StyleSheet.create({
-  wrapper: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
-  circle: {
-    width: 30, height: 30, borderRadius: 15,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2.5, borderColor: colors.white,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3, shadowRadius: 4, elevation: 6,
+const mk = StyleSheet.create({
+  pulse: {
+    position: 'absolute',
+    width: 36, height: 36, borderRadius: 18,
+    borderWidth: 2, opacity: 0.35,
   },
-  statusRing: {
-    position: 'absolute', bottom: 0, right: 0,
-    width: 12, height: 12, borderRadius: 6,
-    borderWidth: 2.5,
+  circle: {
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: colors.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.28, shadowRadius: 4, elevation: 5,
   },
 });
 
@@ -247,9 +381,12 @@ function EvacuationMarker({ small }: { small?: boolean }) {
   );
 }
 
-
 function MapTypeModal({
-  visible, current, onSelect, onClose, isDark,
+  visible,
+  current,
+  onSelect,
+  onClose,
+  isDark,
 }: {
   visible: boolean;
   current: MapTypeKey;
@@ -257,9 +394,10 @@ function MapTypeModal({
   onClose: () => void;
   isDark: boolean;
 }) {
-  const bg   = isDark ? colors.dark.elevated : colors.white;
-  const bg2  = isDark ? colors.dark.card     : colors.slate[50];
-  const text = isDark ? colors.white         : colors.slate[900];
+  const bg    = isDark ? colors.slate[900] : colors.white;
+  const bg2   = isDark ? colors.dark.surface : colors.slate[50];
+  const text  = isDark ? colors.white      : colors.slate[900];
+  const text2 = isDark ? colors.slate[400] : colors.slate[500];
 
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
@@ -278,14 +416,18 @@ function MapTypeModal({
                   mtm.tile,
                   { backgroundColor: active ? colors.brand[500] + '18' : bg2 },
                   active && { borderColor: colors.brand[500], borderWidth: 2 },
-                  !active && { borderColor: isDark ? colors.dark.border : colors.slate[200], borderWidth: 1 },
+                  !active && { borderColor: isDark ? colors.slate[800] : colors.slate[200], borderWidth: 1 },
                 ]}
               >
                 <View style={[mtm.tileIcon, { backgroundColor: active ? colors.brand[500] : colors.slate[200] }]}>
-                  <Ionicons name={t.icon} size={22} color={active ? colors.white : colors.slate[600]} />
+                  <Ionicons
+                    name={t.icon}
+                    size={22}
+                    color={active ? colors.white : colors.slate[600]}
+                  />
                 </View>
                 <Text style={[mtm.tileLabel, { color: active ? colors.brand[500] : text }]}>{t.label}</Text>
-                <Text style={[mtm.tileDesc, { color: isDark ? colors.slate[500] : colors.slate[400] }]}>{t.desc}</Text>
+                <Text style={[mtm.tileDesc, { color: text2 }]}>{t.desc}</Text>
               </Pressable>
             );
           })}
@@ -296,548 +438,89 @@ function MapTypeModal({
 }
 
 const mtm = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.overlay.modalLight },
   sheet: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 22, paddingBottom: 42,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.15, shadowRadius: 20, elevation: 20,
+    padding: 20, paddingBottom: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15, shadowRadius: 16, elevation: 16,
   },
   handle: {
     width: 36, height: 4, borderRadius: 2,
     backgroundColor: colors.slate[300],
-    alignSelf: 'center', marginBottom: 18,
+    alignSelf: 'center', marginBottom: 16,
   },
-  heading:   { fontSize: 18, fontWeight: '800', marginBottom: 16, letterSpacing: -0.2 },
-  grid:      { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  tile:      { width: '22%' as any, flexGrow: 1, borderRadius: 16, padding: 12, alignItems: 'center', gap: 8 },
-  tileIcon:  { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  heading: { fontSize: 17, fontWeight: '700', marginBottom: 16, letterSpacing: -0.2 },
+  grid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  tile:    { width: '22%', flexGrow: 1, borderRadius: 14, padding: 12, alignItems: 'center', gap: 8 },
+  tileIcon: {
+    width: 46, height: 46, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
   tileLabel: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
   tileDesc:  { fontSize: 10, textAlign: 'center' },
 });
 
-function IncidentSheet({
-  incident, onClose, onNavigate, onViewDetail, onStatusUpdate, isDark, bottomInset, distanceKm,
+function ReportSheet({
+  report,
+  onClose,
+  onViewDetail,
+  isDark,
+  bottomInset,
+  photoUrls,
+  photosLoading,
 }: {
-  incident: Incident;
+  report: Report;
   onClose: () => void;
-  onNavigate: () => void;
-  onViewDetail: () => void;
-  onStatusUpdate: (status: ResponderStatus) => Promise<void>;
+  onViewDetail: (id: string) => void;
   isDark: boolean;
   bottomInset: number;
-  distanceKm: number | null;
+  photoUrls: string[];
+  photosLoading: boolean;
 }) {
-  const [updating, setUpdating] = useState(false);
-
-  const bg       = isDark ? colors.dark.elevated : colors.white;
-  const textMain = isDark ? colors.white         : colors.slate[900];
-  const textSub  = isDark ? colors.slate[400]    : colors.slate[500];
-  const sepColor = isDark ? colors.dark.border   : colors.slate[100];
-  const sevColor = colors.severity[incident.severity];
-  const statusColor = STATUS_COLORS[incident.responderStatus];
-  const statusIcon  = STATUS_ICONS[incident.responderStatus];
-
-  const currentIdx   = STATUS_STEPS.indexOf(incident.responderStatus);
-  const nextStatus   = currentIdx < STATUS_STEPS.length - 1 ? STATUS_STEPS[currentIdx + 1] : null;
-  const nextColor    = nextStatus ? STATUS_COLORS[nextStatus] : null;
-  const nextIcon     = nextStatus ? STATUS_ICONS[nextStatus]  : null;
-
-  async function handleUpdatePress() {
-    if (!nextStatus || updating) return;
-    if (nextStatus === 'resolved') {
-      Alert.alert(
-        'Mark as Resolved?',
-        'This will close the incident. You can reopen it from the detail screen.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Resolve',
-            style: 'destructive',
-            onPress: async () => {
-              setUpdating(true);
-              try { await onStatusUpdate('resolved'); }
-              finally { setUpdating(false); }
-            },
-          },
-        ],
-      );
-    } else {
-      setUpdating(true);
-      try { await onStatusUpdate(nextStatus); }
-      finally { setUpdating(false); }
-    }
-  }
+  const bg         = isDark ? colors.slate[900] : colors.white;
+  const textMain   = isDark ? colors.white      : colors.slate[900];
+  const textSub    = isDark ? colors.slate[400] : colors.slate[500];
+  const sepColor   = isDark ? colors.slate[800] : colors.slate[100];
+  const pinColor   = colors.severity[report.severity];
+  const hazardMeta = report.hazardType !== 'all' ? HAZARD_META[report.hazardType] : null;
+  const thumbBg    = isDark ? colors.slate[800] : colors.slate[100];
 
   return (
-    <View style={[sheetStyles.root, { backgroundColor: bg, paddingBottom: bottomInset + 100 }]}>
-      <View style={[sheetStyles.accentBar, { backgroundColor: sevColor }]} />
-      <View style={sheetStyles.handle} />
+    <View style={[bs.sheet, { backgroundColor: bg, paddingBottom: Math.max(bottomInset, 12) + 16 }]}>
+      <View style={[bs.accentBar, { backgroundColor: pinColor }]} />
+      <View style={bs.handle} />
 
-      {/* ── Header ── */}
-      <View style={sheetStyles.header}>
-        <View style={[sheetStyles.iconWrap, { backgroundColor: sevColor + '14' }]}>
-          <Ionicons name="shield-checkmark" size={22} color={sevColor} />
-        </View>
-        <View style={{ flex: 1, gap: 3 }}>
-          <View style={sheetStyles.refRow}>
-            <View style={[sheetStyles.refDot, { backgroundColor: sevColor }]} />
-            <Text style={[sheetStyles.ref, { color: textSub }]}>{incident.reference}</Text>
-          </View>
-          <Text style={[sheetStyles.title, { color: textMain }]} numberOfLines={2}>
-            {incident.title}
-          </Text>
-          <View style={sheetStyles.addressRow}>
-            <Ionicons name="location" size={12} color={colors.brand[500]} />
-            <Text style={[sheetStyles.address, { color: textSub }]} numberOfLines={1}>
-              {incident.address}
-            </Text>
-          </View>
-        </View>
-        <Pressable
-          onPress={onClose}
-          style={[sheetStyles.closeBtn, { backgroundColor: isDark ? colors.dark.card : colors.slate[100] }]}
-          hitSlop={8} accessibilityLabel="Close"
-        >
-          <Ionicons name="close" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
-        </Pressable>
-      </View>
-
-      <View style={[sheetStyles.divider, { backgroundColor: sepColor }]} />
-
-      {/* ── Pills ── */}
-      <View style={sheetStyles.pillRow}>
-        <SeverityChip level={incident.severity} size="sm" />
-        <View style={[sheetStyles.statusPill, { backgroundColor: statusColor + '14' }]}>
-          <Ionicons name={statusIcon} size={11} color={statusColor} />
-          <Text style={[sheetStyles.statusText, { color: statusColor }]}>
-            {STATUS_LABELS[incident.responderStatus]}
-          </Text>
-        </View>
-        {distanceKm !== null && (
-          <View style={[sheetStyles.distPill, isDark && { backgroundColor: colors.dark.card }]}>
-            <Ionicons name="navigate" size={10} color={colors.brand[500]} />
-            <Text style={[sheetStyles.distText, { color: colors.brand[500] }]}>{fmtDist(distanceKm)}</Text>
-          </View>
-        )}
-        {incident.nearbyCount > 1 && (
-          <View style={[sheetStyles.nearbyPill, isDark && { backgroundColor: colors.severity.moderate + '14' }]}>
-            <Ionicons name="warning" size={10} color={colors.severity.moderate} />
-            <Text style={{ fontSize: 10, color: colors.severity.moderate, fontWeight: '700' }}>
-              {incident.nearbyCount} nearby
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* ── Status Stepper ── */}
-      <View style={[sheetStyles.stepperSection, { borderTopColor: sepColor }]}>
-        <Text style={[sheetStyles.stepperTitle, { color: textSub }]}>UPDATE STATUS</Text>
-
-        {/* Step track */}
-        <View style={sheetStyles.stepTrack}>
-          {STATUS_STEPS.map((step, i) => {
-            const done    = i < currentIdx;
-            const current = i === currentIdx;
-            const dotColor = done || current
-              ? STATUS_COLORS[step]
-              : (isDark ? colors.dark.border : colors.slate[200]);
-            return (
-              <View key={step} style={sheetStyles.stepWrapper}>
-                <View style={sheetStyles.stepCol}>
-                  <View style={[
-                    sheetStyles.stepDot,
-                    {
-                      backgroundColor: done || current ? dotColor : 'transparent',
-                      borderColor: dotColor,
-                    },
-                  ]}>
-                    {done    && <Ionicons name="checkmark" size={9} color={colors.white} />}
-                    {current && <View style={sheetStyles.stepDotInner} />}
-                  </View>
-                  <Text style={[
-                    sheetStyles.stepLabel,
-                    { color: done || current ? dotColor : (isDark ? colors.slate[600] : colors.slate[400]) },
-                  ]}>
-                    {STEP_SHORT[step]}
-                  </Text>
-                </View>
-                {i < STATUS_STEPS.length - 1 && (
-                  <View style={[
-                    sheetStyles.stepLine,
-                    { backgroundColor: done ? colors.brand[500] : (isDark ? colors.dark.border : colors.slate[200]) },
-                  ]} />
-                )}
-              </View>
-            );
-          })}
-        </View>
-
-        {/* CTA or resolved badge */}
-        {nextStatus ? (
-          <Pressable
-            onPress={handleUpdatePress}
-            disabled={updating}
-            style={({ pressed }) => [
-              sheetStyles.updateBtn,
-              { backgroundColor: nextColor ?? colors.brand[500] },
-              pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
-              updating && { opacity: 0.65 },
-            ]}
-            accessibilityLabel={NEXT_LABEL[incident.responderStatus]}
-          >
-            {updating ? (
-              <ActivityIndicator size="small" color={colors.white} />
-            ) : (
-              <>
-                <Ionicons name={nextIcon!} size={16} color={colors.white} />
-                <Text style={sheetStyles.updateBtnText}>{NEXT_LABEL[incident.responderStatus]}</Text>
-                <View style={[sheetStyles.updateBtnArrow, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-                  <Ionicons name="chevron-forward" size={13} color={colors.white} />
-                </View>
-              </>
-            )}
-          </Pressable>
-        ) : (
-          <View style={[sheetStyles.resolvedBadge, { backgroundColor: colors.severity.low + '14' }]}>
-            <Ionicons name="checkmark-circle" size={16} color={colors.severity.low} />
-            <Text style={[sheetStyles.resolvedBadgeText, { color: colors.severity.low }]}>
-              Incident Resolved
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* ── Actions ── */}
-      <View style={sheetStyles.actions}>
-        <Pressable
-          style={({ pressed }) => [sheetStyles.navBtn, { opacity: pressed ? 0.85 : 1 }]}
-          onPress={onNavigate}
-          accessibilityLabel="Navigate to incident"
-        >
-          <Ionicons name="navigate" size={16} color={colors.white} />
-          <Text style={sheetStyles.navBtnText}>Navigate</Text>
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <PrimaryButton
-            label="View details"
-            onPress={onViewDetail}
-            variant="secondary"
-            fullWidth
-            size="lg"
+      <View style={bs.header}>
+        <View style={[bs.hazardIcon, { backgroundColor: (hazardMeta?.color ?? colors.brand[500]) + '1A' }]}>
+          <Ionicons
+            name={hazardMeta?.icon ?? 'alert-circle'}
+            size={22}
+            color={hazardMeta?.color ?? colors.brand[500]}
           />
         </View>
-      </View>
-    </View>
-  );
-}
-
-const sheetStyles = StyleSheet.create({
-  root: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.15, shadowRadius: 20, elevation: 18,
-  },
-  accentBar: { height: 4 },
-  handle: {
-    width: 36, height: 4, borderRadius: 2,
-    backgroundColor: colors.slate[200],
-    alignSelf: 'center', marginTop: 14, marginBottom: 18,
-  },
-  header:     { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 18, marginBottom: 16 },
-  iconWrap:   { width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  refRow:     { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  refDot:     { width: 5, height: 5, borderRadius: 2.5 },
-  ref:        { fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
-  title:      { fontSize: 16, fontWeight: '800', lineHeight: 22, letterSpacing: -0.2 },
-  addressRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  address:    { fontSize: 12, flex: 1 },
-  closeBtn:   { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  divider:    { height: StyleSheet.hairlineWidth, marginBottom: 14 },
-  pillRow:    { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 18, marginBottom: 18, flexWrap: 'wrap' },
-  statusPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-  statusText: { fontSize: 11, fontWeight: '700' },
-  distPill:   { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.brand[100], paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-  distText:   { fontSize: 10, fontWeight: '700' },
-  nearbyPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.severity.moderate + '18', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-  actions:    { flexDirection: 'row', gap: 10, paddingHorizontal: 18 },
-  navBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 7, backgroundColor: colors.brand[500],
-    paddingHorizontal: 22, paddingVertical: 14, borderRadius: 16,
-    shadowColor: colors.brand[500], shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
-  },
-  navBtnText: { color: colors.white, fontWeight: '800', fontSize: 14 },
-
-  // ── Status stepper ──
-  stepperSection: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 16,
-    gap: 12,
-  },
-  stepperTitle: {
-    fontSize: 10, fontWeight: '800', letterSpacing: 0.8,
-  },
-  stepTrack: {
-    flexDirection: 'row', alignItems: 'center',
-  },
-  stepWrapper: {
-    flexDirection: 'row', alignItems: 'center', flex: 1,
-  },
-  stepCol: {
-    alignItems: 'center', gap: 4,
-  },
-  stepDot: {
-    width: 22, height: 22, borderRadius: 11,
-    borderWidth: 2,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  stepDotInner: {
-    width: 8, height: 8, borderRadius: 4, backgroundColor: colors.white,
-  },
-  stepLine: {
-    flex: 1, height: 2, borderRadius: 1, marginHorizontal: 2, marginBottom: 18,
-  },
-  stepLabel: {
-    fontSize: 9, fontWeight: '700',
-  },
-  updateBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 14, borderRadius: 16,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.28, shadowRadius: 8, elevation: 6,
-  },
-  updateBtnText: {
-    color: colors.white, fontWeight: '800', fontSize: 14, flex: 1, textAlign: 'center',
-  },
-  updateBtnArrow: {
-    width: 24, height: 24, borderRadius: 8,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  resolvedBadge: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 14, borderRadius: 16,
-  },
-  resolvedBadgeText: {
-    fontWeight: '800', fontSize: 14,
-  },
-});
-
-function EvacSheet({
-  center, onClose, onGetDirections, isDark, bottomInset, distanceKm,
-}: {
-  center: EvacCenter;
-  onClose: () => void;
-  onGetDirections: () => void;
-  isDark: boolean;
-  bottomInset: number;
-  distanceKm: number | null;
-}) {
-  const bg       = isDark ? colors.dark.elevated : colors.white;
-  const textMain = isDark ? colors.white         : colors.slate[900];
-  const textSub  = isDark ? colors.slate[400]    : colors.slate[500];
-  const sepColor = isDark ? colors.dark.border   : colors.slate[100];
-  const meta     = EVAC_TYPE_META[center.type] ?? { icon: 'location' as const, label: center.type };
-
-  return (
-    <View style={[evacSheet.sheet, { backgroundColor: bg, paddingBottom: bottomInset + 100 }]}>
-      <View style={evacSheet.accentBar} />
-      <View style={evacSheet.handle} />
-
-      <View style={evacSheet.header}>
-        <View style={evacSheet.iconWrap}>
-          <Ionicons name="shield-checkmark" size={24} color={colors.white} />
-        </View>
         <View style={{ flex: 1, gap: 3 }}>
-          <Text style={[evacSheet.typeLabel, { color: EVAC_COLOR }]}>
-            EVACUATION CENTER · {meta.label.toUpperCase()}
+          {hazardMeta && (
+            <Text style={[bs.hazardLabel, { color: hazardMeta.color }]}>
+              {hazardMeta.label.toUpperCase()}
+            </Text>
+          )}
+          <Text style={[bs.title, { color: textMain }]} numberOfLines={2}>
+            {report.title}
           </Text>
-          <Text style={[evacSheet.title, { color: textMain }]} numberOfLines={2}>
-            {center.name}
-          </Text>
-          <View style={evacSheet.addressRow}>
-            <Ionicons name="location-sharp" size={12} color={EVAC_COLOR} />
-            <Text style={[evacSheet.address, { color: textSub }]} numberOfLines={1}>
-              {center.address}
+          <View style={bs.addressRow}>
+            <Ionicons name="location-sharp" size={12} color={colors.brand[500]} />
+            <Text style={[bs.address, { color: textSub }]} numberOfLines={1}>
+              {report.address}
             </Text>
           </View>
         </View>
         <Pressable
           onPress={onClose}
-          style={[evacSheet.closeBtn, { backgroundColor: isDark ? colors.dark.card : colors.slate[100] }]}
-          hitSlop={8} accessibilityLabel="Close"
-        >
-          <Ionicons name="close" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
-        </Pressable>
-      </View>
-
-      {/* Mini map preview */}
-      <View style={evacSheet.miniMapWrap}>
-        <MapView
-          style={evacSheet.miniMap}
-          provider={PROVIDER_GOOGLE}
-          initialRegion={{
-            latitude: center.latitude,
-            longitude: center.longitude,
-            latitudeDelta: 0.006,
-            longitudeDelta: 0.006,
-          }}
-          scrollEnabled={false}
-          zoomEnabled={false}
-          rotateEnabled={false}
-          pitchEnabled={false}
-          liteMode
-        >
-          <Marker
-            coordinate={{ latitude: center.latitude, longitude: center.longitude }}
-            anchor={{ x: 0.5, y: 0.5 }}
-          >
-            <View style={{
-              width: 32, height: 32, borderRadius: 10,
-              backgroundColor: EVAC_COLOR,
-              alignItems: 'center', justifyContent: 'center',
-              borderWidth: 2, borderColor: '#fff',
-              shadowColor: EVAC_COLOR,
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.4, shadowRadius: 4, elevation: 5,
-            }}>
-              <Ionicons name="shield-checkmark" size={14} color="#fff" />
-            </View>
-          </Marker>
-        </MapView>
-      </View>
-
-      <View style={[evacSheet.divider, { backgroundColor: sepColor }]} />
-
-      <View style={evacSheet.statsRow}>
-        <View style={[evacSheet.statPill, { backgroundColor: EVAC_COLOR + '18' }]}>
-          <Ionicons name="people" size={14} color={EVAC_COLOR} />
-          <Text style={[evacSheet.statText, { color: EVAC_COLOR }]}>
-            Capacity {center.capacity.toLocaleString()}
-          </Text>
-        </View>
-        {distanceKm !== null && (
-          <View style={[evacSheet.statPill, { backgroundColor: colors.brand[500] + '18' }]}>
-            <Ionicons name="walk" size={14} color={colors.brand[500]} />
-            <Text style={[evacSheet.statText, { color: colors.brand[500] }]}>
-              ~{fmtDist(distanceKm)} away
-            </Text>
-          </View>
-        )}
-        <View style={[evacSheet.statPill, { backgroundColor: EVAC_COLOR + '18' }]}>
-          <Ionicons name="checkmark-circle" size={14} color={EVAC_COLOR} />
-          <Text style={[evacSheet.statText, { color: EVAC_COLOR }]}>Open</Text>
-        </View>
-      </View>
-
-      <View style={evacSheet.actions}>
-        <Pressable
-          style={({ pressed }) => [evacSheet.dirBtn, { opacity: pressed ? 0.85 : 1 }]}
-          onPress={onGetDirections}
-          accessibilityLabel="Get directions"
-        >
-          <Ionicons name="navigate" size={16} color={colors.white} />
-          <Text style={evacSheet.dirBtnText}>Start — Get Directions</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-const evacSheet = StyleSheet.create({
-  sheet: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15, shadowRadius: 20, elevation: 16,
-  },
-  accentBar:  { height: 4, backgroundColor: EVAC_COLOR },
-  handle: {
-    width: 36, height: 4, borderRadius: 2,
-    backgroundColor: colors.slate[200],
-    alignSelf: 'center', marginTop: 10, marginBottom: 14,
-  },
-  header:     { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, marginBottom: 14 },
-  iconWrap: {
-    width: 48, height: 48, borderRadius: 14,
-    backgroundColor: EVAC_COLOR,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  typeLabel:  { fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
-  title:      { fontSize: 16, fontWeight: '700', lineHeight: 22 },
-  addressRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  address:    { fontSize: 12, flex: 1 },
-  closeBtn: {
-    width: 30, height: 30, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  miniMapWrap: {
-    marginHorizontal: 16, marginBottom: 14, borderRadius: 14,
-    overflow: 'hidden', height: 120, borderWidth: 1, borderColor: colors.slate[100],
-  },
-  miniMap: { width: '100%', height: '100%' },
-  divider:   { height: StyleSheet.hairlineWidth, marginBottom: 14 },
-  statsRow:  { flexDirection: 'row', gap: 10, paddingHorizontal: 16, flexWrap: 'wrap' },
-  statPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
-  },
-  statText: { fontSize: 13, fontWeight: '600' },
-  actions:  { paddingHorizontal: 16, paddingTop: 12 },
-  dirBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, backgroundColor: EVAC_COLOR,
-    paddingVertical: 14, borderRadius: 14,
-  },
-  dirBtnText: { color: colors.white, fontWeight: '700', fontSize: 15 },
-});
-
-/* ───────────── Search Pin Detail Sheet ───────────── */
-
-function SearchPinSheet({
-  pin, onClose, onGetDirections, isDark, bottomInset, distanceKm,
-}: {
-  pin: { name: string; latitude: number; longitude: number };
-  onClose: () => void;
-  onGetDirections: () => void;
-  isDark: boolean;
-  bottomInset: number;
-  distanceKm: number | null;
-}) {
-  const bg       = isDark ? colors.dark.elevated : colors.white;
-  const textMain = isDark ? colors.white         : colors.slate[900];
-  const textSub  = isDark ? colors.slate[400]    : colors.slate[500];
-
-  return (
-    <View style={[spSheet.sheet, { backgroundColor: bg, paddingBottom: bottomInset + 100 }]}>
-      <View style={spSheet.accentBar} />
-      <View style={spSheet.handle} />
-
-      <View style={spSheet.header}>
-        <View style={spSheet.iconWrap}>
-          <Ionicons name="location" size={24} color={colors.white} />
-        </View>
-        <View style={{ flex: 1, gap: 3 }}>
-          <Text style={[spSheet.typeLabel, { color: colors.brand[500] }]}>
-            PLACE
-          </Text>
-          <Text style={[spSheet.title, { color: textMain }]} numberOfLines={2}>
-            {pin.name}
-          </Text>
-          <Text style={[spSheet.coords, { color: textSub }]}>
-            {pin.latitude.toFixed(5)}, {pin.longitude.toFixed(5)}
-          </Text>
-        </View>
-        <Pressable
-          onPress={onClose}
-          style={[spSheet.closeBtn, { backgroundColor: isDark ? colors.dark.card : colors.slate[100] }]}
+          style={[bs.closeBtn, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]}
           hitSlop={8}
           accessibilityLabel="Close"
         >
@@ -845,32 +528,84 @@ function SearchPinSheet({
         </Pressable>
       </View>
 
-      <View style={spSheet.statsRow}>
-        {distanceKm !== null && (
-          <View style={[spSheet.statPill, { backgroundColor: colors.brand[500] + '18' }]}>
-            <Ionicons name="walk" size={14} color={colors.brand[500]} />
-            <Text style={[spSheet.statText, { color: colors.brand[500] }]}>
-              ~{fmtDist(distanceKm)} away
-            </Text>
+      {(photosLoading || photoUrls.length > 0) && (
+        <>
+          <View style={[bs.divider, { backgroundColor: sepColor }]} />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={bs.photoScroll}
+          >
+            {photosLoading
+              ? [1, 2, 3].map(i => (
+                  <View key={i} style={[bs.photoThumb, { backgroundColor: thumbBg }]}>
+                    <ActivityIndicator size="small" color={colors.slate[400]} />
+                  </View>
+                ))
+              : photoUrls.map((url, i) => (
+                  <Pressable
+                    key={i}
+                    onPress={() => onViewDetail(report.id)}
+                    style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+                  >
+                    <Image
+                      source={{ uri: url }}
+                      style={bs.photoThumb}
+                      resizeMode="cover"
+                    />
+                  </Pressable>
+                ))
+            }
+          </ScrollView>
+        </>
+      )}
+
+      <View style={[bs.divider, { backgroundColor: sepColor }]} />
+
+      {report.hazardType === 'flood' && (
+        <View style={[bs.depthRow, { borderColor: sepColor }]}>
+          <View style={bs.depthIconWrap}>
+            <Ionicons name="water" size={14} color={colors.brand[500]} />
           </View>
-        )}
+          <View style={{ flex: 1 }}>
+            <Text style={[bs.depthLabel, { color: textSub }]}>Estimated flood depth</Text>
+            <Text style={[bs.depthValue, { color: colors.brand[500] }]}>{FLOOD_DEPTH[report.severity]}</Text>
+          </View>
+        </View>
+      )}
+
+      <View style={bs.statusRow}>
+        <SeverityChip level={report.severity} />
+        <StatusBadge status={report.status} />
+        <View style={bs.timePill}>
+          <Ionicons name="time-outline" size={11} color={colors.slate[400]} />
+          <Text style={[bs.timeText, { color: textSub }]}>{report.reportedAt}</Text>
+        </View>
       </View>
 
-      <View style={spSheet.actions}>
+      <View style={bs.actions}>
         <Pressable
-          style={({ pressed }) => [spSheet.dirBtn, { opacity: pressed ? 0.85 : 1 }]}
-          onPress={onGetDirections}
-          accessibilityLabel="Get directions"
+          style={({ pressed }) => [bs.primaryBtn, { backgroundColor: colors.brand[500], opacity: pressed ? 0.88 : 1 }]}
+          onPress={() => { onClose(); onViewDetail(report.id); }}
         >
-          <Ionicons name="navigate" size={16} color={colors.white} />
-          <Text style={spSheet.dirBtnText}>Get Directions</Text>
+          <Ionicons name="document-text-outline" size={15} color={colors.white} />
+          <Text style={bs.primaryBtnText}>View Incident</Text>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [bs.secondaryBtn, {
+            backgroundColor: isDark ? colors.slate[800] : colors.slate[100],
+            opacity: pressed ? 0.7 : 1,
+          }]}
+          onPress={onClose}
+        >
+          <Ionicons name="map-outline" size={15} color={isDark ? colors.slate[300] : colors.slate[600]} />
         </Pressable>
       </View>
     </View>
   );
 }
 
-const spSheet = StyleSheet.create({
+const bs = StyleSheet.create({
   sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
@@ -879,73 +614,1353 @@ const spSheet = StyleSheet.create({
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15, shadowRadius: 20, elevation: 16,
   },
-  accentBar: { height: 4, backgroundColor: colors.brand[500] },
+  accentBar: { height: 4 },
   handle: {
     width: 36, height: 4, borderRadius: 2,
     backgroundColor: colors.slate[200],
     alignSelf: 'center', marginTop: 10, marginBottom: 14,
   },
-  header:    { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, marginBottom: 14 },
-  iconWrap: {
-    width: 48, height: 48, borderRadius: 14,
-    backgroundColor: colors.brand[500],
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  typeLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
-  title:     { fontSize: 16, fontWeight: '700', lineHeight: 22 },
-  coords:    { fontSize: 12 },
+  header:      { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, marginBottom: 14 },
+  hazardIcon:  { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  hazardLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
+  title:       { fontSize: 16, fontWeight: '700', lineHeight: 22 },
+  addressRow:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  address:     { fontSize: 12, flex: 1 },
   closeBtn: {
     width: 30, height: 30, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  statsRow:  { flexDirection: 'row', gap: 10, paddingHorizontal: 16 },
+  divider:    { height: StyleSheet.hairlineWidth, marginBottom: 12 },
+  statusRow:  { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 16, marginBottom: 16, flexWrap: 'wrap' },
+  timePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: colors.slate[100], paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20,
+  },
+  timeText:  { fontSize: 11, fontWeight: '500' },
+  actions:   { flexDirection: 'row', gap: 10, paddingHorizontal: 16 },
+  primaryBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 7, paddingVertical: 13, borderRadius: 14,
+  },
+  primaryBtnText: { color: colors.white, fontWeight: '700', fontSize: 14 },
+  secondaryBtn: {
+    width: 46, height: 46, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  photoScroll: { paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
+  photoThumb: {
+    width: 90, height: 72, borderRadius: 10,
+    overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  depthRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 10,
+    marginBottom: 4,
+    borderWidth: 1, borderRadius: 10,
+    marginHorizontal: 16,
+    backgroundColor: colors.brand[500] + '0D',
+  },
+  depthIconWrap: {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: colors.brand[500] + '1A',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  depthLabel: { fontSize: 11, fontWeight: '500' },
+  depthValue: { fontSize: 13, fontWeight: '700', marginTop: 1 },
+});
+
+function EvacSheet({
+  center,
+  onClose,
+  onGetDirections,
+  isDark,
+  bottomInset,
+  distanceKm,
+  hasRoute,
+}: {
+  center: EvacCenter;
+  onClose: () => void;
+  onGetDirections: () => void;
+  isDark: boolean;
+  bottomInset: number;
+  distanceKm: number | null;
+  hasRoute?: boolean;
+}) {
+  const bg       = isDark ? colors.slate[900] : colors.white;
+  const textMain = isDark ? colors.white      : colors.slate[900];
+  const textSub  = isDark ? colors.slate[400] : colors.slate[500];
+  const meta     = EVAC_TYPE_META[center.type] ?? { icon: 'location' as const, label: center.type };
+
+  const driveMins = distanceKm !== null ? Math.max(1, Math.round(distanceKm / 40 * 60)) : null;
+  const driveTime = driveMins !== null
+    ? driveMins >= 60
+      ? `${Math.floor(driveMins / 60)}h ${driveMins % 60}m`
+      : `${driveMins} min`
+    : null;
+
+  function handleShare() {
+    Share.share({
+      message: `${center.name}\n${center.address}\nhttps://www.google.com/maps/search/?api=1&query=${center.latitude},${center.longitude}`,
+    });
+  }
+
+  // Compact mode when route is active
+  if (hasRoute) {
+    return (
+      <View style={[evs.sheet, { backgroundColor: bg, paddingBottom: Math.max(bottomInset, 12) + 8 }]}>
+        <View style={evs.handle} />
+        <View style={[evs.header, { marginBottom: 6 }]}>
+          <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: EVAC_COLOR + '18', alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="shield-checkmark" size={16} color={EVAC_COLOR} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[evs.title, { color: textMain, fontSize: 15 }]} numberOfLines={1}>
+              {center.name}
+            </Text>
+            <Text style={[evs.address, { color: textSub }]} numberOfLines={1}>{center.address}</Text>
+          </View>
+          <Pressable
+            onPress={onClose}
+            style={[evs.closeBtn, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]}
+            hitSlop={8}
+          >
+            <Ionicons name="close" size={14} color={isDark ? colors.slate[300] : colors.slate[600]} />
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[evs.sheet, { backgroundColor: bg, paddingBottom: Math.max(bottomInset, 12) + 16 }]}>
+      <View style={evs.handle} />
+
+      {/* Header */}
+      <View style={evs.header}>
+        <LinearGradient
+          colors={[EVAC_COLOR, '#0D9488']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={evs.iconWrap}
+        >
+          <Ionicons name="shield-checkmark" size={22} color={colors.white} />
+        </LinearGradient>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={[evs.typeLabel, { color: EVAC_COLOR }]}>
+            {meta.label.toUpperCase()}
+          </Text>
+          <Text style={[evs.title, { color: textMain }]} numberOfLines={2}>
+            {center.name}
+          </Text>
+          <View style={evs.addressRow}>
+            <Ionicons name="location-sharp" size={11} color={textSub} />
+            <Text style={[evs.address, { color: textSub }]} numberOfLines={1}>
+              {center.address}
+            </Text>
+          </View>
+        </View>
+        <Pressable
+          onPress={onClose}
+          style={[evs.closeBtn, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]}
+          hitSlop={8}
+          accessibilityLabel="Close"
+        >
+          <Ionicons name="close" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
+        </Pressable>
+      </View>
+
+      {/* Stats */}
+      <View style={evs.statsRow}>
+        <View style={[evs.statPill, { backgroundColor: EVAC_COLOR + '12' }]}>
+          <Ionicons name="people" size={14} color={EVAC_COLOR} />
+          <Text style={[evs.statText, { color: EVAC_COLOR }]}>
+            {center.capacity.toLocaleString()}
+          </Text>
+        </View>
+        {distanceKm !== null && (
+          <View style={[evs.statPill, { backgroundColor: colors.brand[500] + '12' }]}>
+            <Ionicons name="car-outline" size={14} color={colors.brand[500]} />
+            <Text style={[evs.statText, { color: colors.brand[500] }]}>
+              ~{fmtDist(distanceKm)}
+            </Text>
+          </View>
+        )}
+        {driveTime && (
+          <View style={[evs.statPill, { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50] }]}>
+            <Ionicons name="time-outline" size={14} color={isDark ? colors.slate[400] : colors.slate[500]} />
+            <Text style={[evs.statText, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
+              ~{driveTime}
+            </Text>
+          </View>
+        )}
+        <View style={[evs.statPill, { backgroundColor: EVAC_COLOR + '12' }]}>
+          <Ionicons name="checkmark-circle" size={14} color={EVAC_COLOR} />
+          <Text style={[evs.statText, { color: EVAC_COLOR }]}>Open</Text>
+        </View>
+      </View>
+
+      {/* Actions */}
+      <View style={evs.actions}>
+        <Pressable
+          style={({ pressed }) => [evs.dirBtnWrap, pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] }]}
+          onPress={onGetDirections}
+          accessibilityLabel="Get directions"
+        >
+          <LinearGradient
+            colors={[EVAC_COLOR, '#0D9488']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={evs.dirBtn}
+          >
+            <Ionicons name="navigate" size={16} color={colors.white} />
+            <Text style={evs.dirBtnText}>Get Directions</Text>
+          </LinearGradient>
+        </Pressable>
+        <Pressable
+          onPress={handleShare}
+          style={({ pressed }) => [
+            evs.shareBtn,
+            { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50], borderColor: isDark ? colors.dark.border : colors.slate[200] },
+            pressed && { opacity: 0.8 },
+          ]}
+          accessibilityLabel="Share location"
+        >
+          <Ionicons name="share-outline" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/* ───────────── Search Pin Detail Sheet ───────────── */
+
+function SearchPinSheet({
+  pin, onClose, onConfirmClose, onGetDirections, isDark, bottomInset, distanceKm, isRouteLoading, hasRoute,
+  onArrived, arrivedLoading, isLeaderMode,
+  reporterName, reportedAt, severity, incidentType,
+  chatUnread, onChatPress, showIncidentInfo,
+}: {
+  pin: { name: string; secondary?: string; latitude: number; longitude: number };
+  onClose: () => void;
+  onConfirmClose?: () => void;
+  onGetDirections: () => void;
+  isDark: boolean;
+  bottomInset: number;
+  distanceKm: number | null;
+  isRouteLoading?: boolean;
+  hasRoute?: boolean;
+  onArrived?: () => void;
+  arrivedLoading?: boolean;
+  isLeaderMode?: boolean;
+  reporterName?: string;
+  reportedAt?: string;
+  severity?: string;
+  incidentType?: string;
+  chatUnread?: number;
+  onChatPress?: () => void;
+  showIncidentInfo?: boolean;
+}) {
+  const bg       = isDark ? colors.slate[900] : colors.white;
+  const textMain = isDark ? colors.white      : colors.slate[900];
+  const textSub  = isDark ? colors.slate[400] : colors.slate[500];
+
+  const walkMins = distanceKm !== null ? Math.round(distanceKm / 5 * 60) : null;
+  const walkTime = walkMins !== null
+    ? walkMins >= 60
+      ? `${Math.floor(walkMins / 60)}h ${walkMins % 60}m`
+      : `${walkMins}m`
+    : null;
+
+  const driveMins = distanceKm !== null ? Math.max(1, Math.round(distanceKm / 40 * 60)) : null;
+  const driveTime = driveMins !== null
+    ? driveMins >= 60
+      ? `${Math.floor(driveMins / 60)}h ${driveMins % 60}m`
+      : `${driveMins} min`
+    : null;
+
+  function handleShare() {
+    Share.share({
+      message: `${pin.name}\nhttps://www.google.com/maps/search/?api=1&query=${pin.latitude},${pin.longitude}`,
+    });
+  }
+
+  function handleClose() {
+    if (onArrived && onConfirmClose) {
+      onConfirmClose();
+    } else {
+      onClose();
+    }
+  }
+
+  // Compact mode when route is active
+  if (hasRoute) {
+    return (
+      <View style={[spSheet.sheet, { backgroundColor: bg, paddingBottom: Math.max(bottomInset, 12) + (onArrived ? 14 : 8) }]}>
+        <View style={spSheet.handle} />
+        <View style={[spSheet.header, { marginBottom: onArrived ? 8 : 6 }]}>
+          <View style={[spSheet.compactIcon, { backgroundColor: '#4A6CF7' + '18' }]}>
+            <Ionicons name="location" size={16} color="#4A6CF7" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[spSheet.title, { color: textMain, fontSize: 15 }]} numberOfLines={1}>
+              {pin.name}
+            </Text>
+            {pin.secondary ? (
+              <Text style={[spSheet.address, { color: textSub }]} numberOfLines={1}>{pin.secondary}</Text>
+            ) : null}
+          </View>
+          <Pressable
+            onPress={handleClose}
+            style={[spSheet.closeBtn, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]}
+            hitSlop={8}
+          >
+            <Ionicons name="close" size={14} color={isDark ? colors.slate[300] : colors.slate[600]} />
+          </Pressable>
+        </View>
+        {/* Incident info rows in session mode */}
+        {(onArrived || showIncidentInfo) && (reporterName || reportedAt || severity || incidentType) && (
+          <View style={[spSheet.infoBlock, { borderColor: isDark ? colors.dark.border : colors.slate[100] }]}>
+            {reporterName ? (
+              <View style={spSheet.infoBlockRow}>
+                <Ionicons name="person-outline" size={12} color={isDark ? colors.slate[500] : colors.slate[400]} />
+                <Text style={[spSheet.infoBlockLabel, { color: isDark ? colors.slate[500] : colors.slate[500] }]}>Reporter</Text>
+                <Text style={[spSheet.infoBlockValue, { color: textMain }]} numberOfLines={1}>{reporterName}</Text>
+              </View>
+            ) : null}
+            {reportedAt ? (
+              <View style={spSheet.infoBlockRow}>
+                <Ionicons name="time-outline" size={12} color={isDark ? colors.slate[500] : colors.slate[400]} />
+                <Text style={[spSheet.infoBlockLabel, { color: isDark ? colors.slate[500] : colors.slate[500] }]}>Reported</Text>
+                <Text style={[spSheet.infoBlockValue, { color: textMain }]} numberOfLines={1}>{reportedAt}</Text>
+              </View>
+            ) : null}
+            {severity ? (
+              <View style={spSheet.infoBlockRow}>
+                <Ionicons name="warning-outline" size={12} color={isDark ? colors.slate[500] : colors.slate[400]} />
+                <Text style={[spSheet.infoBlockLabel, { color: isDark ? colors.slate[500] : colors.slate[500] }]}>Severity</Text>
+                <Text style={[spSheet.infoBlockValue, { color: textMain }]}>{severity.charAt(0).toUpperCase() + severity.slice(1)}</Text>
+              </View>
+            ) : null}
+            {incidentType ? (
+              <View style={spSheet.infoBlockRow}>
+                <Ionicons name="water-outline" size={12} color={isDark ? colors.slate[500] : colors.slate[400]} />
+                <Text style={[spSheet.infoBlockLabel, { color: isDark ? colors.slate[500] : colors.slate[500] }]}>Type</Text>
+                <Text style={[spSheet.infoBlockValue, { color: textMain }]}>{incidentType}</Text>
+              </View>
+            ) : null}
+          </View>
+        )}
+        {onArrived && (
+          <View style={spSheet.actions}>
+            <Pressable
+              style={({ pressed }) => [spSheet.arrivedBtnWrap, { flex: 1 }, pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] }]}
+              onPress={onArrived}
+              disabled={arrivedLoading}
+            >
+              <LinearGradient
+                colors={['#10B981', '#059669'] as [string, string]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={spSheet.arrivedBtn}
+              >
+                {arrivedLoading
+                  ? <ActivityIndicator size="small" color={colors.white} />
+                  : (
+                    <>
+                      <Ionicons name="checkmark-circle" size={17} color={colors.white} />
+                      <Text style={spSheet.arrivedBtnText}>
+                        Finish — Resolved
+                      </Text>
+                    </>
+                  )
+                }
+              </LinearGradient>
+            </Pressable>
+            {onChatPress && (
+              <Pressable
+                onPress={onChatPress}
+                style={({ pressed }) => [
+                  spSheet.chatLabeledBtn,
+                  { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50], borderColor: isDark ? colors.dark.border : colors.slate[200] },
+                  pressed && { opacity: 0.8 },
+                ]}
+                accessibilityLabel="Open chat"
+              >
+                <View style={{ position: 'relative' }}>
+                  <Ionicons name="chatbubble-ellipses" size={20} color="#7C3AED" />
+                  {(chatUnread ?? 0) > 0 && (
+                    <View style={spSheet.chatBadge}>
+                      <Text style={spSheet.chatBadgeText}>
+                        {(chatUnread ?? 0) > 9 ? '9+' : chatUnread}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={spSheet.chatBtnLabel}>Chat</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  return (
+    <View style={[spSheet.sheet, { backgroundColor: bg, paddingBottom: Math.max(bottomInset, 12) + 16 }]}>
+      <View style={spSheet.handle} />
+
+      <View style={spSheet.header}>
+        <LinearGradient
+          colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={spSheet.iconWrap}
+        >
+          <Ionicons name="location" size={22} color={colors.white} />
+        </LinearGradient>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={[spSheet.title, { color: textMain }]} numberOfLines={2}>
+            {pin.name}
+          </Text>
+          {pin.secondary ? (
+            <Text style={[spSheet.address, { color: textSub }]} numberOfLines={1}>
+              {pin.secondary}
+            </Text>
+          ) : (
+            <Text style={[spSheet.typeLabel, { color: textSub }]}>
+              Search result
+            </Text>
+          )}
+        </View>
+        <Pressable
+          onPress={handleClose}
+          style={[spSheet.closeBtn, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]}
+          hitSlop={8}
+          accessibilityLabel="Close"
+        >
+          <Ionicons name="close" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
+        </Pressable>
+      </View>
+
+      {distanceKm !== null && (
+        <View style={spSheet.statsRow}>
+          <View style={[spSheet.statPill, { backgroundColor: colors.brand[500] + '12' }]}>
+            <Ionicons name="walk" size={14} color={colors.brand[500]} />
+            <Text style={[spSheet.statText, { color: colors.brand[500] }]}>
+              ~{fmtDist(distanceKm)}
+            </Text>
+          </View>
+          {walkTime && (
+            <View style={[spSheet.statPill, { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50] }]}>
+              <Ionicons name="walk-outline" size={14} color={isDark ? colors.slate[400] : colors.slate[500]} />
+              <Text style={[spSheet.statText, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
+                ~{walkTime}
+              </Text>
+            </View>
+          )}
+          {driveTime && (
+            <View style={[spSheet.statPill, { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50] }]}>
+              <Ionicons name="car-outline" size={14} color={isDark ? colors.slate[400] : colors.slate[500]} />
+              <Text style={[spSheet.statText, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
+                ~{driveTime}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {onArrived ? (
+        /* Session mode: Finish — Resolved + Chat + Cancel */
+        <View style={spSheet.actions}>
+          <Pressable
+            style={({ pressed }) => [spSheet.arrivedBtnWrap, { flex: 1 }, pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] }]}
+            onPress={onArrived}
+            disabled={arrivedLoading}
+          >
+            <LinearGradient
+              colors={['#10B981', '#059669'] as [string, string]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[spSheet.arrivedBtn, { paddingVertical: 14 }]}
+            >
+              {arrivedLoading
+                ? <ActivityIndicator size="small" color={colors.white} />
+                : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={17} color={colors.white} />
+                    <Text style={spSheet.arrivedBtnText}>
+                      Finish — Resolved
+                    </Text>
+                  </>
+                )
+              }
+            </LinearGradient>
+          </Pressable>
+          {onChatPress && (
+            <Pressable
+              onPress={onChatPress}
+              style={({ pressed }) => [
+                spSheet.chatLabeledBtn,
+                { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50], borderColor: isDark ? colors.dark.border : colors.slate[200] },
+                pressed && { opacity: 0.8 },
+              ]}
+              accessibilityLabel="Open chat"
+            >
+              <View style={{ position: 'relative' }}>
+                <Ionicons name="chatbubble-ellipses" size={20} color="#7C3AED" />
+                {(chatUnread ?? 0) > 0 && (
+                  <View style={spSheet.chatBadge}>
+                    <Text style={spSheet.chatBadgeText}>
+                      {(chatUnread ?? 0) > 9 ? '9+' : chatUnread}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text style={spSheet.chatBtnLabel}>Chat</Text>
+            </Pressable>
+          )}
+          <Pressable
+            onPress={handleClose}
+            style={({ pressed }) => [
+              spSheet.actionBtn,
+              { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50], borderColor: isDark ? colors.dark.border : colors.slate[200] },
+              pressed && { opacity: 0.8 },
+            ]}
+            accessibilityLabel="Cancel navigation"
+          >
+            <Ionicons name="arrow-back" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
+          </Pressable>
+        </View>
+      ) : (
+        /* Regular search-pin mode */
+        <View style={spSheet.actions}>
+          <Pressable
+            style={({ pressed }) => [spSheet.dirBtnWrap, pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] }]}
+            onPress={onGetDirections}
+            accessibilityLabel="Get directions"
+          >
+            <LinearGradient
+              colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={spSheet.dirBtn}
+            >
+              {isRouteLoading ? (
+                <ActivityIndicator size="small" color={colors.white} />
+              ) : (
+                <>
+                  <Ionicons name="navigate" size={16} color={colors.white} />
+                  <Text style={spSheet.dirBtnText}>Get Directions</Text>
+                </>
+              )}
+            </LinearGradient>
+          </Pressable>
+          <Pressable
+            onPress={handleShare}
+            style={({ pressed }) => [
+              spSheet.actionBtn,
+              { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50], borderColor: isDark ? colors.dark.border : colors.slate[200] },
+              pressed && { opacity: 0.8 },
+            ]}
+            accessibilityLabel="Share location"
+          >
+            <Ionicons name="share-outline" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const spSheet = StyleSheet.create({
+  sheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12, shadowRadius: 16, elevation: 12,
+  },
+  handle: {
+    width: 40, height: 5, borderRadius: 3,
+    backgroundColor: colors.slate[300],
+    alignSelf: 'center', marginTop: 10, marginBottom: 14,
+  },
+  header:    { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, marginBottom: 12 },
+  iconWrap: {
+    width: 46, height: 46, borderRadius: 23,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  compactIcon: {
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  typeLabel: { fontSize: 12, fontWeight: '500' },
+  address:   { fontSize: 12, fontWeight: '500', marginTop: 1 },
+  title:     { fontSize: 17, fontWeight: '800', lineHeight: 22, letterSpacing: -0.2 },
+  closeBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  statsRow:  { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginBottom: 4, flexWrap: 'wrap' },
   statPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
   },
   statText:  { fontSize: 13, fontWeight: '600' },
-  actions:   { paddingHorizontal: 16, paddingTop: 12 },
+  actions:   { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 10 },
+  dirBtnWrap: { flex: 1, borderRadius: 14, overflow: 'hidden' },
   dirBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, backgroundColor: colors.brand[500],
+    gap: 8, paddingVertical: 14, borderRadius: 14,
+  },
+  dirBtnText: { color: colors.white, fontWeight: '800', fontSize: 15, letterSpacing: 0.2 },
+  actionBtn: {
+    width: 50, height: 50, borderRadius: 14,
+    borderWidth: 1, alignItems: 'center', justifyContent: 'center',
+  },
+  chatBadge: {
+    position: 'absolute', top: -4, right: -4,
+    minWidth: 17, height: 17, borderRadius: 9,
+    backgroundColor: '#EF4444',
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.12)',
+  },
+  chatBadgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
+  infoBlock: {
+    marginHorizontal: 20, marginBottom: 10,
+    borderRadius: 10, borderWidth: 1,
+    paddingVertical: 6, paddingHorizontal: 12,
+    gap: 4,
+  },
+  infoBlockRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 3,
+  },
+  infoBlockLabel: {
+    fontSize: 11, fontWeight: '600', width: 60,
+  },
+  infoBlockValue: {
+    fontSize: 12, fontWeight: '500', flex: 1,
+  },
+  compactArrivedRow: {
+    paddingHorizontal: 20,
+  },
+  arrivedBtnWrap: { borderRadius: 14, overflow: 'hidden' },
+  arrivedBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 13, borderRadius: 14,
+  },
+  arrivedBtnText: { color: colors.white, fontWeight: '800', fontSize: 15, letterSpacing: 0.2 },
+  chatLabeledBtn: {
+    width: 64, borderRadius: 14, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', gap: 3,
+  },
+  chatBtnLabel: { fontSize: 11, fontWeight: '700', color: '#7C3AED' },
+});
+
+const evs = StyleSheet.create({
+  sheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12, shadowRadius: 16, elevation: 12,
+  },
+  handle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: colors.slate[200],
+    alignSelf: 'center', marginTop: 10, marginBottom: 14,
+  },
+  header:      { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, marginBottom: 12 },
+  iconWrap: {
+    width: 44, height: 44, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  typeLabel:   { fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
+  title:       { fontSize: 16, fontWeight: '700', lineHeight: 22 },
+  addressRow:  { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  address:     { fontSize: 12, flex: 1 },
+  closeBtn: {
+    width: 30, height: 30, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  statsRow:  { flexDirection: 'row', gap: 8, paddingHorizontal: 16, flexWrap: 'wrap', marginBottom: 14 },
+  statPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6,
+  },
+  statText: { fontSize: 12, fontWeight: '600' },
+  actions: { flexDirection: 'row', gap: 10, paddingHorizontal: 16 },
+  dirBtnWrap: { flex: 1 },
+  dirBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8,
     paddingVertical: 14, borderRadius: 14,
   },
-  dirBtnText: { color: colors.white, fontWeight: '700', fontSize: 15 },
+  dirBtnText: { color: colors.white, fontWeight: '700', fontSize: 14 },
+  shareBtn: {
+    width: 48, height: 48, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1,
+  },
 });
+
+/* ───────────── Hazard Detail Sheet ───────────── */
+
+const HAZARD_CATEGORY_LABELS: Record<string, string> = {
+  flood: 'FLOOD HAZARD',
+  road: 'ROAD HAZARD',
+};
+
+const HAZARD_TYPE_LABELS: Record<string, string> = {
+  flash_flood:   'Flash Flood',
+  river_flood:   'River Overflow',
+  coastal_flood: 'Coastal / Storm Surge',
+  urban_flood:   'Urban Flood',
+  closed_road:   'Road Closed',
+  debris:        'Debris / Obstruction',
+  landslide:     'Landslide',
+  flooded_road:  'Flooded Road',
+  slow_zone:     'Slow Down Zone',
+};
+
+const HAZARD_LEGEND_GROUPS = [
+  {
+    label: 'Road Hazards',
+    icon: 'car' as keyof typeof Ionicons.glyphMap,
+    types: ['closed_road', 'debris', 'landslide', 'flooded_road', 'slow_zone'],
+  },
+  {
+    label: 'Flood Hazards',
+    icon: 'water' as keyof typeof Ionicons.glyphMap,
+    types: ['flash_flood', 'river_flood', 'coastal_flood', 'urban_flood'],
+  },
+];
+
+function HazardLegend({ isDark, onClose, top }: { isDark: boolean; onClose: () => void; top: number }) {
+  const bg       = isDark ? 'rgba(15,23,42,0.97)' : 'rgba(255,255,255,0.97)';
+  const border   = isDark ? colors.slate[700] : colors.slate[200];
+  const textMain = isDark ? colors.white      : colors.slate[900];
+  const textSub  = isDark ? colors.slate[400] : colors.slate[500];
+  const groupBg  = isDark ? colors.slate[800] : colors.slate[50];
+  const divider  = isDark ? colors.slate[700] : colors.slate[200];
+
+  return (
+    <View style={[hl.panel, { backgroundColor: bg, borderColor: border, top }]}>
+      {/* Header */}
+      <View style={hl.header}>
+        <Text style={[hl.headerTitle, { color: textMain }]}>Hazard Legend</Text>
+        <Pressable onPress={onClose} style={[hl.closeBtn, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]} hitSlop={8}>
+          <Ionicons name="close" size={14} color={isDark ? colors.slate[300] : colors.slate[600]} />
+        </Pressable>
+      </View>
+
+      {/* Two columns side-by-side */}
+      <View style={hl.columns}>
+        {HAZARD_LEGEND_GROUPS.map((group, gi) => (
+          <View key={group.label} style={[hl.column, gi === 0 && { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: divider }]}>
+            <View style={hl.groupHeader}>
+              <Ionicons name={group.icon} size={10} color={textSub} />
+              <Text style={[hl.groupLabel, { color: textSub }]}>{group.label.toUpperCase()}</Text>
+            </View>
+            {group.types.map((type, ti) => {
+              const meta = HAZARD_MARKER_META[type];
+              return (
+                <View
+                  key={type}
+                  style={[
+                    hl.row,
+                    ti < group.types.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border },
+                    { backgroundColor: groupBg },
+                    ti === 0 && { borderTopLeftRadius: 8, borderTopRightRadius: 8 },
+                    ti === group.types.length - 1 && { borderBottomLeftRadius: 8, borderBottomRightRadius: 8 },
+                  ]}
+                >
+                  <View style={[hl.dot, { backgroundColor: meta?.color ?? colors.brand[500] }]}>
+                    <Ionicons name={meta?.icon ?? 'alert'} size={8} color="#fff" />
+                  </View>
+                  <Text style={[hl.rowLabel, { color: textMain }]} numberOfLines={1}>
+                    {HAZARD_TYPE_LABELS[type] ?? type}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const hl = StyleSheet.create({
+  panel: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    elevation: 20,
+    zIndex: 20,
+    paddingBottom: 12,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  headerIcon: {
+    width: 24, height: 24, borderRadius: 7,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+  },
+  closeBtn: {
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  columns: {
+    flexDirection: 'row',
+    paddingHorizontal: 10,
+    gap: 0,
+  },
+  column: {
+    flex: 1,
+    paddingHorizontal: 6,
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 5,
+  },
+  groupLabel: {
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+  },
+  dot: {
+    width: 16, height: 16, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  rowLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+    flex: 1,
+  },
+});
+
+function HazardSheet({
+  hazard,
+  onClose,
+  isDark,
+  bottomInset,
+}: {
+  hazard: Hazard;
+  onClose: () => void;
+  isDark: boolean;
+  bottomInset: number;
+}) {
+  const meta      = HAZARD_MARKER_META[hazard.type];
+  const hzColor   = meta?.color ?? colors.severity[hazard.severity];
+  const bg        = isDark ? colors.slate[900] : colors.white;
+  const textMain  = isDark ? colors.white      : colors.slate[900];
+  const textSub   = isDark ? colors.slate[400] : colors.slate[500];
+  const sepColor  = isDark ? colors.slate[800] : colors.slate[100];
+  const catLabel  = HAZARD_CATEGORY_LABELS[hazard.category] ?? 'HAZARD';
+  const typeLabel = HAZARD_TYPE_LABELS[hazard.type] ?? hazard.type;
+
+  return (
+    <View style={[hzs.sheet, { backgroundColor: bg, paddingBottom: Math.max(bottomInset, 12) + 16 }]}>
+      <View style={[hzs.accentBar, { backgroundColor: hzColor }]} />
+      <View style={hzs.handle} />
+
+      <View style={hzs.header}>
+        <View style={[hzs.iconWrap, { backgroundColor: hzColor }]}>
+          <Ionicons name={meta?.icon ?? 'alert'} size={22} color="#fff" />
+        </View>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text style={[hzs.catLabel, { color: hzColor }]}>
+            {catLabel} · {typeLabel.toUpperCase()}
+          </Text>
+          <Text style={[hzs.title, { color: textMain }]} numberOfLines={2}>
+            {hazard.title}
+          </Text>
+          {hazard.address ? (
+            <View style={hzs.addressRow}>
+              <Ionicons name="location-sharp" size={12} color={hzColor} />
+              <Text style={[hzs.address, { color: textSub }]} numberOfLines={1}>
+                {hazard.address}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        <Pressable
+          onPress={onClose}
+          style={[hzs.closeBtn, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]}
+          hitSlop={8}
+        >
+          <Ionicons name="close" size={16} color={isDark ? colors.slate[300] : colors.slate[600]} />
+        </Pressable>
+      </View>
+
+      <View style={[hzs.divider, { backgroundColor: sepColor }]} />
+
+      <View style={hzs.chips}>
+        <View style={[hzs.chip, { backgroundColor: colors.severity[hazard.severity] + '18' }]}>
+          <View style={[hzs.chipDot, { backgroundColor: colors.severity[hazard.severity] }]} />
+          <Text style={[hzs.chipText, { color: colors.severity[hazard.severity] }]}>
+            {hazard.severity.charAt(0).toUpperCase() + hazard.severity.slice(1)}
+          </Text>
+        </View>
+        <View style={[hzs.chip, { backgroundColor: hzColor + '18' }]}>
+          <Ionicons name={meta?.icon ?? 'alert'} size={12} color={hzColor} />
+          <Text style={[hzs.chipText, { color: hzColor }]}>{typeLabel}</Text>
+        </View>
+        <View style={[hzs.chip, { backgroundColor: colors.severity.low + '18' }]}>
+          <View style={[hzs.chipDot, { backgroundColor: colors.severity.low }]} />
+          <Text style={[hzs.chipText, { color: colors.severity.low }]}>Active</Text>
+        </View>
+      </View>
+
+      {hazard.description ? (
+        <View style={hzs.descWrap}>
+          <Text style={[hzs.descText, { color: textSub }]}>{hazard.description}</Text>
+        </View>
+      ) : null}
+
+      <View style={hzs.footer}>
+        <Ionicons name="time-outline" size={12} color={textSub} />
+        <Text style={[hzs.footerText, { color: textSub }]}>Reported {hazard.createdAt}</Text>
+      </View>
+    </View>
+  );
+}
+
+const hzs = StyleSheet.create({
+  sheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15, shadowRadius: 20, elevation: 16,
+  },
+  accentBar: { height: 4 },
+  handle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: colors.slate[200],
+    alignSelf: 'center', marginTop: 10, marginBottom: 14,
+  },
+  header: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+    paddingHorizontal: 16, marginBottom: 14,
+  },
+  iconWrap: {
+    width: 48, height: 48, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  catLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
+  title: { fontSize: 16, fontWeight: '700', lineHeight: 22 },
+  addressRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  address: { fontSize: 12, flex: 1 },
+  closeBtn: {
+    width: 30, height: 30, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  divider: { height: StyleSheet.hairlineWidth, marginBottom: 14 },
+  chips: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 8,
+    paddingHorizontal: 16,
+  },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+  },
+  chipDot: { width: 7, height: 7, borderRadius: 3.5 },
+  chipText: { fontSize: 12, fontWeight: '600' },
+  descWrap: { paddingHorizontal: 16, marginTop: 12 },
+  descText: { fontSize: 13, lineHeight: 20 },
+  footer: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 16, marginTop: 12,
+  },
+  footerText: { fontSize: 11, fontWeight: '500' },
+});
+
+// ─── Weather helpers ──────────────────────────────────────────────────────────
+
+function owmIconToIonicons(icon: string): keyof typeof Ionicons.glyphMap {
+  if (icon.startsWith('01')) return 'sunny-outline';
+  if (icon.startsWith('02') || icon.startsWith('03') || icon.startsWith('04')) return 'partly-sunny-outline';
+  if (icon.startsWith('09') || icon.startsWith('10')) return 'rainy-outline';
+  if (icon.startsWith('11')) return 'thunderstorm-outline';
+  if (icon.startsWith('13')) return 'snow-outline';
+  return 'cloud-outline';
+}
+
+function deriveFloodRisk(w: WeatherData, reports: Report[]): { level: Severity; label: string } {
+  const rain = w.current.rainH ?? 0;
+  const hasCritical = reports.some(r => r.severity === 'critical');
+  const highCount   = reports.filter(r => r.severity === 'high').length;
+  const hasAlerts   = w.alerts.length > 0;
+
+  if (rain > 25 || hasCritical || hasAlerts)  return { level: 'critical', label: 'Critical' };
+  if (rain > 10 || highCount >= 2)            return { level: 'high',     label: 'High'     };
+  if (rain > 2  || highCount >= 1 || reports.length > 4) return { level: 'moderate', label: 'Moderate' };
+  return { level: 'low', label: 'Low' };
+}
+
+function WeatherStrip({
+  weather,
+  reports,
+  loading,
+  isDark,
+  onExpand,
+}: {
+  weather: WeatherData | null;
+  reports: Report[];
+  loading: boolean;
+  isDark: boolean;
+  onExpand?: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const expandAnim = useRef(new Animated.Value(0)).current;
+
+  const textSub  = isDark ? colors.slate[500] : colors.slate[400];
+  const textMain = isDark ? colors.slate[200] : colors.slate[700];
+  const divider  = isDark ? colors.slate[800] : colors.slate[100];
+  const panelBg  = isDark ? colors.dark.card : '#F8FAFC';
+  const tileBg   = isDark ? colors.dark.elevated : colors.white;
+  const tileBorder = isDark ? colors.dark.border : colors.slate[100];
+
+  function toggle() {
+    const next = !expanded;
+    setExpanded(next);
+    if (next) onExpand?.();
+    Animated.spring(expandAnim, { toValue: next ? 1 : 0, tension: 80, friction: 12, useNativeDriver: false }).start();
+  }
+
+  if (loading) {
+    return (
+      <View style={[ws.strip, { borderTopColor: divider }]}>
+        <ActivityIndicator size="small" color={colors.brand[500]} />
+        <Text style={[ws.desc, { color: textSub }]}>Loading weather…</Text>
+      </View>
+    );
+  }
+
+  if (!weather) return null;
+
+  const { current, alerts, forecast } = weather;
+  const iconName = owmIconToIonicons(current.icon);
+  const today = forecast.length > 0 ? forecast[0] : null;
+
+  const descLower = current.description.toLowerCase();
+  const hasStorm = !!descLower.match(/thunder|storm|bagyo|typhoon|cyclone/);
+  const hasAlerts = alerts.length > 0;
+  const hasSevere = hasStorm || hasAlerts;
+
+  return (
+    <View>
+      <Pressable onPress={toggle} style={[ws.strip, { borderTopColor: divider }]}>
+        <Ionicons name={iconName} size={16} color={colors.brand[500]} />
+        <Text style={[ws.temp, { color: textMain }]}>{Math.round(current.temperature)}°C</Text>
+        <Text style={[ws.desc, { color: textSub }]} numberOfLines={1}>{current.description}</Text>
+
+        {current.rainH > 0 && (
+          <>
+            <View style={[ws.sep, { backgroundColor: divider }]} />
+            <Ionicons name="water" size={11} color={colors.brand[300]} />
+            <Text style={[ws.rain, { color: colors.brand[500] }]}>{current.rainH} mm/h</Text>
+          </>
+        )}
+
+        {hasSevere && (
+          <>
+            <View style={[ws.sep, { backgroundColor: divider }]} />
+            <Ionicons name="warning" size={12} color={colors.severity.critical} />
+          </>
+        )}
+
+        <View style={{ flex: 1 }} />
+        <Animated.View style={{
+          transform: [{ rotate: expandAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }) }],
+        }}>
+          <Ionicons name="chevron-down" size={16} color={textSub} />
+        </Animated.View>
+      </Pressable>
+
+      {expanded && (
+        <Animated.View style={[ws.panel, { backgroundColor: panelBg, opacity: expandAnim }]}>
+          {/* Section: Today's Details */}
+          <Text style={[ws.sectionTitle, { color: textSub }]}>Today's Weather</Text>
+
+          <View style={ws.tileGrid}>
+            <View style={[ws.tile, { backgroundColor: isDark ? '#0E2A4A' : '#E8F4FD', borderColor: isDark ? '#1A3A5C' : '#C4DEF4' }]}>
+              <View style={[ws.tileIcon, { backgroundColor: isDark ? '#1A3A5C' : '#C4DEF4' }]}>
+                <Ionicons name="water-outline" size={15} color={isDark ? '#60A5FA' : colors.brand[500]} />
+              </View>
+              <Text style={[ws.tileValue, { color: textMain }]}>{current.humidity}%</Text>
+              <Text style={[ws.tileLabel, { color: textSub }]}>Humidity</Text>
+            </View>
+            <View style={[ws.tile, { backgroundColor: isDark ? '#1A2E3A' : '#E6F7F1', borderColor: isDark ? '#264A3A' : '#B2E5D4' }]}>
+              <View style={[ws.tileIcon, { backgroundColor: isDark ? '#264A3A' : '#B2E5D4' }]}>
+                <Ionicons name="flag-outline" size={15} color={isDark ? '#34D399' : '#0FA896'} />
+              </View>
+              <Text style={[ws.tileValue, { color: textMain }]}>{current.windSpeed} m/s</Text>
+              <Text style={[ws.tileLabel, { color: textSub }]}>Wind</Text>
+            </View>
+            {today && (
+              <>
+                <View style={[ws.tile, { backgroundColor: isDark ? '#1E1E3A' : '#EDE9FE', borderColor: isDark ? '#312E81' : '#C4B5FD' }]}>
+                  <View style={[ws.tileIcon, { backgroundColor: isDark ? '#312E81' : '#C4B5FD' }]}>
+                    <Ionicons name="trending-down" size={15} color={isDark ? '#A78BFA' : '#7C3AED'} />
+                  </View>
+                  <Text style={[ws.tileValue, { color: textMain }]}>{Math.round(today.tempMin)}°C</Text>
+                  <Text style={[ws.tileLabel, { color: textSub }]}>Low</Text>
+                </View>
+                <View style={[ws.tile, { backgroundColor: isDark ? '#2A1A0A' : '#FEF3E2', borderColor: isDark ? '#4A2A0A' : '#FCCF7D' }]}>
+                  <View style={[ws.tileIcon, { backgroundColor: isDark ? '#4A2A0A' : '#FCCF7D' }]}>
+                    <Ionicons name="trending-up" size={15} color={isDark ? '#F59E0B' : '#D97706'} />
+                  </View>
+                  <Text style={[ws.tileValue, { color: textMain }]}>{Math.round(today.tempMax)}°C</Text>
+                  <Text style={[ws.tileLabel, { color: textSub }]}>High</Text>
+                </View>
+              </>
+            )}
+            {today && today.rainTotal > 0 && (
+              <View style={[ws.tile, { backgroundColor: isDark ? '#0A2540' : '#E0F2FE', borderColor: isDark ? '#0E3A5E' : '#7DD3FC' }]}>
+                <View style={[ws.tileIcon, { backgroundColor: isDark ? '#0E3A5E' : '#7DD3FC' }]}>
+                  <Ionicons name="rainy-outline" size={15} color={isDark ? '#38BDF8' : '#0284C7'} />
+                </View>
+                <Text style={[ws.tileValue, { color: textMain }]}>{today.rainTotal} mm</Text>
+                <Text style={[ws.tileLabel, { color: textSub }]}>Rain Total</Text>
+              </View>
+            )}
+            {today && today.pop > 0 && (
+              <View style={[ws.tile, { backgroundColor: isDark ? '#1A1A2E' : '#FCE7F3', borderColor: isDark ? '#3A1A3A' : '#F9A8D4' }]}>
+                <View style={[ws.tileIcon, { backgroundColor: isDark ? '#3A1A3A' : '#F9A8D4' }]}>
+                  <Ionicons name="umbrella-outline" size={15} color={isDark ? '#F472B6' : '#DB2777'} />
+                </View>
+                <Text style={[ws.tileValue, { color: textMain }]}>{Math.round(today.pop > 1 ? today.pop : today.pop * 100)}%</Text>
+                <Text style={[ws.tileLabel, { color: textSub }]}>Rain Chance</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Section: Weather Advisory */}
+          <Text style={[ws.sectionTitle, { color: textSub, marginTop: 6 }]}>Weather Advisory</Text>
+
+          {hasSevere ? (
+            <>
+              {hasStorm && (
+                <View style={[ws.advisoryCard, { backgroundColor: colors.severity.critical + '10', borderColor: colors.severity.critical + '30' }]}>
+                  <View style={[ws.advisoryIconWrap, { backgroundColor: colors.severity.critical + '18' }]}>
+                    <Ionicons name="thunderstorm" size={18} color={colors.severity.critical} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[ws.advisoryTitle, { color: colors.severity.critical }]}>Severe Weather Alert</Text>
+                    <Text style={[ws.advisoryMsg, { color: textMain }]}>
+                      Storm / typhoon activity detected in your area. Stay indoors and monitor updates.
+                    </Text>
+                  </View>
+                </View>
+              )}
+              {alerts.map((a, i) => (
+                <View key={i} style={[ws.advisoryCard, { backgroundColor: colors.severity.high + '10', borderColor: colors.severity.high + '30' }]}>
+                  <View style={[ws.advisoryIconWrap, { backgroundColor: colors.severity.high + '18' }]}>
+                    <Ionicons name="warning" size={18} color={colors.severity.high} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[ws.advisoryTitle, { color: colors.severity.high }]}>{a.title}</Text>
+                    <Text style={[ws.advisoryMsg, { color: textMain }]} numberOfLines={4}>{a.message}</Text>
+                  </View>
+                </View>
+              ))}
+            </>
+          ) : (
+            <View style={[ws.advisoryCard, { backgroundColor: colors.severity.low + '10', borderColor: colors.severity.low + '30' }]}>
+              <View style={[ws.advisoryIconWrap, { backgroundColor: colors.severity.low + '18' }]}>
+                <Ionicons name="shield-checkmark" size={18} color={colors.severity.low} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[ws.advisoryTitle, { color: colors.severity.low }]}>No Severe Weather Advisory</Text>
+                <Text style={[ws.advisoryMsg, { color: textSub }]}>
+                  Conditions are normal. No typhoon, thunderstorm, or heavy rainfall warnings at this time.
+                </Text>
+              </View>
+            </View>
+          )}
+        </Animated.View>
+      )}
+    </View>
+  );
+}
+
+const ws = StyleSheet.create({
+  strip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  temp: { fontSize: 13, fontWeight: '700' },
+  desc: { fontSize: 12, flexShrink: 1 },
+  rain: { fontSize: 12, fontWeight: '600' },
+  sep:  { width: StyleSheet.hairlineWidth, height: 12, marginHorizontal: 2 },
+  panel: {
+    paddingHorizontal: 14,
+    paddingTop: 4,
+    paddingBottom: 14,
+  },
+  sectionTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  tileGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  tile: {
+    width: '30%',
+    flexGrow: 1,
+    alignItems: 'center',
+    gap: 3,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  tileIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  tileValue: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  tileLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  advisoryCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
+  advisoryIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  advisoryTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 3,
+  },
+  advisoryMsg: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+});
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ResponderMapScreen() {
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
+  const { destLat, destLng, destTitle, incidentId, isLeaderParam, sessionLocked,
+          reporterName, reportedAt, severity, incidentType, viewOnly } = useLocalSearchParams<{
+    destLat?: string; destLng?: string; destTitle?: string;
+    incidentId?: string; isLeaderParam?: string; sessionLocked?: string;
+    reporterName?: string; reportedAt?: string; severity?: string; incidentType?: string;
+    viewOnly?: string;
+  }>();
+  const navIncidentId  = incidentId ?? null;
+  const navIsLeader    = isLeaderParam === '1';
+  const isSessionLocked = sessionLocked === '1';
+  const isViewOnly     = viewOnly === '1';
   const scheme  = useColorScheme();
   const isDark  = scheme === 'dark';
   const mapRef  = useRef<MapView>(null);
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
-  const [initialRegion,  setInitialRegion]  = useState<Region>(DEFAULT_REGION);
-  const [incidents,      setIncidents]      = useState<Incident[]>([]);
-  const [adminHazards,   setAdminHazards]   = useState<Hazard[]>([]);
-  const [evacCenters,    setEvacCenters]    = useState<EvacCenter[]>([]);
-  const [loading,        setLoading]        = useState(true);
-  const [filter,         setFilter]         = useState<StatusFilter>('all');
-  const [mapTypeKey,     setMapTypeKey]     = useState<MapTypeKey>('standard');
-  const [selected,       setSelected]       = useState<Incident | null>(null);
-  const [selectedEvac,   setSelectedEvac]   = useState<EvacCenter | null>(null);
-  const [layersVisible,  setLayersVisible]  = useState(false);
-  const [locating,       setLocating]       = useState(false);
-  const [userLocation,   setUserLocation]   = useState<{ latitude: number; longitude: number } | null>(null);
-  const [timeScrubHours, setTimeScrubHours] = useState(0);
-  const [zoneSummary,    setZoneSummary]    = useState<{ latitude: number; longitude: number } | null>(null);
-  const [searchPin,      setSearchPin]      = useState<{ name: string; latitude: number; longitude: number } | null>(null);
-  const [googlePlaces, setGooglePlaces] = useState<{ placeId: string; main: string; secondary: string }[]>([]);
+  const [initialRegion,      setInitialRegion]      = useState<Region>(DEFAULT_REGION);
+  const [reports,            setReports]            = useState<Report[]>([]);
+  const [adminHazards,       setAdminHazards]       = useState<Hazard[]>([]);
+  const [evacCenters,        setEvacCenters]        = useState<EvacCenter[]>([]);
+  const filter: HazardType = 'all';
+  const [mapTypeKey,         setMapTypeKey]          = useState<MapTypeKey>('standard');
+  const [selected,           setSelected]           = useState<Report | null>(null);
+  const [selectedHazard,     setSelectedHazard]     = useState<Hazard | null>(null);
+  const [selectedEvac,       setSelectedEvac]       = useState<EvacCenter | null>(null);
+  const [layersVisible,      setLayersVisible]      = useState(false);
+  const [locating,           setLocating]           = useState(false);
+  const [searchQuery,        setSearchQuery]        = useState('');
+  const [searchFocused,      setSearchFocused]      = useState(false);
+  const [searchLoading,      setSearchLoading]      = useState(false);
+  const [topCardHeight,      setTopCardHeight]      = useState(0);
+  const [searchBarBottom,    setSearchBarBottom]    = useState(0);
+  const [userLocation,       setUserLocation]       = useState<{ latitude: number; longitude: number } | null>(null);
+  const [photoUrls,          setPhotoUrls]          = useState<string[]>([]);
+  const [photosLoading,      setPhotosLoading]      = useState(false);
+  const [advisoryDismissed,  setAdvisoryDismissed]  = useState(false);
+  const [zoneSummary, setZoneSummary] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [searchPin, setSearchPin] = useState<{ name: string; secondary?: string; latitude: number; longitude: number } | null>(null);
+  const [googlePlaces, setGooglePlaces] = useState<{ placeId: string; main: string; secondary: string; latitude?: number; longitude?: number }[]>([]);
   const [googlePlaceLoading, setGooglePlaceLoading] = useState<string | null>(null);
+  const [routeCoords, setRouteCoords]   = useState<{ latitude: number; longitude: number }[]>([]);
+  const [routeLoading, setRouteLoading] = useState(false);
   const [zoomedOut, setZoomedOut] = useState(false);
-  const [topCardHeight,  setTopCardHeight]  = useState(0);
-  const [searchQuery,    setSearchQuery]    = useState('');
-  const [searchFocused,  setSearchFocused]  = useState(false);
-  const [searchLoading,  setSearchLoading]  = useState(false);
-  const [advisoryDismissed, setAdvisoryDismissed] = useState(false);
+  const [mapZoom, setMapZoom]     = useState(0.06);
+  const [routeInfo, setRouteInfo]       = useState<{ distance: string; duration: string; durationSecs: number } | null>(null);
+  const [floodFilter, setFloodFilter]   = useState<Set<Severity>>(new Set(['low', 'moderate', 'high', 'critical']));
+  const [weather,        setWeather]        = useState<WeatherData | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [legendVisible,  setLegendVisible]  = useState(false);
   const heatmapOpacity = useRef(new Animated.Value(0)).current;
+  const userLocationRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const hasPannedToUser = useRef(false);
+  useEffect(() => { userLocationRef.current = userLocation; }, [userLocation]);
 
+  // ── Search animations ─────────────────────────────────────────
   const searchFocusAnim   = useRef(new Animated.Value(0)).current;
   const dropdownAnim      = useRef(new Animated.Value(0)).current;
   const searchGlowAnim    = useRef(new Animated.Value(0)).current;
@@ -954,10 +1969,127 @@ export default function ResponderMapScreen() {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resultAnims       = useRef<Animated.Value[]>([]).current;
 
+  const [finishingSession, setFinishingSession] = useState(false);
+  const [sweetAlert, setSweetAlert] = useState<SweetAlertConfig | null>(null);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
+
+  function showSweetAlert(cfg: SweetAlertConfig) { setSweetAlert(cfg); }
+  function hideSweetAlert() { setSweetAlert(null); }
+
+  // Lock hardware back button during an active session (but allow exit in view-only)
+  useEffect(() => {
+    if (!isSessionLocked || isViewOnly) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      showSweetAlert({
+        type: 'warning',
+        title: 'Session Active',
+        message: 'You cannot leave while a response session is active. Use the Finish button to resolve the incident.',
+        buttons: [{ text: 'OK', style: 'primary' }],
+      });
+      return true;
+    });
+    return () => sub.remove();
+  }, [isSessionLocked, isViewOnly]);
+
+  function clearRoute() {
+    setRouteCoords([]);
+    setRouteInfo(null);
+    setRouteLoading(false);
+  }
+
+  async function handleFinish() {
+    if (!navIncidentId || !token) return;
+    setFinishingSession(true);
+    try {
+      await confirmTeamStatus(navIncidentId, 'resolved', token);
+      await Storage.deleteItem(SESSION_KEY);
+      setFinishingSession(false);
+      showSweetAlert({
+        type: 'success',
+        title: 'Incident Resolved!',
+        message: 'Great work! The incident has been successfully resolved. Please complete the field report.',
+        buttons: [{
+          text: 'Open Field Report',
+          style: 'primary',
+          onPress: () => router.replace({
+            pathname: '/responder/incident/[id]/field-report',
+            params: { id: navIncidentId },
+          } as never),
+        }],
+      });
+    } catch (e: any) {
+      setFinishingSession(false);
+      showSweetAlert({
+        type: 'warning',
+        title: 'Could Not Resolve',
+        message: e?.message ?? 'Failed to update the incident status. Please try again.',
+        buttons: [{ text: 'OK', style: 'primary' }],
+      });
+    }
+  }
+
+  async function fetchRoute(destLat: number, destLng: number) {
+    const loc = userLocationRef.current;
+    if (!loc) return;
+    const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID;
+    if (!apiKey) return;
+
+    setRouteLoading(true);
+    try {
+      const origin = `${loc.latitude},${loc.longitude}`;
+      const dest = `${destLat},${destLng}`;
+      const waypoint = buildAvoidanceWaypoints(loc, { latitude: destLat, longitude: destLng }, reports);
+
+      let url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${dest}&mode=driving&key=${apiKey}`;
+      if (waypoint) {
+        url += `&waypoints=${encodeURIComponent(waypoint)}`;
+      }
+
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const points = decodePolyline(route.overview_polyline.points);
+        // Snap last point to exact destination
+        if (points.length > 0) {
+          points[points.length - 1] = { latitude: destLat, longitude: destLng };
+        }
+        setRouteCoords(points);
+
+        // Sum up all legs
+        let totalDist = '';
+        let totalDur = '';
+        if (route.legs && route.legs.length > 0) {
+          const distM = route.legs.reduce((s: number, l: any) => s + l.distance.value, 0);
+          const durS = route.legs.reduce((s: number, l: any) => s + l.duration.value, 0);
+          totalDist = distM < 1000 ? `${distM} m` : `${(distM / 1000).toFixed(1)} km`;
+          totalDur = durS < 60 ? `${durS}s` : durS < 3600 ? `${Math.round(durS / 60)} min` : `${Math.floor(durS / 3600)}h ${Math.round((durS % 3600) / 60)}m`;
+        }
+        const durSecs = route.legs ? route.legs.reduce((s: number, l: any) => s + l.duration.value, 0) : 0;
+        setRouteInfo({ distance: totalDist, duration: totalDur, durationSecs: durSecs });
+
+        // Fit map to route
+        if (mapRef.current && points.length > 1) {
+          mapRef.current.fitToCoordinates(points, {
+            edgePadding: { top: 120, right: 60, bottom: 300, left: 60 },
+            animated: true,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Route fetch failed', e);
+    } finally {
+      setRouteLoading(false);
+    }
+  }
+
+  // shimmer loop for loading skeleton
   useEffect(() => {
     const loop = Animated.loop(
       Animated.timing(shimmerAnim, {
-        toValue: 1, duration: 1200,
+        toValue: 1,
+        duration: 1200,
         easing: Easing.inOut(Easing.ease),
         useNativeDriver: true,
       }),
@@ -966,6 +2098,7 @@ export default function ResponderMapScreen() {
     return () => loop.stop();
   }, [shimmerAnim]);
 
+  // glow pulse when focused
   useEffect(() => {
     if (searchFocused) {
       const pulse = Animated.loop(
@@ -983,6 +2116,7 @@ export default function ResponderMapScreen() {
 
   function handleSearchFocus() {
     setSearchFocused(true);
+    setLegendVisible(false);
     Animated.parallel([
       Animated.spring(searchFocusAnim, { toValue: 1, tension: 80, friction: 12, useNativeDriver: false }),
       Animated.timing(dropdownAnim, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
@@ -1003,6 +2137,7 @@ export default function ResponderMapScreen() {
       setSearchLoading(true);
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
       searchDebounceRef.current = setTimeout(async () => {
+        // Fetch Google Places Autocomplete
         try {
           const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID;
           if (key) {
@@ -1020,13 +2155,30 @@ export default function ResponderMapScreen() {
               const nasugbuOnly = json.predictions.filter((p: any) =>
                 (p.description ?? '').toLowerCase().includes('nasugbu')
               );
-              setGooglePlaces(
-                nasugbuOnly.slice(0, 5).map((p: any) => ({
-                  placeId: p.place_id,
-                  main: p.structured_formatting?.main_text ?? p.description,
-                  secondary: p.structured_formatting?.secondary_text ?? '',
-                })),
+              const predictions = nasugbuOnly.slice(0, 5);
+              // Fetch coordinates for each result before showing (enables proximity dedup)
+              const withCoords = await Promise.all(
+                predictions.map(async (p: any) => {
+                  const entry = {
+                    placeId: p.place_id,
+                    main: p.structured_formatting?.main_text ?? p.description,
+                    secondary: p.structured_formatting?.secondary_text ?? '',
+                    latitude: undefined as number | undefined,
+                    longitude: undefined as number | undefined,
+                  };
+                  try {
+                    const detailUrl =
+                      `https://maps.googleapis.com/maps/api/place/details/json` +
+                      `?place_id=${p.place_id}&fields=geometry&key=${key}`;
+                    const dRes = await fetch(detailUrl);
+                    const dJson = await dRes.json();
+                    const loc = dJson.result?.geometry?.location;
+                    if (loc) { entry.latitude = loc.lat; entry.longitude = loc.lng; }
+                  } catch {}
+                  return entry;
+                }),
               );
+              setGooglePlaces(withCoords);
             } else {
               setGooglePlaces([]);
             }
@@ -1044,7 +2196,7 @@ export default function ResponderMapScreen() {
     }
   }
 
-  async function handleGooglePlacePress(placeId: string, name: string) {
+  async function handleGooglePlacePress(placeId: string, name: string, secondary?: string) {
     setGooglePlaceLoading(placeId);
     try {
       const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID;
@@ -1058,17 +2210,20 @@ export default function ResponderMapScreen() {
       const json = await res.json();
       if (json.status === 'OK' && json.result?.geometry?.location) {
         const { lat, lng } = json.result.geometry.location;
-        handlePlacePress({ name, latitude: lat, longitude: lng });
+        handlePlacePress({ name, secondary, latitude: lat, longitude: lng });
       }
     } catch {}
     setGooglePlaceLoading(null);
   }
 
   function animateResultItems() {
+    // reset & stagger-animate each result row
     resultAnims.forEach(a => a.setValue(0));
     const anims = resultAnims.slice(0, 8).map((a, i) =>
       Animated.timing(a, {
-        toValue: 1, duration: 260, delay: i * 50,
+        toValue: 1,
+        duration: 260,
+        delay: i * 50,
         easing: Easing.out(Easing.back(1.2)),
         useNativeDriver: true,
       }),
@@ -1076,6 +2231,7 @@ export default function ResponderMapScreen() {
     Animated.parallel(anims).start();
   }
 
+  // ensure enough anim values for results
   function getResultAnim(index: number): Animated.Value {
     if (!resultAnims[index]) {
       resultAnims[index] = new Animated.Value(0);
@@ -1089,122 +2245,246 @@ export default function ResponderMapScreen() {
     setGooglePlaces([]);
     searchInputRef.current?.focus();
   }
-
   const showFloodHeatmap = mapTypeKey === 'flood';
   const mapType: MapType = mapTypeKey === 'flood' ? 'standard' : mapTypeKey;
 
   useEffect(() => {
     Animated.timing(heatmapOpacity, {
       toValue: showFloodHeatmap ? 1 : 0,
-      duration: 300, useNativeDriver: true,
+      duration: 300,
+      useNativeDriver: true,
     }).start();
-  }, [showFloodHeatmap, heatmapOpacity]);
-
-  const load = useCallback(async () => {
-    if (!token) return;
-    try {
-      setLoading(true);
-      const data = await getAssignedIncidents(token);
-      setIncidents(data);
-    } catch {
-    } finally {
-      setLoading(false);
+    if (showFloodHeatmap) {
+      mapRef.current?.animateToRegion({
+        latitude: 14.0771, longitude: 120.6361,
+        latitudeDelta: 0.045, longitudeDelta: 0.045,
+      }, 500);
     }
-  }, [token]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const handleStatusUpdate = useCallback(async (status: ResponderStatus) => {
-    if (!selected || !token) return;
-    await updateIncidentStatus({ incidentId: selected.id, status }, token);
-    const updated = { ...selected, responderStatus: status };
-    setSelected(updated);
-    setIncidents(prev => prev.map(inc => inc.id === selected.id ? updated : inc));
-  }, [selected, token]);
+  }, [showFloodHeatmap, heatmapOpacity]);
 
   useEffect(() => {
     if (!token) return;
+    getAllReports(token)
+      .then(data => setReports(
+        data
+          .filter(r => r.status !== 'pending' && r.status !== 'rejected')
+          .map(fromApiReport),
+      ))
+      .catch(() => {});
     getEvacuationCenters(token)
       .then(setEvacCenters)
       .catch(() => {});
     getActiveHazards(token)
       .then(setAdminHazards)
       .catch(() => {});
+
     getAppConfig(token)
       .then(config => {
-        setInitialRegion(prev => ({
-          ...prev,
+        const region = {
           latitude: config.defaultLatitude,
           longitude: config.defaultLongitude,
-        }));
+          latitudeDelta: 0.06,
+          longitudeDelta: 0.06,
+        };
+        setInitialRegion(region);
+        // Only pan to config center if user location hasn't taken over yet
+        if (!hasPannedToUser.current) {
+          mapRef.current?.animateToRegion(region, 600);
+        }
       })
       .catch(() => {});
+    // Fetch weather with area default immediately, then re-fetch with real location
+    setWeatherLoading(true);
+    getWeatherWithFallback(initialRegion.latitude, initialRegion.longitude, token)
+      .then(w => { if (w) setWeather(w); })
+      .catch(() => {})
+      .finally(() => setWeatherLoading(false));
+
   }, [token]);
 
+  // Restore session params from storage when navigating back to map tab
+  // (useLocalSearchParams loses params on tab switch, but component state persists)
+  useFocusEffect(
+    useCallback(() => {
+      if (isSessionLocked) return; // Params already intact
+      (async () => {
+        try {
+          const raw = await Storage.getItem(SESSION_KEY);
+          if (!raw) return;
+          const s = JSON.parse(raw);
+          if (!s?.incidentId) return;
+          // Restore session params so the bottom sheet and controls work correctly
+          router.setParams({
+            sessionLocked:  '1',
+            incidentId:     String(s.incidentId),
+            isLeaderParam:  s.isLeader ? '1' : '0',
+            destLat:        s.destLat ?? '',
+            destLng:        s.destLng ?? '',
+            destTitle:      s.destTitle ?? 'Incident',
+            reporterName:   s.reporterName ?? '',
+            reportedAt:     s.reportedAt ?? '',
+            severity:       s.severity ?? '',
+            incidentType:   s.incidentType ?? '',
+          });
+          // Restore searchPin if state was lost (e.g. first tab visit after session start)
+          if (!searchPin && s.destLat && s.destLng) {
+            const lat = parseFloat(s.destLat), lng = parseFloat(s.destLng);
+            if (!isNaN(lat) && !isNaN(lng)) {
+              setSearchPin({ name: s.destTitle ?? 'Incident', latitude: lat, longitude: lng });
+            }
+          }
+        } catch {}
+      })();
+    }, [isSessionLocked, searchPin]),
+  );
+
+  // Location watcher — only active while this tab is focused
+  useFocusEffect(
+    useCallback(() => {
+      let locationSub: Location.LocationSubscription | null = null;
+      let cancelled = false;
+      (async () => {
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status !== 'granted' || cancelled) return;
+          const last = await Location.getLastKnownPositionAsync();
+          if (last && !cancelled) {
+            const coords = { latitude: last.coords.latitude, longitude: last.coords.longitude };
+            setUserLocation(coords);
+            if (!hasPannedToUser.current) {
+              hasPannedToUser.current = true;
+              mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 700);
+            }
+          }
+          locationSub = await Location.watchPositionAsync(
+            { accuracy: Location.Accuracy.Balanced, distanceInterval: 10, timeInterval: 5000 },
+            (loc) => {
+              const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+              setUserLocation(coords);
+              if (!hasPannedToUser.current) {
+                hasPannedToUser.current = true;
+                mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 700);
+              }
+            },
+          );
+        } catch {}
+      })();
+      return () => { cancelled = true; locationSub?.remove(); };
+    }, []),
+  );
+
+  // Auto-route to destination when navigated from incident detail
   useEffect(() => {
-    let locationSub: Location.LocationSubscription | null = null;
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
-        locationSub = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.Balanced, distanceInterval: 10, timeInterval: 5000 },
-          (loc) => {
-            setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-          },
-        );
-      } catch {}
-    })();
-    return () => { locationSub?.remove(); };
-  }, []);
+    if (!destLat || !destLng) return;
+    const lat = parseFloat(destLat);
+    const lng = parseFloat(destLng);
+    if (isNaN(lat) || isNaN(lng)) return;
+    // Pan map to destination
+    mapRef.current?.animateToRegion({ latitude: lat, longitude: lng, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 800);
+    // Set search pin to show destination label
+    setSearchPin({ name: destTitle ?? 'Incident', latitude: lat, longitude: lng });
+    // Fetch route once user location is available
+    if (userLocation) {
+      fetchRoute(lat, lng);
+    } else {
+      // Wait for location then route
+      const unsub = setInterval(() => {
+        if (userLocationRef.current) {
+          fetchRoute(lat, lng);
+          clearInterval(unsub);
+        }
+      }, 500);
+      setTimeout(() => clearInterval(unsub), 10000);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destLat, destLng]);
 
-  const active = incidents.filter(i => i.responderStatus !== 'resolved');
-  const filtered = filter === 'all'
-    ? active
-    : active.filter(i => i.responderStatus === filter);
+  // Re-fetch weather with precise user location once known
+  const refreshWeather = useCallback(() => {
+    if (!token) return;
+    const coords = userLocationRef.current ?? { latitude: initialRegion.latitude, longitude: initialRegion.longitude };
+    getWeatherWithFallback(coords.latitude, coords.longitude, token)
+      .then(w => { if (w) setWeather(w); })
+      .catch(() => {});
+  }, [token, initialRegion]);
 
-  const now = Date.now();
-  const timeFiltered = timeScrubHours === 0
-    ? filtered
-    : filtered.filter(i => {
-        const reportTime = new Date(i.reportedAt).getTime();
-        return (now - reportTime) <= timeScrubHours * 3600000;
-      });
+  useEffect(() => {
+    refreshWeather();
+  }, [refreshWeather]);
 
-  const timeFilteredActive = timeScrubHours === 0
-    ? active
-    : active.filter(i => {
-        const reportTime = new Date(i.reportedAt).getTime();
-        return (now - reportTime) <= timeScrubHours * 3600000;
-      });
+  // Real-time hazard updates via socket
+  useEffect(() => {
+    if (!token) return;
+    const handleHazardUpdate = () => {
+      getActiveHazards(token).then(setAdminHazards).catch(() => {});
+    };
+    socketService.on('hazard-updated', handleHazardUpdate);
+    return () => { socketService.off('hazard-updated', handleHazardUpdate); };
+  }, [token]);
 
-  const criticalCount = active.filter(i => i.severity === 'critical').length;
+  // Track chat unread count during active session
+  useEffect(() => {
+    if (!isSessionLocked || !navIncidentId || !token) return;
+    // Fetch current unread count
+    getIncidentUnreadCount(navIncidentId, token).then(setChatUnreadCount).catch(() => {});
+    // Join the report socket room
+    socketService.joinReport(navIncidentId);
+    const handleNewMessage = (raw: { report_id?: number | string }) => {
+      if (String(raw?.report_id) === String(navIncidentId)) {
+        setChatUnreadCount(c => c + 1);
+      }
+    };
+    socketService.on('new-message', handleNewMessage);
+    return () => {
+      socketService.off('new-message', handleNewMessage);
+    };
+  }, [isSessionLocked, navIncidentId, token]);
 
-  function handleMarkerPress(incident: Incident) {
-    setSelected(incident);
-    setSelectedEvac(null);
-    mapRef.current?.animateToRegion({
-      latitude:       incident.latitude - 0.008,
-      longitude:      incident.longitude,
-      latitudeDelta:  0.025,
-      longitudeDelta: 0.025,
-    }, 450);
-  }
-
-  function openNativeMaps(incident: Incident) {
-    const { latitude, longitude, address } = incident;
-    const encoded = encodeURIComponent(address);
-    const url = Platform.select({
-      ios:     `maps:?daddr=${latitude},${longitude}&q=${encoded}`,
-      android: `geo:${latitude},${longitude}?q=${encoded}`,
+  // Auto-refresh weather every 15 min + when app returns to foreground
+  useEffect(() => {
+    const interval = setInterval(refreshWeather, 15 * 60 * 1000);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshWeather();
     });
-    if (url) Linking.openURL(url);
+    return () => { clearInterval(interval); sub.remove(); };
+  }, [refreshWeather]);
+
+  const filtered = filter === 'all'
+    ? reports
+    : reports.filter(r => r.hazardType === filter);
+
+  const timeFiltered = showFloodHeatmap
+    ? filtered.filter(r => {
+        const today = new Date().toISOString().slice(0, 10);
+        return r.createdAt.slice(0, 10) === today && r.status === 'verified';
+      })
+    : filtered;
+
+  function handleMarkerPress(report: Report) {
+    setSelected(report);
+    setPhotoUrls([]);
+    setSelectedEvac(null);
+    setSelectedHazard(null);
+    setLegendVisible(false);
+    mapRef.current?.animateToRegion({
+      latitude: report.latitude - 0.01,
+      longitude: report.longitude,
+      latitudeDelta: 0.03, longitudeDelta: 0.03,
+    }, 450);
+    if (token) {
+      setPhotosLoading(true);
+      getReportDetail(report.id, token)
+        .then(detail => setPhotoUrls(detail.mediaUrls ?? []))
+        .catch(() => setPhotoUrls([]))
+        .finally(() => setPhotosLoading(false));
+    }
   }
 
   async function handleLocateMe() {
     if (locating) return;
     setLocating(true);
     try {
+      // Use real-time tracked location if available, otherwise fetch fresh
       let coords = userLocation;
       if (!coords) {
         const { status } = await Location.requestForegroundPermissionsAsync();
@@ -1214,8 +2494,10 @@ export default function ResponderMapScreen() {
         setUserLocation(coords);
       }
       mapRef.current?.animateToRegion({
-        latitude: coords.latitude, longitude: coords.longitude,
-        latitudeDelta: 0.008, longitudeDelta: 0.008,
+        latitude:       coords.latitude,
+        longitude:      coords.longitude,
+        latitudeDelta:  0.008,
+        longitudeDelta: 0.008,
       }, 600);
     } finally {
       setLocating(false);
@@ -1234,13 +2516,27 @@ export default function ResponderMapScreen() {
       )
     : [];
 
+  // Deduplicate: remove Google Places that match an evac center
+  const filteredGooglePlaces = googlePlaces.filter(gp => {
+    const gpLower = gp.main.toLowerCase();
+    for (const c of searchResults) {
+      const cLower = c.name.toLowerCase();
+      if (gpLower.includes(cLower) || cLower.includes(gpLower)) return false;
+      if (trimmed.length >= 3 && gpLower.includes(trimmed) && cLower.includes(trimmed)) return false;
+      if (gp.latitude != null && gp.longitude != null) {
+        if (haversineKm(gp.latitude, gp.longitude, c.latitude, c.longitude) < 0.3) return false;
+      }
+    }
+    return true;
+  });
 
-  function handlePlacePress(place: { name: string; latitude: number; longitude: number }) {
+  function handlePlacePress(place: { name: string; secondary?: string; latitude: number; longitude: number }) {
     Keyboard.dismiss();
     setSearchQuery('');
     setSearchPin(place);
     setSelected(null);
     setSelectedEvac(null);
+    setSelectedHazard(null);
     handleSearchBlur();
     mapRef.current?.animateToRegion({
       latitude:       place.latitude - 0.005,
@@ -1256,6 +2552,8 @@ export default function ResponderMapScreen() {
     setSearchPin(null);
     setSelectedEvac(center);
     setSelected(null);
+    setSelectedHazard(null);
+    setLegendVisible(false);
     mapRef.current?.animateToRegion({
       latitude:       center.latitude - 0.008,
       longitude:      center.longitude,
@@ -1279,9 +2577,10 @@ export default function ResponderMapScreen() {
     });
   }
 
-  const cardBg   = isDark ? 'rgba(17,24,39,0.95)' : 'rgba(255,255,255,0.95)';
-  const ctrlBg   = isDark ? 'rgba(17,24,39,0.95)' : 'rgba(255,255,255,0.95)';
-  const textSub  = isDark ? colors.slate[400]      : colors.slate[500];
+  const cardBg   = isDark ? colors.overlay.darkDropdownBg   : '#FFFFFF';
+  const ctrlBg   = isDark ? colors.overlay.darkDropdownCtrl : '#FFFFFF';
+  const textMain = isDark ? colors.white              : colors.slate[900];
+  const textSub  = isDark ? colors.slate[400]         : colors.slate[500];
   const tabClear = insets.bottom + 80;
 
   return (
@@ -1296,15 +2595,17 @@ export default function ResponderMapScreen() {
         showsMyLocationButton={false}
         showsCompass={false}
         showsScale={false}
-        onRegionChangeComplete={(r: any) => setZoomedOut(r.latitudeDelta > 0.05)}
+        onRegionChangeComplete={(r: any) => { setZoomedOut(r.latitudeDelta > 0.05); setMapZoom(r.latitudeDelta); }}
         onPress={(e: any) => {
           setSelected(null);
           setSelectedEvac(null);
+          setSelectedHazard(null);
           setSearchPin(null);
+          setPhotoUrls([]);
           if (showFloodHeatmap && e?.nativeEvent?.coordinate) {
             const { latitude, longitude } = e.nativeEvent.coordinate;
-            const nearbyCount = active.filter(i =>
-              Math.abs(i.latitude - latitude) < 0.003 && Math.abs(i.longitude - longitude) < 0.003
+            const nearbyCount = reports.filter(r =>
+              Math.abs(r.latitude - latitude) < 0.005 && Math.abs(r.longitude - longitude) < 0.005
             ).length;
             if (nearbyCount > 0) {
               setZoneSummary({ latitude, longitude });
@@ -1316,90 +2617,61 @@ export default function ResponderMapScreen() {
           }
         }}
       >
-        {showFloodHeatmap && [
-          { key: 'flash_flood',   rgb: '13,71,161'  },
-          { key: 'river_flood',   rgb: '21,101,192' },
-          { key: 'coastal_flood', rgb: '2,119,189'  },
-          { key: 'urban_flood',   rgb: '66,165,245' },
-        ].flatMap(({ key, rgb }) => {
-          const pts = [
-            ...timeFilteredActive.filter(i => i.type === key),
-            ...adminHazards.filter(hz => hz.category === 'flood' && hz.type === key),
-          ].map(src => ({
-            latitude:  src.latitude,
-            longitude: src.longitude,
-            weight:    SEVERITY_WEIGHT[src.severity],
-          }));
-          if (pts.length === 0) return [];
-          return [(
-            <Heatmap
-              key={`hm-${key}`}
-              points={pts}
-              radius={55}
-              opacity={0.78}
-              gradient={{
-                colors:      [`rgba(${rgb},0)`, `rgba(${rgb},0.55)`, `rgba(${rgb},0.95)`],
-                startPoints: [0, 0.38, 1],
-                colorMapSize: 256,
-              }}
-            />
-          )];
-        })}
-
-        {/* Catch-all heatmap for incidents whose type isn't a known flood subtype */}
         {showFloodHeatmap && (() => {
-          const known = ['flash_flood', 'river_flood', 'coastal_flood', 'urban_flood'];
-          const pts = [
-            ...timeFilteredActive.filter(i => !known.includes(i.type)),
-            ...adminHazards.filter(hz => hz.category === 'flood' && !known.includes(hz.type)),
-          ].map(src => ({
-            latitude:  src.latitude,
-            longitude: src.longitude,
-            weight:    SEVERITY_WEIGHT[src.severity],
-          }));
-          if (pts.length === 0) return null;
-          const rgb = FLOOD_TYPE_DEFAULT_RGB;
+          const filtered = timeFiltered.filter(r => floodFilter.has(r.severity));
+          if (filtered.length === 0) return null;
+          // Scale radius inversely with zoom: zoomed in = larger blobs, zoomed out = tighter
+          const heatRadius = Math.max(15, Math.min(50, Math.round(30 / (mapZoom / 0.045))));
           return (
             <Heatmap
-              key="hm-default"
-              points={pts}
-              radius={55}
-              opacity={0.78}
+              points={filtered.map(r => ({
+                latitude: r.latitude,
+                longitude: r.longitude,
+                weight: SEVERITY_WEIGHT[r.severity],
+              }))}
+              radius={heatRadius}
+              opacity={0.65}
               gradient={{
-                colors:      [`rgba(${rgb},0)`, `rgba(${rgb},0.55)`, `rgba(${rgb},0.95)`],
-                startPoints: [0, 0.38, 1],
+                colors: ['#22C55E', '#84CC16', '#F59E0B', '#F97316', '#EF4444', '#DC2626'],
+                startPoints: [0.05, 0.15, 0.3, 0.5, 0.75, 1.0],
                 colorMapSize: 256,
               }}
             />
           );
         })()}
 
-        {showFloodHeatmap && timeFiltered.map(incident => (
-          <Marker
-            key={incident.id}
-            coordinate={{ latitude: incident.latitude, longitude: incident.longitude }}
-            onPress={() => handleMarkerPress(incident)}
-            tracksViewChanges={false}
-            anchor={{ x: 0.5, y: 0.5 }}
-          >
-            <IncidentMarker incident={incident} />
-          </Marker>
-        ))}
-
         {/* Admin-created hazard markers */}
         {adminHazards.map(hz => {
           const meta = HAZARD_MARKER_META[hz.type];
           const hzColor = meta?.color ?? colors.severity[hz.severity];
+          const isHzSelected = selectedHazard?.id === hz.id;
           return (
             <Marker
               key={`hz-${hz.id}`}
               coordinate={{ latitude: hz.latitude, longitude: hz.longitude }}
               tracksViewChanges={true}
               anchor={{ x: 0.5, y: 1 }}
-              zIndex={5}
+              zIndex={isHzSelected ? 10 : 5}
+              onPress={() => {
+                setSelectedHazard(hz);
+                setSelected(null);
+                setSelectedEvac(null);
+                setLegendVisible(false);
+                mapRef.current?.animateToRegion({
+                  latitude: hz.latitude - 0.01,
+                  longitude: hz.longitude,
+                  latitudeDelta: 0.03,
+                  longitudeDelta: 0.03,
+                }, 450);
+              }}
             >
               <View style={{ alignItems: 'center' }}>
-                <View style={[s.hazardPin, { backgroundColor: hzColor }, zoomedOut && { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5 }]}>
+                <View style={[
+                  s.hazardPin,
+                  { backgroundColor: hzColor },
+                  zoomedOut && { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5 },
+                  isHzSelected && { borderColor: '#fff', borderWidth: 3 },
+                ]}>
                   <Ionicons name={meta?.icon ?? 'alert'} size={zoomedOut ? 9 : 14} color="#fff" />
                 </View>
                 {!zoomedOut && <View style={[s.hazardPinTail, { borderTopColor: hzColor }]} />}
@@ -1430,21 +2702,81 @@ export default function ResponderMapScreen() {
             pinColor="red"
           />
         )}
+
+        {/* Route polyline */}
+        {routeCoords.length > 1 && (
+          <>
+            {/* Shadow line */}
+            <Polyline
+              coordinates={routeCoords}
+              strokeWidth={6}
+              strokeColor="rgba(0,0,0,0.12)"
+            />
+            {/* Main route line */}
+            <Polyline
+              coordinates={routeCoords}
+              strokeWidth={4}
+              strokeColor="#4A6CF7"
+            />
+          </>
+        )}
       </MapView>
+
+
+      {/* Route info banner */}
+      {routeInfo && routeCoords.length > 0 && (
+        <View style={[
+          s.routeBanner,
+          { top: insets.top + 8, backgroundColor: isDark ? colors.slate[900] : colors.white },
+        ]}>
+          <View style={s.routeBannerAccent} />
+          <View style={s.routeBannerBody}>
+            <View style={s.routeBannerLeft}>
+              <View style={s.routeBannerIcon}>
+                <Ionicons name="navigate" size={16} color="#fff" />
+              </View>
+              <View>
+                <Text style={[s.routeBannerDuration, { color: isDark ? colors.white : colors.slate[900] }]}>
+                  {routeInfo.duration} · {routeInfo.distance}
+                </Text>
+                <Text style={[s.routeBannerArrival, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
+                  Arrive by {(() => {
+                    const now = new Date();
+                    now.setSeconds(now.getSeconds() + routeInfo.durationSecs);
+                    return now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                  })()}
+                </Text>
+              </View>
+            </View>
+            {!isSessionLocked && (
+              <Pressable
+                onPress={() => { clearRoute(); setSearchPin(null); setSelectedEvac(null); }}
+                style={[s.routeBannerClose, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={14} color={isDark ? colors.slate[300] : colors.slate[600]} />
+              </Pressable>
+            )}
+          </View>
+        </View>
+      )}
 
       <View
         style={[s.topCard, { paddingTop: insets.top + 8, backgroundColor: cardBg }]}
         onLayout={e => setTopCardHeight(e.nativeEvent.layout.height)}
       >
-        <View style={s.searchRow}>
+        <View style={s.searchRow} onLayout={e => {
+          const { y, height } = e.nativeEvent.layout;
+          setSearchBarBottom(insets.top + 8 + y + height);
+        }}>
           <Animated.View style={[
             s.searchBar,
-            isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
+            isDark && { backgroundColor: colors.slate[800], borderColor: colors.slate[700] },
             searchQuery.length > 0 && { borderColor: EVAC_COLOR },
             {
               borderColor: searchFocusAnim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [isDark ? colors.dark.border : colors.slate[200], colors.brand[500]],
+                outputRange: [isDark ? colors.slate[700] : colors.slate[200], colors.brand[500]],
               }),
               shadowOpacity: searchFocusAnim.interpolate({
                 inputRange: [0, 1],
@@ -1459,6 +2791,7 @@ export default function ResponderMapScreen() {
               elevation: searchFocused ? 6 : 0,
             },
           ]}>
+            {/* Glow ring */}
             {searchFocused && (
               <Animated.View
                 pointerEvents="none"
@@ -1512,81 +2845,94 @@ export default function ResponderMapScreen() {
                   handleSearchBlur();
                 }
               }} hitSlop={8}>
-                <Animated.View style={{
-                  transform: [{ rotate: searchFocusAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0deg', '90deg'],
-                  }) }],
-                }}>
-                  <Ionicons name="close-circle" size={18} color={colors.slate[400]} />
-                </Animated.View>
+                <Ionicons name="close-circle" size={18} color={isDark ? colors.slate[400] : colors.slate[400]} />
               </Pressable>
             )}
           </Animated.View>
 
-          <Pressable
-            onPress={load}
-            style={[s.refreshBtn, isDark && { backgroundColor: colors.dark.card }]}
-            accessibilityLabel="Refresh" hitSlop={6}
-          >
-            {loading
-              ? <ActivityIndicator size="small" color={colors.brand[500]} />
-              : <Ionicons name="refresh" size={16} color={colors.brand[500]} />
-            }
-          </Pressable>
         </View>
 
-        <View style={[s.chipDivider, { backgroundColor: isDark ? colors.dark.border : colors.slate[100] }]} />
+        {!searchFocused && (
+          <WeatherStrip
+            weather={weather}
+            reports={reports}
+            loading={weatherLoading}
+            isDark={isDark}
+            onExpand={() => setLegendVisible(false)}
+          />
+        )}
+      </View>
 
-        <ScrollView
-          horizontal showsHorizontalScrollIndicator={false}
-          contentContainerStyle={s.chipScroll}
-        >
-          {STATUS_FILTERS.map(f => {
-            const isActive = filter === f.key;
-            const count = f.key === 'all'
-              ? active.length
-              : active.filter(i => i.responderStatus === f.key).length;
-            return (
-              <Pressable
-                key={f.key}
-                onPress={() => setFilter(f.key)}
-                style={[
-                  s.chip,
-                  isActive
-                    ? { backgroundColor: f.color }
-                    : {
-                        backgroundColor: isDark ? colors.dark.card : colors.white,
-                        borderWidth: 1,
-                        borderColor: isDark ? colors.dark.border : colors.slate[200],
-                      },
-                ]}
-              >
-                <Ionicons name={f.icon} size={12} color={isActive ? colors.white : f.color} />
-                <Text style={[
-                  s.chipLabel,
-                  { color: isActive ? colors.white : isDark ? colors.slate[300] : colors.slate[600] },
-                ]}>
-                  {f.label}
+      {/* ── Flood mode overlay: unified card (rendered after topCard for correct z-order) ── */}
+      {showFloodHeatmap && (
+        <View style={[s.floodCard, { top: topCardHeight + 6, backgroundColor: isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.97)' }]}>
+          {/* Header row */}
+          <View style={s.floodCardHeader}>
+            <View style={s.floodCardHeaderLeft}>
+              <View style={s.floodCardIcon}>
+                <Ionicons name="water" size={12} color="#1565C0" />
+              </View>
+              <Text style={[s.floodCardTitle, { color: isDark ? colors.white : colors.slate[900] }]}>
+                Flood View
+              </Text>
+              <View style={s.floodCardBadge}>
+                <Text style={s.floodCardBadgeText}>
+                  {timeFiltered.filter(r => floodFilter.has(r.severity)).length}
                 </Text>
-                <View style={[
-                  s.chipCount,
-                  { backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : f.color + '1A' },
-                ]}>
+              </View>
+            </View>
+            <Text style={[s.floodCardHint, { color: isDark ? colors.slate[500] : colors.slate[400] }]}>
+              Tap zone for details
+            </Text>
+          </View>
+
+          {/* Filter + legend row */}
+          <View style={s.floodCardBody}>
+            {(['critical', 'high', 'moderate', 'low'] as Severity[]).map(sev => {
+              const active = floodFilter.has(sev);
+              const count = timeFiltered.filter(r => r.severity === sev).length;
+              return (
+                <Pressable
+                  key={sev}
+                  onPress={() => {
+                    setFloodFilter(prev => {
+                      const next = new Set(prev);
+                      if (next.has(sev)) next.delete(sev);
+                      else next.add(sev);
+                      return next;
+                    });
+                  }}
+                  style={[
+                    s.floodChip,
+                    {
+                      backgroundColor: active
+                        ? colors.severity[sev] + '14'
+                        : isDark ? colors.slate[800] : colors.slate[100],
+                      borderColor: active ? colors.severity[sev] + '30' : isDark ? colors.slate[700] : colors.slate[200],
+                    },
+                  ]}
+                >
+                  <View style={[s.floodChipDot, { backgroundColor: active ? colors.severity[sev] : isDark ? colors.slate[600] : colors.slate[300] }]} />
                   <Text style={[
-                    s.chipCountText,
-                    { color: isActive ? colors.white : f.color },
+                    s.floodChipLabel,
+                    { color: active ? colors.severity[sev] : isDark ? colors.slate[500] : colors.slate[400] },
+                  ]}>
+                    {sev.charAt(0).toUpperCase() + sev.slice(1)}
+                  </Text>
+                  <Text style={[
+                    s.floodChipCount,
+                    { color: active ? colors.severity[sev] : isDark ? colors.slate[600] : colors.slate[400] },
                   ]}>
                     {count}
                   </Text>
-                </View>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      )}
 
-      {(searchFocused || searchQuery.length > 0) && topCardHeight > 0 && (
+      {(searchFocused || searchQuery.length > 0) && (
         <Animated.View style={[
           s.dropdown,
           {
@@ -1601,6 +2947,7 @@ export default function ResponderMapScreen() {
             }],
           },
         ]}>
+          {/* Top gradient accent line */}
           <LinearGradient
             colors={[colors.brand[500], EVAC_COLOR]}
             start={{ x: 0, y: 0 }}
@@ -1620,9 +2967,9 @@ export default function ResponderMapScreen() {
               </View>
               {[
                 { icon: 'shield-checkmark' as const, label: 'Evacuation centers near me', query: 'evacuation', gradient: [EVAC_COLOR, '#059669'] as [string, string] },
-                { icon: 'school'           as const, label: 'Schools',                    query: 'school',     gradient: [colors.brand[500], '#6366F1'] as [string, string] },
-                { icon: 'fitness'          as const, label: 'Gymnasium',                  query: 'gymnasium',  gradient: ['#F59E0B', '#EA580C'] as [string, string] },
-                { icon: 'people'           as const, label: 'High-capacity shelters',     query: 'high',       gradient: ['#A855F7', '#7C3AED'] as [string, string] },
+                { icon: 'school'           as const, label: 'School shelters',             query: 'school',     gradient: [colors.brand[500], colors.iconAccents.indigo] as [string, string] },
+                { icon: 'fitness'          as const, label: 'Gymnasium shelters',          query: 'gymnasium',  gradient: [colors.iconAccents.amber, '#EA580C'] as [string, string] },
+                { icon: 'business'         as const, label: 'Barangay hall shelters',      query: 'barangay',   gradient: [colors.iconAccents.purple, colors.gradients.cta[1]] as [string, string] },
               ].map((s2, idx, arr) => (
                 <Pressable
                   key={s2.query}
@@ -1651,13 +2998,14 @@ export default function ResponderMapScreen() {
               ))}
             </>
           ) : searchLoading ? (
+            /* ── Shimmer loading skeleton ── */
             <View style={s.shimmerContainer}>
               {[0, 1, 2].map(i => (
                 <View key={i} style={[s.shimmerRow, i < 2 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
                   <Animated.View style={[
                     s.shimmerIcon,
                     {
-                      backgroundColor: isDark ? colors.dark.card : colors.slate[200],
+                      backgroundColor: isDark ? colors.slate[700] : colors.slate[200],
                       opacity: shimmerAnim.interpolate({
                         inputRange: [0, 0.5, 1],
                         outputRange: [0.4, 1, 0.4],
@@ -1667,13 +3015,23 @@ export default function ResponderMapScreen() {
                   <View style={{ flex: 1, gap: 8 }}>
                     <Animated.View style={[
                       s.shimmerLine,
-                      { width: `${70 - i * 12}%` as any, backgroundColor: isDark ? colors.dark.card : colors.slate[200] },
-                      { opacity: shimmerAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.4, 1, 0.4] }) },
+                      { width: `${70 - i * 12}%` as any, backgroundColor: isDark ? colors.slate[700] : colors.slate[200] },
+                      {
+                        opacity: shimmerAnim.interpolate({
+                          inputRange: [0, 0.5, 1],
+                          outputRange: [0.4, 1, 0.4],
+                        }),
+                      },
                     ]} />
                     <Animated.View style={[
                       s.shimmerLine,
-                      { width: `${90 - i * 8}%` as any, height: 8, backgroundColor: isDark ? colors.dark.card : colors.slate[200] },
-                      { opacity: shimmerAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.3, 0.8, 0.3] }) },
+                      { width: `${90 - i * 8}%` as any, height: 8, backgroundColor: isDark ? colors.slate[700] : colors.slate[200] },
+                      {
+                        opacity: shimmerAnim.interpolate({
+                          inputRange: [0, 0.5, 1],
+                          outputRange: [0.3, 0.8, 0.3],
+                        }),
+                      },
                     ]} />
                   </View>
                 </View>
@@ -1687,47 +3045,39 @@ export default function ResponderMapScreen() {
             </View>
           ) : (
             <>
-              {searchResults.length === 0 && googlePlaces.length === 0 ? (
-            <View style={s.dropdownEmpty}>
-              <View style={s.emptyIconWrap}>
-                <Ionicons name="search-outline" size={28} color={isDark ? colors.slate[600] : colors.slate[300]} />
-              </View>
-              <Text style={[s.dropdownEmptyTitle, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
-                No results found
-              </Text>
-              <Text style={[s.dropdownEmptyText, { color: isDark ? colors.slate[600] : colors.slate[400] }]}>
-                Try searching for a place or "evacuation"
-              </Text>
-            </View>
-          ) : (
-            <>
-              <View style={[s.resultCountHeader, { borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
-                <View style={s.resultCountBadge}>
-                  <Text style={s.resultCountText}>{searchResults.length}</Text>
+              {searchResults.length === 0 && filteredGooglePlaces.length === 0 ? (
+                /* ── Empty state ── */
+                <View style={s.dropdownEmpty}>
+                  <View style={s.emptyIconWrap}>
+                    <Ionicons name="search-outline" size={28} color={isDark ? colors.slate[600] : colors.slate[300]} />
+                  </View>
+                  <Text style={[s.dropdownEmptyTitle, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
+                    No results found
+                  </Text>
+                  <Text style={[s.dropdownEmptyText, { color: isDark ? colors.slate[600] : colors.slate[400] }]}>
+                    Try searching for a place or "evacuation"
+                  </Text>
                 </View>
-                <Text style={[s.resultCountLabel, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
-                  {searchResults.length === 1 ? 'center found' : 'centers found'}
-                </Text>
-              </View>
+              ) : (
+                /* ── Results ── */
+                <>
+                  <View style={[s.resultCountHeader, { borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
+                    <View style={s.resultCountBadge}>
+                      <Text style={s.resultCountText}>
+                        {searchResults.length + filteredGooglePlaces.length}
+                      </Text>
+                    </View>
+                    <Text style={[s.resultCountLabel, { color: isDark ? colors.slate[400] : colors.slate[500] }]}>
+                      {searchResults.length + filteredGooglePlaces.length === 1 ? 'result found' : 'results found'}
+                    </Text>
+                  </View>
               {searchResults.map((center, idx) => {
                 const distKm = userLocation
                   ? haversineKm(userLocation.latitude, userLocation.longitude, center.latitude, center.longitude)
                   : null;
                 const isLast = idx === searchResults.length - 1;
-                const anim = getResultAnim(idx);
                 return (
-                  <Animated.View
-                    key={center.id}
-                    style={{
-                      opacity: anim,
-                      transform: [{
-                        translateX: anim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [-20, 0],
-                        }),
-                      }],
-                    }}
-                  >
+                  <View key={center.id}>
                     <Pressable
                       style={({ pressed }) => [
                         s.dropdownItem,
@@ -1764,14 +3114,14 @@ export default function ResponderMapScreen() {
                       )}
                       <Ionicons name="chevron-forward" size={14} color={isDark ? colors.slate[600] : colors.slate[300]} />
                     </Pressable>
-                  </Animated.View>
+                  </View>
                 );
               })}
-            </>
-          )}
+                </>
+              )}
 
               {/* ── Google Places results ── */}
-              {googlePlaces.length > 0 && (
+              {filteredGooglePlaces.length > 0 && (
                 <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: isDark ? colors.dark.border : colors.slate[100] }}>
                   <View style={[s.dropdownSuggestHeader, { borderBottomColor: isDark ? colors.dark.border : colors.slate[100] }]}>
                     <Ionicons name="globe-outline" size={12} color={colors.brand[500]} />
@@ -1779,19 +3129,19 @@ export default function ResponderMapScreen() {
                       Google Places
                     </Text>
                   </View>
-                  {googlePlaces.map((place, idx) => (
+                  {filteredGooglePlaces.map((place, idx) => (
                     <Pressable
                       key={place.placeId}
                       style={({ pressed }) => [
                         s.dropdownItem,
-                        idx < googlePlaces.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] },
+                        idx < filteredGooglePlaces.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.dark.border : colors.slate[100] },
                         pressed && { backgroundColor: isDark ? colors.dark.card : colors.brand[500] + '08', transform: [{ scale: 0.98 }] },
                       ]}
-                      onPress={() => handleGooglePlacePress(place.placeId, place.main)}
+                      onPress={() => handleGooglePlacePress(place.placeId, place.main, place.secondary)}
                       accessibilityLabel={place.main}
                     >
                       <LinearGradient
-                        colors={[colors.brand[500], '#6366F1']}
+                        colors={[colors.brand[500], colors.iconAccents.indigo]}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                         style={s.dropdownIconGradient}
@@ -1826,6 +3176,22 @@ export default function ResponderMapScreen() {
           <Pressable
             style={({ pressed }) => [
               s.ctrlBtn,
+              { bottom: tabClear + 122, right: 12, backgroundColor: ctrlBg },
+              pressed && { opacity: 0.8 },
+            ]}
+            onPress={() => setLegendVisible(v => !v)}
+            accessibilityLabel="Hazard legend"
+          >
+            <Ionicons
+              name="list"
+              size={20}
+              color={legendVisible ? colors.brand[500] : (isDark ? colors.slate[300] : colors.slate[700])}
+            />
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              s.ctrlBtn,
               { bottom: tabClear + 68, right: 12, backgroundColor: ctrlBg },
               pressed && { opacity: 0.8 },
             ]}
@@ -1833,10 +3199,12 @@ export default function ResponderMapScreen() {
             accessibilityLabel="Map layers"
           >
             <Ionicons
-              name="layers-outline" size={22}
+              name="layers-outline"
+              size={22}
               color={mapTypeKey !== 'standard' ? colors.brand[500] : (isDark ? colors.slate[300] : colors.slate[700])}
             />
           </Pressable>
+
           <Pressable
             style={({ pressed }) => [
               s.ctrlBtn,
@@ -1854,63 +3222,26 @@ export default function ResponderMapScreen() {
         </>
       )}
 
-      {!loading && active.length === 0 && !selected && !selectedEvac && (
-        <View style={[s.emptyOverlay, { bottom: tabClear + 14 }]}>
-          <View style={[s.emptyCard, { backgroundColor: isDark ? colors.dark.card : colors.white }]}>
-            <View style={[s.emptyCardIcon, { backgroundColor: colors.severity.low + '18' }]}>
-              <Ionicons name="checkmark-circle" size={22} color={colors.severity.low} />
-            </View>
-            <View>
-              <Text style={[s.emptyTitle, isDark && { color: colors.white }]}>All clear</Text>
-              <Text style={[s.emptySub, isDark && { color: colors.slate[500] }]}>No active incidents</Text>
-            </View>
-          </View>
-        </View>
-      )}
-
-      {!advisoryDismissed && !selected && !selectedEvac && topCardHeight > 0 && (() => {
-        const highCount = active.filter(i => i.severity === 'critical' || i.severity === 'high').length;
-        if (highCount === 0) return null;
-        return (
-          <View style={[s.advisoryBanner, { top: topCardHeight }]}>
-            <Ionicons name="warning" size={13} color="#fff" />
-            <Text style={s.advisoryText} numberOfLines={1}>
-              {highCount} high-risk incident{highCount > 1 ? 's' : ''} — immediate response needed
-            </Text>
-            <Pressable onPress={() => setAdvisoryDismissed(true)} hitSlop={10}>
-              <Ionicons name="close" size={14} color="rgba(255,255,255,0.8)" />
-            </Pressable>
-          </View>
-        );
-      })()}
-
       {selected && (
-        <IncidentSheet
-          incident={selected}
-          onClose={() => setSelected(null)}
-          onNavigate={() => openNativeMaps(selected)}
-          onViewDetail={() => {
-            setSelected(null);
-            router.push(`/responder/incident/${selected.id}`);
-          }}
-          onStatusUpdate={handleStatusUpdate}
+        <ReportSheet
+          report={selected}
+          onClose={() => { setSelected(null); setPhotoUrls([]); }}
+          onViewDetail={id => router.push(`/responder/incident/${id}` as never)}
           isDark={isDark}
           bottomInset={insets.bottom}
-          distanceKm={
-            userLocation
-              ? haversineKm(userLocation.latitude, userLocation.longitude, selected.latitude, selected.longitude)
-              : null
-          }
+          photoUrls={photoUrls}
+          photosLoading={photosLoading}
         />
       )}
 
       {selectedEvac && (
         <EvacSheet
           center={selectedEvac}
-          onClose={() => setSelectedEvac(null)}
-          onGetDirections={() => openDirections(selectedEvac)}
+          onClose={() => { setSelectedEvac(null); clearRoute(); }}
+          onGetDirections={() => fetchRoute(selectedEvac.latitude, selectedEvac.longitude)}
           isDark={isDark}
           bottomInset={insets.bottom}
+          hasRoute={routeCoords.length > 0}
           distanceKm={
             userLocation
               ? haversineKm(userLocation.latitude, userLocation.longitude, selectedEvac.latitude, selectedEvac.longitude)
@@ -1922,80 +3253,77 @@ export default function ResponderMapScreen() {
       {searchPin && !selected && !selectedEvac && (
         <SearchPinSheet
           pin={searchPin}
-          onClose={() => setSearchPin(null)}
+          onClose={() => {
+            if (isSessionLocked && navIncidentId) {
+              router.replace(`/responder/incident/${navIncidentId}` as never);
+            } else {
+              setSearchPin(null); clearRoute();
+            }
+          }}
+          onConfirmClose={(isSessionLocked && !isViewOnly) ? () => showSweetAlert({
+            type: 'warning',
+            title: 'Leave Navigation?',
+            message: 'You are currently on an active response session. Are you sure you want to go back?',
+            buttons: [
+              { text: 'Stay', style: 'cancel' },
+              { text: 'Go Back', style: 'destructive', onPress: () => {
+                if (navIncidentId) router.replace(`/responder/incident/${navIncidentId}` as never);
+              }},
+            ],
+          }) : undefined}
           onGetDirections={() => {
-            const { latitude: lat, longitude: lng, name } = searchPin;
-            const label = encodeURIComponent(name);
-            const url = Platform.OS === 'ios'
-              ? `maps://?daddr=${lat},${lng}&dirflg=d`
-              : `google.navigation:q=${lat},${lng}&mode=d`;
-            Linking.canOpenURL(url).then(supported => {
-              if (supported) {
-                Linking.openURL(url);
-              } else {
-                Linking.openURL(`geo:${lat},${lng}?q=${lat},${lng}(${label})`);
-              }
-            });
+            fetchRoute(searchPin.latitude, searchPin.longitude);
           }}
           isDark={isDark}
           bottomInset={insets.bottom}
+          isRouteLoading={routeLoading}
+          hasRoute={routeCoords.length > 0}
           distanceKm={
             userLocation
               ? haversineKm(userLocation.latitude, userLocation.longitude, searchPin.latitude, searchPin.longitude)
               : null
           }
+          onArrived={(isSessionLocked && navIsLeader) ? handleFinish : undefined}
+          arrivedLoading={finishingSession}
+          isLeaderMode={navIsLeader}
+          reporterName={reporterName}
+          reportedAt={reportedAt}
+          severity={severity}
+          incidentType={incidentType}
+          showIncidentInfo={isViewOnly}
+          chatUnread={isSessionLocked ? chatUnreadCount : undefined}
+          onChatPress={isSessionLocked && navIncidentId ? () => {
+            setChatUnreadCount(0);
+            router.push(`/responder/incident/${navIncidentId}/chat` as never);
+          } : undefined}
         />
-      )}
-
-      {showFloodHeatmap && !selected && !selectedEvac && !zoneSummary && (
-        <View style={[s.legendFloat, { bottom: tabClear + 186 }]}>
-          {(() => {
-            const floodSources = [
-              ...timeFilteredActive,
-              ...adminHazards.filter(hz => hz.category === 'flood'),
-            ];
-            return (
-              <HeatmapLegend
-                mode="floodType"
-                isDark={isDark}
-                detailed
-                floodTypeCounts={{
-                  flash_flood:   floodSources.filter(x => x.type === 'flash_flood').length,
-                  river_flood:   floodSources.filter(x => x.type === 'river_flood').length,
-                  coastal_flood: floodSources.filter(x => x.type === 'coastal_flood').length,
-                  urban_flood:   floodSources.filter(x => x.type === 'urban_flood').length,
-                }}
-              />
-            );
-          })()}
-        </View>
-      )}
-
-      {showFloodHeatmap && !selected && !selectedEvac && !zoneSummary && (
-        <View style={[s.timeScrubber, { bottom: tabClear + 14 }]}>
-          <HeatmapTimeScrubber
-            value={timeScrubHours}
-            onTimeChange={setTimeScrubHours}
-            isDark={isDark}
-          />
-        </View>
       )}
 
       {zoneSummary && (
         <HeatmapZoneSummary
           latitude={zoneSummary.latitude}
           longitude={zoneSummary.longitude}
-          reports={active.map(i => ({
-            id: i.id,
-            severity: i.severity,
-            hazardType: i.type,
-            latitude: i.latitude,
-            longitude: i.longitude,
+          reports={reports.map(r => ({
+            id: r.id,
+            severity: r.severity,
+            hazardType: r.hazardType,
+            latitude: r.latitude,
+            longitude: r.longitude,
+            address: r.address,
+            createdAt: r.createdAt,
+            thumbnailUrl: r.thumbnailUrl,
           }))}
-          radiusKm={0.2}
+          radiusKm={0.5}
           onClose={() => setZoneSummary(null)}
           isDark={isDark}
-          isResponder
+        />
+      )}
+
+      {legendVisible && !selected && !selectedEvac && (
+        <HazardLegend
+          isDark={isDark}
+          onClose={() => setLegendVisible(false)}
+          top={topCardHeight + 6}
         />
       )}
 
@@ -2006,6 +3334,12 @@ export default function ResponderMapScreen() {
         onClose={() => setLayersVisible(false)}
         isDark={isDark}
       />
+
+      {/* Sweet Alert */}
+      {sweetAlert && (
+        <SweetAlert config={sweetAlert} onDismiss={hideSweetAlert} isDark={isDark} />
+      )}
+
     </View>
   );
 }
@@ -2015,8 +3349,8 @@ const s = StyleSheet.create({
 
   topCard: {
     position: 'absolute', top: 0, left: 0, right: 0,
-    borderBottomLeftRadius: 22, borderBottomRightRadius: 22,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08, shadowRadius: 12, elevation: 10,
     overflow: 'hidden',
   },
@@ -2032,67 +3366,36 @@ const s = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
+  searchPlaceholder: { fontSize: 14, flex: 1 },
   searchInput: { flex: 1, fontSize: 14, paddingVertical: 0 },
-  refreshBtn: {
-    width: 36, height: 36, borderRadius: 11,
-    backgroundColor: colors.slate[100],
-    alignItems: 'center', justifyContent: 'center',
+  countBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6,
   },
+  countDot: { width: 6, height: 6, borderRadius: 3 },
+  countNum: { fontSize: 13, fontWeight: '800' },
 
   chipDivider: { height: StyleSheet.hairlineWidth },
-  chipScroll:  { paddingHorizontal: 14, paddingVertical: 10, gap: 8 },
+
+  chipRow: { paddingBottom: 12 },
+  chipScroll: { paddingHorizontal: 12, paddingTop: 10, gap: 8 },
   chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 20, borderWidth: 1,
   },
-  chipLabel:     { fontSize: 12, fontWeight: '600' },
-  chipCount:     { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
-  chipCountText: { fontSize: 10, fontWeight: '800' },
+  chipLabel: { fontSize: 12, fontWeight: '500' },
 
   ctrlBtn: {
     position: 'absolute',
-    width: 46, height: 46, borderRadius: 16,
-    borderColor: '#E8ECF0',
+    width: 46, height: 46,
+    borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.10, shadowRadius: 12, elevation: 4,
   },
 
-  emptyOverlay: { position: 'absolute', left: 16, right: 16, alignItems: 'center' },
-  emptyCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 20, paddingVertical: 16, borderRadius: 20,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1, shadowRadius: 10, elevation: 4,
-  },
-  emptyCardIcon: {
-    width: 40, height: 40, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  emptyTitle: { fontSize: 15, fontWeight: '700', color: colors.slate[900] },
-  emptySub:   { fontSize: 12, color: colors.slate[400] },
-
-  advisoryBanner: {
-    position: 'absolute', left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: colors.severity.critical,
-    paddingHorizontal: 14, paddingVertical: 8,
-    zIndex: 50,
-  },
-  advisoryText: { flex: 1, fontSize: 12, fontWeight: '600', color: '#fff' },
-
-  legendFloat: {
-    position: 'absolute',
-    left: 12,
-    zIndex: 20,
-  },
-
-  timeScrubber: {
-    position: 'absolute',
-    left: 12,
-    right: 66,
-    zIndex: 20,
-  },
 
   dropdown: {
     position: 'absolute', left: 0, right: 0,
@@ -2100,12 +3403,17 @@ const s = StyleSheet.create({
     borderBottomLeftRadius: 22, borderBottomRightRadius: 22,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18, shadowRadius: 20, elevation: 16,
+    shadowOpacity: 0.14, shadowRadius: 20, elevation: 16,
     overflow: 'hidden',
   },
   dropdownItem: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 13, gap: 12,
+  },
+  dropdownIcon: {
+    width: 36, height: 36, borderRadius: 11,
+    backgroundColor: EVAC_COLOR,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   dropdownIconGradient: {
     width: 36, height: 36, borderRadius: 11,
@@ -2164,13 +3472,27 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 16, paddingVertical: 14,
   },
-  shimmerIcon: { width: 36, height: 36, borderRadius: 11 },
-  shimmerLine: { height: 11, borderRadius: 6 },
+  shimmerIcon: {
+    width: 36, height: 36, borderRadius: 11,
+  },
+  shimmerLine: {
+    height: 11, borderRadius: 6,
+  },
   shimmerFooter: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingVertical: 12,
   },
   shimmerFooterText: { fontSize: 12, fontWeight: '600' },
+
+
+  advisoryBanner: {
+    position: 'absolute', left: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: colors.feedback.advisory,
+    paddingHorizontal: 14, paddingVertical: 8,
+    zIndex: 50,
+  },
+  advisoryText: { flex: 1, fontSize: 12, fontWeight: '600', color: '#fff' },
 
   hazardPin: {
     width: 30,
@@ -2196,4 +3518,141 @@ const s = StyleSheet.create({
     borderRightColor: 'transparent',
     marginTop: -1,
   },
+  routeBanner: {
+    position: 'absolute',
+    left: 16, right: 16,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 20,
+  },
+  routeBannerAccent: {
+    width: 4,
+    backgroundColor: '#4A6CF7',
+  },
+  routeBannerBody: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  routeBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  routeBannerIcon: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: '#4A6CF7',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  routeBannerDuration: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  routeBannerArrival: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  routeBannerClose: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* ── Flood mode card ── */
+  floodCard: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    zIndex: 12,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 12,
+    gap: 8,
+  },
+  floodCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  floodCardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  floodCardIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    backgroundColor: '#1565C0' + '18',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  floodCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  floodCardBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#1565C0' + '18',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  floodCardBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#1565C0',
+  },
+  floodCardHint: {
+    fontSize: 9,
+    fontWeight: '500',
+  },
+  floodCardBody: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  floodChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  floodChipDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  floodChipLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  floodChipCount: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
 });
+
+

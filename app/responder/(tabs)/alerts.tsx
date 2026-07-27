@@ -1,11 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Animated,
-  AppState,
-  Dimensions,
+  FlatList,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,24 +11,64 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useAlertBadge } from '@/context/AlertBadgeContext';
-import { getAlertsWithReadState, markAlertRead, markAllAlertsRead, adaptAlert } from '@/services/api';
+import {
+  getAlertsWithReadState,
+  markAlertRead,
+  markAllAlertsRead,
+  markUserNotificationRead,
+  markAllUserNotificationsRead,
+  adaptAlert,
+} from '@/services/api';
 import { socketService } from '@/services/socket';
 import { getNotificationPrefs } from '@/services/notifications';
 import type { AlertItem } from '@/types';
 
-const { width: SCREEN_W } = Dimensions.get('window');
 
-const GRAD = colors.gradients.hero as [string, string, string];
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function relativeTime(dateStr: string): string {
+  const diff = Math.max(0, Date.now() - new Date(dateStr).getTime());
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
 
-// ---------------------------------------------------------------------------
-// HeaderOrb — decorative circle for gradient header
-// ---------------------------------------------------------------------------
+function dateGroup(dateStr: string): string {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return 'Other';
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+  const alertDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  if (alertDay.getTime() === today.getTime()) return 'Today';
+  if (alertDay.getTime() === yesterday.getTime()) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+}
+
+type IoniconsName = keyof typeof Ionicons.glyphMap;
+
+const KIND_CONFIG: Record<string, { icon: IoniconsName; color: string; label: string; pillBg: string }> = {
+  critical:      { icon: 'warning',            color: colors.severity.critical, label: 'Critical',   pillBg: colors.severity.critical + '14' },
+  rejected:      { icon: 'close-circle',       color: colors.severity.critical, label: 'Rejected',   pillBg: colors.severity.critical + '14' },
+  status_update: { icon: 'arrow-up-circle',    color: colors.severity.low,      label: 'Update',     pillBg: colors.severity.low + '14' },
+  advisory:      { icon: 'information-circle', color: colors.brand[500],        label: 'Advisory',   pillBg: colors.brand[500] + '14' },
+  welcome:       { icon: 'heart-circle',       color: colors.brand[500],        label: 'Welcome',    pillBg: colors.brand[500] + '14' },
+  new_assignment:{ icon: 'shield',             color: colors.brand[500],        label: 'Assigned',   pillBg: colors.brand[500] + '14' },
+  new_message:   { icon: 'chatbubble-ellipses',color: '#7C3AED',               label: 'Message',    pillBg: '#7C3AED14' },
+};
+
+// ─── HeaderOrb ────────────────────────────────────────────────────────────────
 function HeaderOrb({ style }: { style: object }) {
   return (
     <View
@@ -43,261 +80,239 @@ function HeaderOrb({ style }: { style: object }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// AlertCard
-// ---------------------------------------------------------------------------
+// ─── AlertCard ────────────────────────────────────────────────────────────────
 function AlertCard({
   alert,
   isDark,
   onPress,
-  animValue,
 }: {
   alert: AlertItem;
   isDark: boolean;
   onPress: () => void;
-  animValue: Animated.Value;
 }) {
-  const isCritical     = alert.kind === 'critical';
-  const isStatusUpdate = alert.kind === 'status_update';
-  const isWelcome      = alert.kind === 'welcome';
-
-  const accentColor = isCritical
-    ? colors.severity.critical
-    : isStatusUpdate
-    ? colors.severity.low
-    : isWelcome
-    ? colors.brand[500]
-    : colors.gradients.cta[0];
-
-  const iconName: keyof typeof Ionicons.glyphMap = isCritical
-    ? 'alert-circle'
-    : isStatusUpdate
-    ? 'checkmark-circle'
-    : isWelcome
-    ? 'heart-circle'
-    : 'information-circle';
-
-  const cardBg = isDark ? colors.dark.elevated : colors.white;
-
+  const cfg = KIND_CONFIG[alert.kind] ?? KIND_CONFIG.advisory;
   const titleColor = alert.read
     ? (isDark ? colors.slate[400] : colors.slate[500])
     : (isDark ? colors.white : colors.slate[900]);
-
-  const translateX = animValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-20, 0],
-  });
-
-  const kindLabel = isCritical ? 'Critical' : isStatusUpdate ? 'Update' : isWelcome ? 'Welcome' : 'Advisory';
-  const shortTime = alert.time.includes(',') ? alert.time.split(',').pop()?.trim() ?? alert.time : alert.time;
+  const timeStr = relativeTime(alert.createdAt);
 
   return (
-    <Animated.View style={{ opacity: animValue, transform: [{ translateX }] }}>
-      <Pressable
-        onPress={onPress}
-        style={({ pressed }) => [
-          styles.card,
-          {
-            backgroundColor: cardBg,
-            borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-          },
-          pressed && { opacity: 0.88, transform: [{ scale: 0.988 }] },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel={`${alert.title}. ${alert.body}`}
-      >
-        <View style={styles.cardInner}>
-          <View style={styles.cardRow}>
-            <View style={[styles.iconDot, { backgroundColor: accentColor + '18' }]}>
-              <Ionicons name={iconName} size={18} color={accentColor} />
-            </View>
-            <View style={styles.cardContent}>
-              <Text style={[styles.cardTitle, { color: titleColor, fontWeight: alert.read ? '500' : '700' }]} numberOfLines={1}>{alert.title}</Text>
-              <View style={styles.cardMetaLine}>
-                <Text style={[styles.kindTag, { color: accentColor }]}>{kindLabel}</Text>
-                <View style={styles.metaDividerDot} />
-                <Text style={[styles.cardTime, isDark && { color: colors.slate[500] }]}>{shortTime}</Text>
-              </View>
-            </View>
-            {!alert.read && <View style={styles.unreadDot} />}
-            <Ionicons name="chevron-forward" size={16} color={isDark ? colors.slate[600] : colors.slate[300]} />
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.card,
+        isDark && { backgroundColor: colors.dark.elevated },
+        !alert.read && !isDark && { backgroundColor: '#F8FAFF' },
+        !alert.read && isDark && { backgroundColor: colors.dark.card },
+        pressed && { opacity: 0.88, transform: [{ scale: 0.988 }] },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={alert.title}
+    >
+      {!alert.read && <View style={[styles.unreadBar, { backgroundColor: cfg.color }]} />}
+      <View style={styles.cardInner}>
+        <View style={styles.cardRow}>
+          <View style={[styles.iconDot, { backgroundColor: cfg.pillBg }]}>
+            <Ionicons name={cfg.icon} size={18} color={cfg.color} />
           </View>
+          <View style={styles.cardContent}>
+            <Text
+              style={[styles.cardTitle, { color: titleColor, fontWeight: alert.read ? '500' : '700' }]}
+              numberOfLines={1}
+            >
+              {alert.title}
+            </Text>
+            <View style={styles.cardMetaLine}>
+              <View style={[styles.kindPill, { backgroundColor: cfg.pillBg }]}>
+                <Text style={[styles.kindPillText, { color: cfg.color }]}>{cfg.label}</Text>
+              </View>
+              <Text style={[styles.cardTime, isDark && { color: colors.slate[500] }]}>{timeStr}</Text>
+            </View>
+          </View>
+          <Ionicons
+            name="chevron-forward"
+            size={16}
+            color={isDark ? colors.slate[600] : colors.slate[300]}
+          />
         </View>
-      </Pressable>
-    </Animated.View>
+      </View>
+    </Pressable>
   );
 }
 
-
-// ---------------------------------------------------------------------------
-// AlertDetail — slide-in detail panel
-// ---------------------------------------------------------------------------
-function AlertDetail({ alert, isDark, screenBg, bottomInset, onBack, onViewReport }: {
-  alert: AlertItem; isDark: boolean; screenBg: string; bottomInset: number;
-  onBack: () => void; onViewReport?: () => void;
+// ─── AlertDetail ──────────────────────────────────────────────────────────────
+function AlertDetail({
+  alert,
+  isDark,
+  screenBg,
+  bottomInset,
+  onBack,
+  onViewIncident,
+}: {
+  alert: AlertItem;
+  isDark: boolean;
+  screenBg: string;
+  bottomInset: number;
+  onBack: () => void;
+  onViewIncident?: () => void;
 }) {
-  const isCritical     = alert.kind === 'critical';
-  const isStatusUpdate = alert.kind === 'status_update';
-  const isWelcome      = alert.kind === 'welcome';
-  const accentColor = isCritical ? colors.severity.critical : isStatusUpdate ? colors.severity.low : isWelcome ? colors.brand[500] : colors.gradients.cta[0];
-  const iconName: keyof typeof Ionicons.glyphMap = isCritical ? 'alert-circle' : isStatusUpdate ? 'checkmark-circle' : isWelcome ? 'heart-circle' : 'information-circle';
-  const kindLabel = isCritical ? 'Critical Alert' : isStatusUpdate ? 'Status Update' : isWelcome ? 'Welcome' : 'Advisory';
-  const cardBg = isDark ? colors.dark.card : colors.white;
+  const cfg = KIND_CONFIG[alert.kind] ?? KIND_CONFIG.advisory;
+  const accentColor = cfg.color;
+  const kindLabel =
+    alert.kind === 'critical'       ? 'Critical Alert'   :
+    alert.kind === 'rejected'       ? 'Report Rejected'  :
+    alert.kind === 'status_update'  ? 'Status Update'    :
+    alert.kind === 'new_assignment' ? 'New Assignment'   :
+    alert.kind === 'welcome'        ? 'Welcome'          : 'Advisory';
+
+  const cardBg     = isDark ? colors.dark.card : colors.white;
   const borderColor = isDark ? colors.dark.border : colors.slate[100];
+  const timeStr    = relativeTime(alert.createdAt);
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: screenBg }}
-      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: bottomInset + 30 }}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Back */}
-      <Pressable onPress={onBack} style={d.backRow} accessibilityRole="button" accessibilityLabel="Back to alerts">
-        <View style={[d.backBtn, { backgroundColor: accentColor + '14' }]}>
-          <Ionicons name="chevron-back" size={18} color={accentColor} />
-        </View>
-        <Text style={[d.backLabel, { color: accentColor }]}>Alerts</Text>
-      </Pressable>
+    <View style={{ flex: 1, backgroundColor: screenBg }}>
+      {/* Fixed back nav */}
+      <View style={[d.backRowFixed, { backgroundColor: screenBg }]}>
+        <Pressable
+          onPress={onBack}
+          style={d.backRow}
+          accessibilityRole="button"
+          accessibilityLabel="Back to alerts"
+        >
+          <View style={[d.backBtn, { backgroundColor: isDark ? colors.dark.elevated : colors.slate[100] }]}>
+            <Ionicons name="chevron-back" size={18} color={isDark ? colors.white : colors.slate[700]} />
+          </View>
+          <Text style={[d.backLabel, { color: isDark ? colors.white : colors.slate[700] }]}>
+            Alerts
+          </Text>
+        </Pressable>
+      </View>
 
-      {/* Email-style envelope card */}
-      <View style={[d.emailCard, { backgroundColor: cardBg, borderColor }]}>
-        {/* Accent top bar */}
-        <View style={[d.emailAccentBar, { backgroundColor: accentColor }]} />
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: bottomInset + 30 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Detail card */}
+        <View style={[d.detailCard, { backgroundColor: cardBg, borderColor }]}>
+          <View style={[d.detailAccent, { backgroundColor: accentColor }]} />
 
-        {/* Header: From / Subject / Date */}
-        <View style={d.emailHeader}>
-          <View style={d.emailFromRow}>
-            <View style={[d.emailAvatar, { backgroundColor: accentColor + '14' }]}>
-              <Ionicons name={iconName} size={20} color={accentColor} />
+          {/* Icon + kind chip + timestamp */}
+          <View style={d.detailHeader}>
+            <View style={[d.detailIconWrap, { backgroundColor: accentColor + '14' }]}>
+              <Ionicons name={cfg.icon} size={22} color={accentColor} />
             </View>
-            <View style={d.emailFromText}>
-              <View style={d.emailFromNameRow}>
-                <Text style={[d.emailFromName, isDark && { color: colors.white }]}>FloodTrack</Text>
-                <View style={[d.kindChip, { backgroundColor: accentColor + '14' }]}>
-                  <Text style={[d.kindChipText, { color: accentColor }]}>{kindLabel}</Text>
-                </View>
+            <View style={{ flex: 1 }}>
+              <View style={[d.kindChip, { backgroundColor: accentColor + '14', alignSelf: 'flex-start' }]}>
+                <Text style={[d.kindChipText, { color: accentColor }]}>{kindLabel}</Text>
               </View>
-              <Text style={[d.emailDate, isDark && { color: colors.slate[500] }]}>{alert.time}</Text>
+            </View>
+            <View style={d.detailTimeRow}>
+              <Ionicons
+                name="time-outline"
+                size={12}
+                color={isDark ? colors.slate[500] : colors.slate[400]}
+              />
+              <Text style={[d.detailTime, isDark && { color: colors.slate[500] }]}>{timeStr}</Text>
             </View>
           </View>
 
-          {/* Subject */}
-          <Text style={[d.emailSubject, isDark && { color: colors.white }]}>{alert.title}</Text>
-        </View>
+          {/* Title */}
+          <Text style={[d.detailTitle, isDark && { color: colors.white }]}>{alert.title}</Text>
 
-        {/* Divider */}
-        <View style={[d.emailDivider, { backgroundColor: borderColor }]} />
+          {/* Divider */}
+          <View style={[d.detailDivider, { backgroundColor: borderColor }]} />
 
-        {/* Body */}
-        <View style={d.emailBody}>
-          <Text style={[d.emailBodyText, isDark && { color: colors.slate[300] }]}>
+          {/* Body */}
+          <Text style={[d.detailBody, isDark && { color: colors.slate[300] }]}>
             {alert.body || 'No additional details provided.'}
           </Text>
-        </View>
 
-        {/* Footer */}
-        <View style={[d.emailFooter, { borderTopColor: borderColor }]}>
-          <Ionicons name="time-outline" size={13} color={isDark ? colors.slate[500] : colors.slate[400]} />
-          <Text style={[d.emailFooterText, isDark && { color: colors.slate[500] }]}>Issued at {alert.time}</Text>
-        </View>
-      </View>
-
-      {/* View incident CTA */}
-      {onViewReport && (
-        <Pressable onPress={onViewReport} style={({ pressed }) => [d.ctaWrap, pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] }]}>
-          <LinearGradient colors={colors.gradients.cta} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={d.ctaBtn}>
-            <Text style={d.ctaText}>View Incident</Text>
-            <View style={d.ctaArrow}>
-              <Ionicons name="arrow-forward" size={16} color={colors.gradients.cta[0]} />
+          {/* Area chip if available */}
+          {!!alert.area && (
+            <View style={[d.areaRow, { borderTopColor: borderColor }]}>
+              <Ionicons
+                name="location-outline"
+                size={13}
+                color={isDark ? colors.slate[500] : colors.slate[400]}
+              />
+              <Text style={[d.areaText, isDark && { color: colors.slate[400] }]}>{alert.area}</Text>
             </View>
-          </LinearGradient>
-        </Pressable>
-      )}
-    </ScrollView>
+          )}
+        </View>
+
+        {/* View Incident CTA */}
+        {onViewIncident && (
+          <Pressable
+            onPress={onViewIncident}
+            style={({ pressed }) => [
+              d.ctaWrap,
+              pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+            ]}
+          >
+            <LinearGradient
+              colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={d.ctaBtn}
+            >
+              <Text style={d.ctaText}>View</Text>
+              <View style={d.ctaArrow}>
+                <Ionicons name="arrow-forward" size={16} color="#4A6CF7" />
+              </View>
+            </LinearGradient>
+          </Pressable>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
 const d = StyleSheet.create({
-  backRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  backBtn:    { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  backLabel:  { fontSize: 15, fontWeight: '700' },
+  backRowFixed:   { paddingHorizontal: 20, paddingTop: 2, paddingBottom: 6 },
+  backRow:        { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  backBtn:        { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  backLabel:      { fontSize: 15, fontWeight: '700' },
 
-  // Email card
-  emailCard:  { borderRadius: 16, borderWidth: 1, overflow: 'hidden', marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
-  emailAccentBar: { height: 4 },
-  emailHeader: { padding: 16, gap: 14 },
-  emailFromRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  emailAvatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-  emailFromText: { flex: 1, gap: 2 },
-  emailFromNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  emailFromName: { fontSize: 15, fontWeight: '700', color: colors.slate[900] },
-  emailDate:  { fontSize: 12, color: colors.slate[400], fontWeight: '500', marginTop: 1 },
-  emailSubject: { fontSize: 18, fontWeight: '800', color: colors.slate[900], letterSpacing: -0.2, lineHeight: 24 },
-  emailDivider: { height: 1, marginHorizontal: 16 },
-  emailBody:  { padding: 16 },
-  emailBodyText: { fontSize: 14, color: colors.slate[600], lineHeight: 23 },
-  emailFooter: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1 },
-  emailFooterText: { fontSize: 11, color: colors.slate[400], fontWeight: '500' },
+  detailCard:     { borderRadius: 16, borderWidth: 1, overflow: 'hidden', marginBottom: 16 },
+  detailAccent:   { height: 3 },
+  detailHeader:   { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, paddingBottom: 10 },
+  detailIconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  detailTimeRow:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  detailTime:     { fontSize: 11, color: colors.slate[400], fontWeight: '500' },
+  detailTitle:    { fontSize: 18, fontWeight: '800', color: colors.slate[900], letterSpacing: -0.2, lineHeight: 24, paddingHorizontal: 16, paddingBottom: 12 },
+  detailDivider:  { height: 1, marginHorizontal: 16 },
+  detailBody:     { fontSize: 14, color: colors.slate[600], lineHeight: 23, padding: 16 },
 
-  kindChip:   { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, alignSelf: 'flex-start' },
-  kindChipText: { fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  areaRow:        { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1 },
+  areaText:       { fontSize: 12, color: colors.slate[400], fontWeight: '500', flex: 1 },
 
-  ctaWrap:    { borderRadius: 14, overflow: 'hidden' },
-  ctaBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, height: 50, paddingHorizontal: 20 },
-  ctaText:    { fontSize: 15, fontWeight: '800', color: colors.white, letterSpacing: 0.3 },
-  ctaArrow:   { width: 26, height: 26, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
+  kindChip:       { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  kindChipText:   { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  ctaWrap:        { borderRadius: 14, overflow: 'hidden' },
+  ctaBtn:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, height: 50, paddingHorizontal: 20 },
+  ctaText:        { fontSize: 15, fontWeight: '800', color: colors.white, letterSpacing: 0.3 },
+  ctaArrow:       { width: 26, height: 26, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
 });
 
-// ---------------------------------------------------------------------------
-// AlertsScreen
-// ---------------------------------------------------------------------------
+// ─── Screen ───────────────────────────────────────────────────────────────────
 export default function AlertsScreen() {
-  const insets         = useSafeAreaInsets();
-  const scheme         = useColorScheme();
-  const isDark         = scheme === 'dark';
-  const { token }      = useAuth();
-  const { setUnreadCount } = useAlertBadge();
-  const router         = useRouter();
+  const insets              = useSafeAreaInsets();
+  const scheme              = useColorScheme();
+  const isDark              = scheme === 'dark';
+  const { token }           = useAuth();
+  const { setUnreadCount }  = useAlertBadge();
+  const router              = useRouter();
 
-  const [alerts, setAlerts]         = useState<AlertItem[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError]           = useState<string | null>(null);
+  const [alerts, setAlerts]               = useState<AlertItem[]>([]);
+  const [loading, setLoading]             = useState(true);
+  const [error, setError]                 = useState<string | null>(null);
   const [selectedAlert, setSelectedAlert] = useState<AlertItem | null>(null);
 
-  // Animated values
-  const heroOpacity = useRef(new Animated.Value(0)).current;
-  const heroTransY  = useRef(new Animated.Value(-16)).current;
-  const listOpacity = useRef(new Animated.Value(0)).current;
-  const cardAnims   = useRef(Array.from({ length: 30 }, () => new Animated.Value(0))).current;
-  const slideAnim   = useRef(new Animated.Value(0)).current;
+  const screenBg = isDark ? colors.dark.bg : colors.slate[50];
 
-  const listTranslate   = slideAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -SCREEN_W] });
-  const detailTranslate = slideAnim.interpolate({ inputRange: [0, 1], outputRange: [SCREEN_W, 0] });
-
-  const runEntranceAnims = useCallback((count: number) => {
-    cardAnims.forEach(a => a.setValue(0));
-
-    const cardSequences = cardAnims.slice(0, Math.min(count, 30)).map((anim, i) =>
-      Animated.sequence([
-        Animated.delay(i * 55),
-        Animated.spring(anim, { toValue: 1, friction: 7, tension: 70, useNativeDriver: true }),
-      ]),
-    );
-
-    Animated.parallel([
-      Animated.parallel([
-        Animated.timing(heroOpacity, { toValue: 1, duration: 420, useNativeDriver: true }),
-        Animated.spring(heroTransY,  { toValue: 0, friction: 7, tension: 60, useNativeDriver: true }),
-      ]),
-      Animated.sequence([
-        Animated.delay(160),
-        Animated.timing(listOpacity, { toValue: 1, duration: 320, useNativeDriver: true }),
-      ]),
-      Animated.stagger(0, cardSequences),
-    ]).start();
-  }, [heroOpacity, heroTransY, listOpacity, cardAnims]);
-
+  // ── Data fetching ──────────────────────────────────────────────────────────
   const load = useCallback(async (isRefresh = false) => {
     if (!token) return;
     try {
@@ -305,34 +320,28 @@ export default function AlertsScreen() {
       setError(null);
       const data = await getAlertsWithReadState(token);
       setAlerts(data);
-      // Update badge count outside of any state updater to avoid
-      // "Cannot update a component while rendering a different component"
       queueMicrotask(() => setUnreadCount(data.filter(a => !a.read).length));
-      if (!isRefresh) {
-        setTimeout(() => runEntranceAnims(data.length), 50);
-      } else {
-        cardAnims.forEach(a => a.setValue(1));
-      }
     } catch {
       setError('Could not load alerts. Pull down to retry.');
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
-  }, [token, runEntranceAnims]);
+  }, [token, setUnreadCount]);
 
+  // Fetch fresh data and reset detail view every time the tab is focused
+  useFocusEffect(
+    useCallback(() => {
+      setSelectedAlert(null);
+      load();
+    }, [load]),
+  );
+
+  // Real-time socket updates
   useEffect(() => {
-    load();
-
-    // Re-fetch when app returns to foreground (handles background missed events)
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') load(true);
-    });
-
     const handleNew = async (raw: any) => {
       if (!raw?.id) return;
       const prefs = await getNotificationPrefs();
-      const kind = raw.type; // 'critical' | 'advisory' | 'update'
+      const kind = raw.type;
       if (kind === 'critical' && !prefs.critical) return;
       if (kind === 'advisory' && !prefs.advisory) return;
       if (kind === 'update'   && !prefs.myReports) return;
@@ -357,449 +366,246 @@ export default function AlertsScreen() {
 
     const refresh = () => load(true);
 
-    socketService.on('new-alert', handleNew);
-    socketService.on('alert-updated', handleUpdated);
-    socketService.on('new-notification', refresh);
+    const handleAssignment = () => {
+      setUnreadCount(c => c + 1);
+      load(true);
+    };
 
+    socketService.on('new-alert',         handleNew);
+    socketService.on('alert-updated',     handleUpdated);
+    socketService.on('new-notification',  refresh);
+    socketService.on('new-assignment',    handleAssignment);
     return () => {
-      sub.remove();
-      socketService.off('new-alert', handleNew);
-      socketService.off('alert-updated', handleUpdated);
+      socketService.off('new-alert',        handleNew);
+      socketService.off('alert-updated',    handleUpdated);
       socketService.off('new-notification', refresh);
+      socketService.off('new-assignment',   handleAssignment);
     };
   }, [load]);
 
-  function openDetail(alert: AlertItem) {
-    setSelectedAlert(alert);
-    Animated.spring(slideAnim, { toValue: 1, friction: 8, tension: 65, useNativeDriver: true }).start();
-  }
-
-  function closeDetail() {
-    Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 65, useNativeDriver: true }).start(() => {
-      setSelectedAlert(null);
-    });
-  }
-
+  // ── Actions ────────────────────────────────────────────────────────────────
   async function handleAlertPress(alert: AlertItem) {
     try {
       if (!alert.read) {
-        await markAlertRead(alert.id, token!);
-        setAlerts((prev) =>
-          prev.map((a) => (a.id === alert.id ? { ...a, read: true } : a))
-        );
-        // Update badge count outside the updater
+        if (alert.id.startsWith('notif_')) {
+          await markUserNotificationRead(alert.id, token!);
+        } else {
+          await markAlertRead(alert.id, token!);
+        }
+        setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, read: true } : a));
         queueMicrotask(() => setUnreadCount(c => Math.max(0, c - 1)));
       }
     } catch {}
-    openDetail(alert);
+    setSelectedAlert(alert);
   }
 
   async function handleMarkAllRead() {
     try {
-      const allIds = alerts.map((a) => a.id);
-      await markAllAlertsRead(allIds, token!);
-      setAlerts((prev) => prev.map((a) => ({ ...a, read: true })));
+      await Promise.all([
+        markAllAlertsRead([], token!),
+        markAllUserNotificationsRead(token!),
+      ]);
+      setAlerts(prev => prev.map(a => ({ ...a, read: true })));
       setUnreadCount(0);
     } catch {}
   }
 
-  const unreadCount  = alerts.filter((a) => !a.read).length;
+  const unreadCount = alerts.filter(a => !a.read).length;
 
-  const headerSubtitle = loading
-    ? 'Loading notifications…'
-    : unreadCount > 0
-    ? `${unreadCount} unread notification${unreadCount !== 1 ? 's' : ''}`
-    : "You're all caught up";
+  // ── Date-grouped FlatList renderer ────────────────────────────────────────
+  const renderAlert = useCallback(({ item, index }: { item: AlertItem; index: number }) => {
+    const group = dateGroup(item.createdAt);
+    const prevGroup = index > 0 ? dateGroup(alerts[index - 1].createdAt) : null;
+    const showHeader = group !== prevGroup;
+    return (
+      <>
+        {showHeader && (
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, isDark && { color: colors.slate[400] }]}>
+              {group}
+            </Text>
+          </View>
+        )}
+        <AlertCard alert={item} isDark={isDark} onPress={() => handleAlertPress(item)} />
+      </>
+    );
+  }, [isDark, alerts]);
 
-  let cardSlot = 0;
-
-  const screenBg = isDark ? colors.dark.bg : colors.slate[50];
-
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Gradient hero header                                                */}
-      {/* ------------------------------------------------------------------ */}
-      <Animated.View style={[
-        styles.headerWrap,
-        { opacity: heroOpacity, transform: [{ translateY: heroTransY }] },
-      ]}>
-        <LinearGradient
-          colors={GRAD}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.headerGradient, { paddingTop: insets.top + 10 }]}
-        >
-          <HeaderOrb style={{ width: 180, height: 180, top: -60, right: -50 }} />
-          <HeaderOrb style={{ width: 100, height: 100, top: 30, left: -30, backgroundColor: colors.overlay.whiteSubtle }} />
-          <HeaderOrb style={{ width: 60,  height: 60,  bottom: 10, left: SCREEN_W * 0.5, backgroundColor: colors.overlay.whiteFaint }} />
+      {/* ── Gradient header ── */}
+      <LinearGradient
+        colors={isDark ? ['#0D1A37', '#070E18', '#07090F'] : ['#00D2FF', '#4A6CF7', '#7C3AED']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.headerGradient, { paddingTop: insets.top + 14 }]}
+      >
+        <HeaderOrb style={{ width: 160, height: 160, top: -50, right: -40, opacity: 0.06 }} />
+        <HeaderOrb style={{ width: 90, height: 90, bottom: 20, left: -20, opacity: 0.05 }} />
 
-          <View style={styles.headerTop}>
-            <View style={styles.headerLeft}>
-              <View style={styles.headerIconWrap}>
-                <Ionicons name="notifications" size={22} color="rgba(255,255,255,0.92)" />
-              </View>
-              <View>
-                <Text style={styles.headerTitle}>Alerts</Text>
-              </View>
+        <View style={styles.headerTop}>
+          <View style={styles.headerLeft}>
+            <View style={styles.headerIconWrap}>
+              <Ionicons name="notifications" size={22} color="rgba(255,255,255,0.92)" />
             </View>
-
-            {unreadCount > 0 && (
-              <Pressable
-                onPress={handleMarkAllRead}
-                style={({ pressed }) => [
-                  styles.markAllPill,
-                  pressed && { opacity: 0.8 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Mark all as read"
-              >
-                <Ionicons name="checkmark-done" size={14} color={colors.white} />
-                <Text style={styles.markAllText}>Mark all read</Text>
-              </Pressable>
-            )}
+            <View>
+              <Text style={styles.headerTitle}>Alerts</Text>
+              {!loading && (
+                <Text style={styles.headerSub}>
+                  {unreadCount > 0
+                    ? `${unreadCount} unread notification${unreadCount !== 1 ? 's' : ''}`
+                    : "You're all caught up"}
+                </Text>
+              )}
+            </View>
           </View>
 
-        </LinearGradient>
-
-        {/* Wave transition */}
-        <View style={styles.waveWrap}>
-          <LinearGradient
-            colors={colors.gradients.wave}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={StyleSheet.absoluteFillObject}
-          />
-          <View style={[styles.waveShape, { backgroundColor: screenBg }]} />
+          {unreadCount > 0 && (
+            <Pressable
+              onPress={handleMarkAllRead}
+              style={({ pressed }) => [styles.markAllPill, pressed && { opacity: 0.8 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Mark all as read"
+            >
+              <Ionicons name="checkmark-done" size={14} color={colors.white} />
+              <Text style={styles.markAllText}>Mark all read</Text>
+            </Pressable>
+          )}
         </View>
-      </Animated.View>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Sliding content area                                                */}
-      {/* ------------------------------------------------------------------ */}
-      <View style={styles.slideContainer}>
+        {/* Wave bottom */}
+        <View style={styles.waveWrap} pointerEvents="none">
+          <View style={[styles.waveBack, { backgroundColor: screenBg, opacity: 0.3 }]} />
+          <View style={[styles.waveFront, { backgroundColor: screenBg }]} />
+        </View>
+      </LinearGradient>
 
-        {/* ── List panel ── */}
-        <Animated.View style={[StyleSheet.absoluteFillObject, { transform: [{ translateX: listTranslate }] }]}>
-          {loading && (
-            <View style={styles.centered}>
-              <LinearGradient
-                colors={[colors.gradients.cta[0] + '20', colors.gradients.cta[1] + '20']}
-                style={styles.loadingIconWrap}
-              >
-                <ActivityIndicator size="large" color={colors.gradients.cta[0]} />
-              </LinearGradient>
-              <Text style={[styles.loadingText, isDark && { color: colors.slate[400] }]}>
-                Fetching alerts…
-              </Text>
-            </View>
-          )}
-
-          {!loading && error && (
-            <View style={styles.centered}>
-              <LinearGradient
-                colors={[colors.gradients.cta[0] + '20', colors.gradients.cta[1] + '20']}
-                style={styles.emptyIconWrap}
-              >
-                <Ionicons name="cloud-offline-outline" size={40} color={colors.gradients.cta[0]} />
-              </LinearGradient>
-              <Text style={[styles.emptyTitle, isDark && { color: colors.white }]}>
-                Connection issue
-              </Text>
-              <Text style={[styles.emptySub, isDark && { color: colors.slate[400] }]}>
-                {error}
-              </Text>
-              <Pressable
-                onPress={() => load()}
-                style={({ pressed }) => [
-                  styles.retryBtn,
-                  pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
-                ]}
-                accessibilityRole="button"
-              >
-                <LinearGradient
-                  colors={colors.gradients.cta}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.retryBtnGrad}
-                >
-                  <Ionicons name="refresh" size={16} color={colors.white} />
-                  <Text style={styles.retryText}>Try again</Text>
-                </LinearGradient>
-              </Pressable>
-            </View>
-          )}
-
-          {!loading && !error && (
-            <Animated.View style={[styles.listWrapper, { opacity: listOpacity }]}>
-              <ScrollView
-                contentContainerStyle={[
-                  styles.scroll,
-                  { paddingBottom: insets.bottom + 108 },
-                  alerts.length === 0 && styles.scrollEmpty,
-                ]}
-                refreshControl={
-                  <RefreshControl
-                    refreshing={refreshing}
-                    onRefresh={() => { setRefreshing(true); load(true); }}
-                    tintColor={colors.gradients.cta[0]}
-                    colors={[colors.gradients.cta[0]]}
-                  />
+      {/* ── Content ── */}
+      {selectedAlert ? (
+        <AlertDetail
+          alert={selectedAlert}
+          isDark={isDark}
+          screenBg={screenBg}
+          bottomInset={insets.bottom}
+          onBack={() => setSelectedAlert(null)}
+          onViewIncident={
+            selectedAlert.reportId
+              ? () => {
+                  const id = selectedAlert.reportId;
+                  setSelectedAlert(null);
+                  router.push(`/responder/incident/${id}` as never);
                 }
-                showsVerticalScrollIndicator={false}
-              >
-                {alerts.map((a) => {
-                  const slot = cardSlot++;
-                  return (
-                    <AlertCard
-                      key={a.id}
-                      alert={a}
-                      isDark={isDark}
-                      onPress={() => handleAlertPress(a)}
-                      animValue={cardAnims[Math.min(slot, 29)]}
-                    />
-                  );
-                })}
-
-                {alerts.length === 0 && (
-                  <View style={styles.emptyState}>
-                    <LinearGradient
-                      colors={[colors.gradients.cta[0] + '20', colors.gradients.cta[1] + '20']}
-                      style={styles.emptyIconWrap}
-                    >
-                      <Ionicons
-                        name="notifications-off-outline"
-                        size={44}
-                        color={colors.gradients.cta[0]}
-                      />
-                    </LinearGradient>
-                    <Text style={[styles.emptyTitle, isDark && { color: colors.white }]}>
-                      All quiet
-                    </Text>
-                    <Text style={[styles.emptySub, isDark && { color: colors.slate[400] }]}>
-                      No active alerts right now.{'\n'}Critical incidents will appear here immediately.
-                    </Text>
-                    <Pressable
-                      onPress={() => load()}
-                      style={({ pressed }) => [
-                        styles.retryBtn,
-                        pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
-                      ]}
-                      accessibilityRole="button"
-                    >
-                      <LinearGradient
-                        colors={colors.gradients.cta}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={styles.retryBtnGrad}
-                      >
-                        <Ionicons name="refresh-outline" size={16} color={colors.white} />
-                        <Text style={styles.retryText}>Refresh</Text>
-                      </LinearGradient>
-                    </Pressable>
-                  </View>
-                )}
-              </ScrollView>
-            </Animated.View>
-          )}
-        </Animated.View>
-
-        {/* ── Detail panel ── */}
-        <Animated.View style={[StyleSheet.absoluteFillObject, { transform: [{ translateX: detailTranslate }] }]}>
-          {selectedAlert && (
-            <AlertDetail
-              alert={selectedAlert}
-              isDark={isDark}
-              screenBg={screenBg}
-              bottomInset={insets.bottom}
-              onBack={closeDetail}
-              onViewReport={selectedAlert.reportId
-                ? () => { closeDetail(); router.push(`/responder/incident/${selectedAlert.reportId}` as never); }
-                : undefined
-              }
-            />
-          )}
-        </Animated.View>
-
-      </View>
+              : undefined
+          }
+        />
+      ) : loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={colors.gradients.cta[0]} />
+          <Text style={[styles.loadingText, isDark && { color: colors.slate[400] }]}>
+            Fetching alerts…
+          </Text>
+        </View>
+      ) : error ? (
+        <View style={styles.centered}>
+          <Ionicons name="cloud-offline-outline" size={40} color={colors.gradients.cta[0]} />
+          <Text style={[styles.emptyTitle, isDark && { color: colors.white }]}>Connection issue</Text>
+          <Text style={[styles.emptySub, isDark && { color: colors.slate[400] }]}>{error}</Text>
+          <Pressable
+            onPress={() => load()}
+            style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.85 }]}
+            accessibilityRole="button"
+          >
+            <LinearGradient
+              colors={colors.gradients.cta}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.retryBtnGrad}
+            >
+              <Ionicons name="refresh" size={16} color={colors.white} />
+              <Text style={styles.retryText}>Try again</Text>
+            </LinearGradient>
+          </Pressable>
+        </View>
+      ) : alerts.length === 0 ? (
+        <View style={styles.centered}>
+          <Ionicons name="notifications-off-outline" size={44} color={colors.gradients.cta[0]} />
+          <Text style={[styles.emptyTitle, isDark && { color: colors.white }]}>All quiet</Text>
+          <Text style={[styles.emptySub, isDark && { color: colors.slate[400] }]}>
+            No active alerts right now.{'\n'}Critical incidents will appear here immediately.
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={alerts}
+          renderItem={renderAlert}
+          keyExtractor={a => a.id}
+          contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
+          showsVerticalScrollIndicator={false}
+          ItemSeparatorComponent={() => <View style={{ height: 6 }} />}
+        />
+      )}
     </View>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root:    { flex: 1 },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 18,
-    padding: 32,
-  },
+  root:     { flex: 1 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 18, padding: 32 },
 
   // Header
-  headerWrap: { zIndex: 10 },
-  headerGradient: {
-    paddingHorizontal: 22,
-    paddingBottom: 22,
-    overflow: 'hidden',
-  },
-  headerTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
+  headerGradient: { paddingHorizontal: 16, paddingBottom: 44, overflow: 'hidden', position: 'relative' },
+  headerTop:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  headerLeft:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+    width: 42, height: 42, borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  headerBadge: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    minWidth: 17,
-    height: 17,
-    borderRadius: 9,
-    backgroundColor: colors.severity.critical,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-    borderWidth: 1.5,
-    borderColor: colors.gradients.cta[1],
-  },
-  headerBadgeText: { fontSize: 9, fontWeight: '900', color: colors.white },
-  headerTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: colors.white,
-    letterSpacing: -0.3,
-  },
-  markAllPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
+  headerTitle:    { fontSize: 26, fontWeight: '800', color: colors.white, letterSpacing: -0.3 },
+  headerSub:      { fontSize: 12, color: 'rgba(255,255,255,0.62)', fontWeight: '500', marginTop: 1 },
+  markAllPill:    {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: 'rgba(255,255,255,0.18)',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)',
   },
-  markAllText: { fontSize: 12, color: colors.white, fontWeight: '700' },
-  headerSub: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.65)',
-    letterSpacing: 0.1,
-    marginTop: 2,
-  },
+  markAllText:    { fontSize: 12, color: colors.white, fontWeight: '700' },
 
   // Wave
-  waveWrap: {
-    height: 24,
-    position: 'relative',
-    marginTop: -1,
-  },
-  waveShape: {
-    position: 'absolute',
-    bottom: 0,
-    left: -12,
-    right: -12,
-    height: 28,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-  },
-
-  // Slide container
-  slideContainer: { flex: 1, overflow: 'hidden' },
+  waveWrap:  { position: 'absolute', bottom: 0, left: 0, right: 0, height: 30 },
+  waveBack:  { position: 'absolute', bottom: 0, left: -8, right: -8, height: 30, borderTopLeftRadius: 32, borderTopRightRadius: 32 },
+  waveFront: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 22, borderTopLeftRadius: 22, borderTopRightRadius: 22 },
 
   // List
-  listWrapper: { flex: 1 },
-  scroll:      { paddingHorizontal: 16, gap: 8, paddingTop: 4 },
-  scrollEmpty: { flex: 1, justifyContent: 'center' },
+  scroll:        { paddingHorizontal: 16, paddingTop: 4 },
+  sectionHeader: { paddingTop: 8, paddingBottom: 4, paddingHorizontal: 2 },
+  sectionTitle:  { fontSize: 11, fontWeight: '700', color: colors.slate[400], textTransform: 'uppercase', letterSpacing: 0.8 },
 
   // Card
   card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    borderRadius: 14, overflow: 'hidden',
+    backgroundColor: colors.white,
   },
-  cardInner: { paddingHorizontal: 14, paddingVertical: 12 },
-  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  iconDot: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  cardContent: { flex: 1, gap: 3 },
-  cardTitle: { fontSize: 14, lineHeight: 19 },
-  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.brand[500], marginRight: 2 },
-  cardMetaLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  kindTag: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
-  metaDividerDot: { width: 3, height: 3, borderRadius: 2, backgroundColor: colors.slate[300] },
-  cardTime: { fontSize: 11, color: colors.slate[400], fontWeight: '500' },
+  unreadBar:    { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
+  cardInner:    { paddingHorizontal: 14, paddingVertical: 13 },
+  cardRow:      { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  iconDot:      { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  cardContent:  { flex: 1, gap: 4 },
+  cardTitle:    { fontSize: 14, lineHeight: 19 },
+  cardMetaLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  kindPill:     { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  kindPillText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.4 },
+  cardTime:     { fontSize: 11, color: colors.slate[400], fontWeight: '500' },
 
-  // Empty / loading states
-  emptyState:    { alignItems: 'center', gap: 18 },
-  emptyIconWrap: {
-    width: 92,
-    height: 92,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  loadingIconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    fontSize: 14,
-    color: colors.slate[500],
-    fontWeight: '500',
-  },
-  emptyTitle: {
-    fontSize: 21,
-    fontWeight: '800',
-    color: colors.slate[900],
-    letterSpacing: -0.2,
-  },
-  emptySub: {
-    fontSize: 14,
-    color: colors.slate[400],
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  retryBtn: { borderRadius: 14, overflow: 'hidden', marginTop: 4 },
-  retryBtnGrad: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 24,
-    paddingVertical: 13,
-    shadowColor: colors.gradients.cta[0],
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28,
-    shadowRadius: 14,
-    elevation: 8,
-  },
-  retryText: { color: colors.white, fontWeight: '800', fontSize: 14 },
+  // Empty / error states
+  emptyTitle:   { fontSize: 21, fontWeight: '800', color: colors.slate[900], letterSpacing: -0.2 },
+  emptySub:     { fontSize: 14, color: colors.slate[400], textAlign: 'center', lineHeight: 22 },
+  loadingText:  { fontSize: 14, color: colors.slate[500], fontWeight: '500' },
+  retryBtn:     { borderRadius: 14, overflow: 'hidden', marginTop: 4 },
+  retryBtnGrad: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 24, paddingVertical: 13 },
+  retryText:    { color: colors.white, fontWeight: '800', fontSize: 14 },
 });

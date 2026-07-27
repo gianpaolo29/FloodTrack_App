@@ -11,6 +11,7 @@ import {
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -18,12 +19,14 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
-import { updateProfile, changePassword, updateDutyStatus, uploadAvatar, getCurrentUser } from '@/services/api';
+import { updateProfile, changePassword, uploadAvatar, syncNotificationPrefs, getMyTeam } from '@/services/api';
+import type { Team } from '@/types';
 import * as Storage from '@/utils/storage';
 
 function getStrengthLevel(len: number): { score: number; label: string; color: string } {
@@ -68,14 +71,15 @@ function PasswordStrengthBar({
 }
 
 const ICON_COLORS: Record<string, string> = {
-  'person-outline':             '#4F8EF7',
-  'lock-closed-outline':        '#A855F7',
-  'call-outline':               '#10B981',
+  'person-outline':             colors.iconAccents.blue,
+  'lock-closed-outline':        colors.iconAccents.purple,
+  'call-outline':               colors.iconAccents.green,
+  'home-outline':               colors.iconAccents.amber,
   'alert-circle-outline':       colors.severity.critical,
-  'information-circle-outline': '#F59E0B',
+  'information-circle-outline': colors.iconAccents.amber,
   'document-text-outline':      colors.brand[500],
-  'shield-outline':             '#6366F1',
-  'help-circle-outline':        '#0EA5E9',
+  'shield-outline':             colors.iconAccents.indigo,
+  'help-circle-outline':        colors.iconAccents.sky,
   'information-outline':        colors.slate[400],
   'log-out-outline':            colors.severity.critical,
 };
@@ -115,7 +119,7 @@ function SettingRow({
           styles.row,
           isDark && { backgroundColor: colors.dark.card },
           pressed && onPress && {
-            backgroundColor: isDark ? colors.dark.elevated : '#F0F4FF',
+            backgroundColor: isDark ? colors.dark.elevated : colors.brand[50],
           },
         ]}
         accessibilityRole={onPress ? 'button' : 'none'}
@@ -222,13 +226,13 @@ function GlassInput({
       style={[
         styles.glassField,
         isDark
-          ? { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.12)' }
-          : { backgroundColor: 'rgba(255,255,255,0.85)', borderColor: 'rgba(79,142,247,0.18)' },
+          ? { backgroundColor: colors.overlay.whiteThin, borderColor: colors.overlay.whiteMedium }
+          : { backgroundColor: colors.overlay.whiteCard, borderColor: colors.overlay.brandGlass },
         style,
       ]}
     >
       {icon && (
-        <Ionicons name={icon} size={16} color={isDark ? 'rgba(255,255,255,0.45)' : colors.slate[400]} style={{ marginRight: 2 }} />
+        <Ionicons name={icon} size={16} color={isDark ? colors.overlay.whiteBold : colors.slate[400]} style={{ marginRight: 2 }} />
       )}
       {children}
     </View>
@@ -236,28 +240,28 @@ function GlassInput({
 }
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const { user, token, logout, updateUser, setHomeAddress } = useAuth();
   const { showAlert } = useAlert();
+  const { height: screenH } = useWindowDimensions();
 
   const [avatarUploading, setAvatarUploading] = useState(false);
-
-  const [isOnDuty, setIsOnDuty] = useState(false);
-  const [dutyLoading, setDutyLoading] = useState(false);
+  const [team, setTeam] = useState<Team | null>(null);
 
   const [notifCritical,  setNotifCritical]  = useState(true);
   const [notifAdvisory,  setNotifAdvisory]  = useState(true);
   const [notifMyReports, setNotifMyReports] = useState(true);
 
-  const [showEditProfile, setShowEditProfile] = useState(false);
-  const [editFirstName, setEditFirstName]     = useState('');
-  const [editLastName, setEditLastName]       = useState('');
-  const [editContact, setEditContact]         = useState('');
-  const [editHomeAddress, setEditHomeAddress] = useState('');
+  const [showEditProfile, setShowEditProfile]     = useState(false);
+  const [editFirstName, setEditFirstName]         = useState('');
+  const [editLastName, setEditLastName]           = useState('');
+  const [editContact, setEditContact]             = useState('');
+  const [editHomeAddress, setEditHomeAddress]     = useState('');
   const [editAddressLoading, setEditAddressLoading] = useState(false);
-  const [editSaving, setEditSaving]           = useState(false);
+  const [editSaving, setEditSaving]               = useState(false);
 
   const [showChangePwd, setShowChangePwd]         = useState(false);
   const [currentPwd, setCurrentPwd]               = useState('');
@@ -275,28 +279,45 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (!token) return;
-    getCurrentUser(token).then(data => {
-      setIsOnDuty(data.isOnDuty ?? false);
-    }).catch(() => {});
+    getMyTeam(token).then(setTeam).catch(() => {});
   }, [token]);
 
-  // Load notification preferences from storage
+  // Load notification preferences: prefer AsyncStorage, fall back to server-stored prefs
   useEffect(() => {
     Promise.all([
       Storage.getItem('ft_notif_critical'),
       Storage.getItem('ft_notif_advisory'),
       Storage.getItem('ft_notif_reports'),
     ]).then(([nc, na, nr]) => {
-      if (nc !== null) setNotifCritical(nc !== 'false');
-      if (na !== null) setNotifAdvisory(na !== 'false');
-      if (nr !== null) setNotifMyReports(nr !== 'false');
+      const serverPrefs = user?.notificationPrefs;
+      setNotifCritical(nc !== null ? nc !== 'false' : (serverPrefs?.critical ?? true));
+      setNotifAdvisory(na !== null ? na !== 'false' : (serverPrefs?.advisory ?? true));
+      setNotifMyReports(nr !== null ? nr !== 'false' : (serverPrefs?.my_reports ?? true));
     }).catch(() => {});
   }, []);
 
-  // Persist notification preferences
-  useEffect(() => { Storage.setItem('ft_notif_critical', String(notifCritical)); }, [notifCritical]);
-  useEffect(() => { Storage.setItem('ft_notif_advisory', String(notifAdvisory)); }, [notifAdvisory]);
-  useEffect(() => { Storage.setItem('ft_notif_reports',  String(notifMyReports)); }, [notifMyReports]);
+  function handleToggleNotif(key: 'critical' | 'advisory' | 'reports', value: boolean) {
+    if (key === 'critical') setNotifCritical(value);
+    if (key === 'advisory') setNotifAdvisory(value);
+    if (key === 'reports')  setNotifMyReports(value);
+
+    const label = key === 'critical' ? 'Critical alerts' : key === 'advisory' ? 'Advisories' : 'Report updates';
+    Storage.setItem(`ft_notif_${key}`, String(value));
+    showAlert({
+      type: value ? 'success' : 'info',
+      title: value ? `${label} enabled` : `${label} disabled`,
+      message: value
+        ? `You will receive ${label.toLowerCase()}.`
+        : `You won't receive ${label.toLowerCase()}.`,
+    });
+    if (token) {
+      syncNotificationPrefs({
+        critical:   key === 'critical'  ? value : notifCritical,
+        advisory:   key === 'advisory'  ? value : notifAdvisory,
+        my_reports: key === 'reports'   ? value : notifMyReports,
+      }, token);
+    }
+  }
 
   useEffect(() => {
     Animated.stagger(80, [
@@ -349,18 +370,6 @@ export default function ProfileScreen() {
     }
   }
 
-  async function toggleDuty(value: boolean) {
-    setDutyLoading(true);
-    try {
-      await updateDutyStatus(value, token!);
-      setIsOnDuty(value);
-    } catch (e: any) {
-      showAlert({ type: 'error', title: 'Failed', message: e?.message ?? 'Could not update duty status.' });
-    } finally {
-      setDutyLoading(false);
-    }
-  }
-
   function openEditProfile() {
     setEditFirstName(user?.firstName ?? '');
     setEditLastName(user?.lastName ?? '');
@@ -374,7 +383,7 @@ export default function ProfileScreen() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        showAlert({ type: 'warning', title: 'Permission Needed', message: 'Allow location permission to auto-fill your address.' });
+        showAlert({ type: 'error', title: 'Permission denied', message: 'Location access is required to use this feature.' });
         return;
       }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
@@ -387,7 +396,7 @@ export default function ProfileScreen() {
         .filter((v, i, a) => a.indexOf(v) === i);
       setEditHomeAddress(parts.join(', ') || `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`);
     } catch {
-      showAlert({ type: 'warning', title: 'Error', message: 'Could not get your location.' });
+      showAlert({ type: 'error', title: 'Failed', message: 'Could not retrieve your location.' });
     } finally {
       setEditAddressLoading(false);
     }
@@ -459,9 +468,11 @@ export default function ProfileScreen() {
     }
   }
 
-  const screenBg    = isDark ? colors.dark.bg : '#F0F4FA';
-  const roleColor   = colors.brand[500];
+  const isLeader    = !!team && !!user && team.leaderId === user.id;
+  const screenBg    = isDark ? colors.dark.bg : colors.slate[50];
+  const roleColor   = isLeader ? '#F59E0B' : colors.accent[500];
   const accentBrand = colors.brand[500];
+  const switchTrack = { true: accentBrand, false: isDark ? colors.slate[700] : colors.slate[200] };
 
   const fullName   = user ? `${user.firstName} ${user.lastName}` : '—';
   const initials   = user
@@ -471,12 +482,10 @@ export default function ProfileScreen() {
     ? new Date(user.joinedAt).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
     : '—';
 
-  const switchTrack = { true: accentBrand, false: isDark ? colors.slate[700] : colors.slate[200] };
-
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 30 }}
         showsVerticalScrollIndicator={false}
       >
 
@@ -489,7 +498,7 @@ export default function ProfileScreen() {
           }}
         >
           <LinearGradient
-            colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+            colors={colors.gradients.hero}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={[styles.hero, { paddingTop: insets.top + 12 }]}
@@ -509,7 +518,7 @@ export default function ProfileScreen() {
                   />
                 ) : (
                   <LinearGradient
-                    colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.10)']}
+                    colors={[colors.overlay.whiteBright, colors.overlay.whiteLight]}
                     style={styles.avatar}
                   >
                     <Text style={styles.avatarText}>{initials}</Text>
@@ -528,10 +537,14 @@ export default function ProfileScreen() {
             <Text style={styles.heroName}>{fullName}</Text>
             <Text style={styles.heroEmail}>{user?.email ?? '—'}</Text>
 
-            <View style={[styles.roleBadge, { backgroundColor: 'rgba(255,255,255,0.18)', borderColor: 'rgba(255,255,255,0.35)' }]}>
-              <Ionicons name="shield-checkmark" size={11} color={colors.white} />
-              <Text style={[styles.roleBadgeText, { color: colors.white }]}>
-                {user?.role ?? 'Responder'}
+            <View style={[styles.roleBadge, { backgroundColor: colors.overlay.whiteRegular, borderColor: colors.overlay.whiteStrong }]}>
+              <Ionicons
+                name={isLeader ? 'star' : 'shield-checkmark'}
+                size={11}
+                color={isLeader ? '#FBBF24' : colors.white}
+              />
+              <Text style={[styles.roleBadgeText, { color: isLeader ? '#FBBF24' : colors.white }]}>
+                {isLeader ? 'Team Leader' : 'Responder'}
               </Text>
             </View>
 
@@ -555,7 +568,7 @@ export default function ProfileScreen() {
             value={user?.contact ?? '—'}
             label="Mobile"
             icon="call-outline"
-            color="#10B981"
+            color={colors.iconAccents.green}
             isDark={isDark}
             animValue={stat1Anim}
           />
@@ -563,7 +576,7 @@ export default function ProfileScreen() {
             value={joinedYear}
             label="Member since"
             icon="calendar-outline"
-            color="#A855F7"
+            color={colors.iconAccents.purple}
             isDark={isDark}
             animValue={stat2Anim}
           />
@@ -580,57 +593,6 @@ export default function ProfileScreen() {
             },
           ]}
         >
-
-          <SectionLabel title="Duty Status" isDark={isDark} />
-          <View style={[
-            styles.card,
-            isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
-            isOnDuty && { borderWidth: 1.5, borderColor: colors.severity.low + '40' },
-          ]}>
-            <View style={[styles.row, isDark && { backgroundColor: colors.dark.card }]}>
-              <View style={[
-                styles.rowIcon,
-                { backgroundColor: (isOnDuty ? colors.severity.low : colors.slate[400]) + '18' },
-              ]}>
-                <Ionicons
-                  name={isOnDuty ? 'shield-checkmark' : 'shield-outline'}
-                  size={17}
-                  color={isOnDuty ? colors.severity.low : colors.slate[400]}
-                />
-              </View>
-              <View style={styles.rowText}>
-                <Text style={[styles.rowLabel, isDark && { color: colors.white }]}>
-                  {isOnDuty ? 'On Duty' : 'Off Duty'}
-                </Text>
-                <Text style={[styles.rowDesc, isDark && { color: colors.slate[500] }]}>
-                  {isOnDuty ? 'You are available for incident assignments' : 'You will not receive new assignments'}
-                </Text>
-              </View>
-              {dutyLoading ? (
-                <ActivityIndicator size="small" color={accentBrand} />
-              ) : (
-                <Switch
-                  value={isOnDuty}
-                  onValueChange={toggleDuty}
-                  trackColor={switchTrack}
-                  thumbColor={colors.white}
-                  ios_backgroundColor={colors.slate[200]}
-                  accessibilityLabel="Toggle duty status"
-                />
-              )}
-            </View>
-            {isOnDuty && (
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 6,
-                paddingHorizontal: 16, paddingBottom: 14, marginTop: -6,
-              }}>
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.severity.low }} />
-                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.severity.low }}>
-                  Active and receiving assignments
-                </Text>
-              </View>
-            )}
-          </View>
 
           <SectionLabel title="Account" isDark={isDark} />
           <View style={[styles.card, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}>
@@ -661,7 +623,7 @@ export default function ProfileScreen() {
               right={
                 <Switch
                   value={notifCritical}
-                  onValueChange={setNotifCritical}
+                  onValueChange={(v) => handleToggleNotif('critical', v)}
                   trackColor={switchTrack}
                   thumbColor={colors.white}
                   ios_backgroundColor={colors.slate[200]}
@@ -677,7 +639,7 @@ export default function ProfileScreen() {
               right={
                 <Switch
                   value={notifAdvisory}
-                  onValueChange={setNotifAdvisory}
+                  onValueChange={(v) => handleToggleNotif('advisory', v)}
                   trackColor={switchTrack}
                   thumbColor={colors.white}
                   ios_backgroundColor={colors.slate[200]}
@@ -694,7 +656,7 @@ export default function ProfileScreen() {
               right={
                 <Switch
                   value={notifMyReports}
-                  onValueChange={setNotifMyReports}
+                  onValueChange={(v) => handleToggleNotif('reports', v)}
                   trackColor={switchTrack}
                   thumbColor={colors.white}
                   ios_backgroundColor={colors.slate[200]}
@@ -750,9 +712,9 @@ export default function ProfileScreen() {
 
       <Modal visible={showEditProfile} transparent animationType="slide" onRequestClose={() => setShowEditProfile(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }]}>
+          <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }, { maxHeight: screenH * 0.85 }]}>
             <LinearGradient
-              colors={['#4A6CF7', '#7C3AED']}
+              colors={colors.gradients.cta}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.modalGradHeader}
@@ -775,7 +737,7 @@ export default function ProfileScreen() {
                       value={editFirstName}
                       onChangeText={setEditFirstName}
                       placeholder="First name"
-                      placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                      placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                       autoCapitalize="words"
                     />
                   </GlassInput>
@@ -785,7 +747,7 @@ export default function ProfileScreen() {
                       value={editLastName}
                       onChangeText={setEditLastName}
                       placeholder="Last name"
-                      placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                      placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                       autoCapitalize="words"
                     />
                   </GlassInput>
@@ -796,7 +758,7 @@ export default function ProfileScreen() {
                     value={editContact}
                     onChangeText={setEditContact}
                     placeholder="Contact number"
-                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                    placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                     keyboardType="phone-pad"
                   />
                 </GlassInput>
@@ -806,7 +768,7 @@ export default function ProfileScreen() {
                     value={editHomeAddress}
                     onChangeText={setEditHomeAddress}
                     placeholder="Home address"
-                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                    placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                     autoCapitalize="words"
                   />
                   <Pressable onPress={handleUseLocationForAddress} hitSlop={8} disabled={editAddressLoading}>
@@ -827,7 +789,7 @@ export default function ProfileScreen() {
                 </Pressable>
                 <Pressable style={styles.modalSaveBtn} onPress={handleSaveProfile} disabled={editSaving}>
                   <LinearGradient
-                    colors={['#4A6CF7', '#7C3AED']}
+                    colors={colors.gradients.cta}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={styles.modalSaveBtnGrad}
@@ -846,9 +808,9 @@ export default function ProfileScreen() {
 
       <Modal visible={showChangePwd} transparent animationType="slide" onRequestClose={() => setShowChangePwd(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }]}>
+          <View style={[styles.modalSheet, isDark && { backgroundColor: colors.dark.elevated }, { maxHeight: screenH * 0.85 }]}>
             <LinearGradient
-              colors={['#A855F7', '#6366F1']}
+              colors={colors.gradients.password}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.modalGradHeader}
@@ -863,7 +825,7 @@ export default function ProfileScreen() {
             </LinearGradient>
 
             <View style={styles.modalBody}>
-              <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+              <ScrollView style={{ maxHeight: screenH * 0.5 }} showsVerticalScrollIndicator={false}>
               <View style={styles.modalFields}>
                 <GlassInput icon="lock-closed-outline" isDark={isDark}>
                   <TextInput
@@ -871,14 +833,14 @@ export default function ProfileScreen() {
                     value={currentPwd}
                     onChangeText={setCurrentPwd}
                     placeholder="Current password"
-                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                    placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                     secureTextEntry={!showCurrentPwd}
                   />
                   <Pressable onPress={() => setShowCurrentPwd(v => !v)} hitSlop={8}>
                     <Ionicons
                       name={showCurrentPwd ? 'eye-off-outline' : 'eye-outline'}
                       size={18}
-                      color={isDark ? 'rgba(255,255,255,0.45)' : colors.slate[400]}
+                      color={isDark ? colors.overlay.whiteBold : colors.slate[400]}
                     />
                   </Pressable>
                 </GlassInput>
@@ -893,7 +855,7 @@ export default function ProfileScreen() {
                     value={newPwd}
                     onChangeText={setNewPwd}
                     placeholder="New password (8–16 chars)"
-                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                    placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                     secureTextEntry={!showNewPwd}
                     maxLength={16}
                   />
@@ -901,7 +863,7 @@ export default function ProfileScreen() {
                     <Ionicons
                       name={showNewPwd ? 'eye-off-outline' : 'eye-outline'}
                       size={18}
-                      color={isDark ? 'rgba(255,255,255,0.45)' : colors.slate[400]}
+                      color={isDark ? colors.overlay.whiteBold : colors.slate[400]}
                     />
                   </Pressable>
                 </GlassInput>
@@ -918,7 +880,7 @@ export default function ProfileScreen() {
                     value={confirmPwd}
                     onChangeText={setConfirmPwd}
                     placeholder="Confirm new password"
-                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.35)' : colors.slate[400]}
+                    placeholderTextColor={isDark ? colors.overlay.whiteStrong : colors.slate[400]}
                     secureTextEntry={!showNewPwd}
                     maxLength={16}
                   />
@@ -955,7 +917,7 @@ export default function ProfileScreen() {
                   disabled={pwdSaving || !allChecksMet || !passwordsMatch || !currentPwd}
                 >
                   <LinearGradient
-                    colors={['#A855F7', '#6366F1']}
+                    colors={colors.gradients.password}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={styles.modalSaveBtnGrad}
@@ -991,7 +953,7 @@ const styles = StyleSheet.create({
     width: 180,
     height: 180,
     borderRadius: 90,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: colors.overlay.whiteLight,
     top: -50,
     left: -40,
   },
@@ -1000,7 +962,7 @@ const styles = StyleSheet.create({
     width: 130,
     height: 130,
     borderRadius: 65,
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: colors.overlay.whiteGhost,
     top: 20,
     right: -30,
   },
@@ -1009,7 +971,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.overlay.whiteDim,
     bottom: 40,
     left: 30,
   },
@@ -1017,7 +979,7 @@ const styles = StyleSheet.create({
   avatarRing: {
     padding: 4,
     borderRadius: 56,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: colors.overlay.whiteRegular,
     marginBottom: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
@@ -1045,7 +1007,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: colors.overlay.modalDark,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -1053,7 +1015,7 @@ const styles = StyleSheet.create({
   },
   avatarText: { fontSize: 30, fontWeight: '800', color: colors.white },
   heroName:   { fontSize: 22, fontWeight: '800', color: colors.white, letterSpacing: -0.3 },
-  heroEmail:  { fontSize: 13, color: 'rgba(255,255,255,0.70)', marginTop: -2 },
+  heroEmail:  { fontSize: 13, color: colors.overlay.whiteHigh, marginTop: -2 },
   roleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1062,9 +1024,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 5,
-    marginTop: 4,
   },
-  roleBadgeText: { fontSize: 12, fontWeight: '700' },
+  roleBadgeText: { fontSize: 11, fontWeight: '700' },
 
   waveContainer: {
     position: 'absolute',
@@ -1106,14 +1067,14 @@ const styles = StyleSheet.create({
     padding: 14,
     alignItems: 'center',
     gap: 6,
-    shadowColor: '#4A6CF7',
+    shadowColor: colors.gradients.cta[0],
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.10,
     shadowRadius: 12,
     elevation: 4,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(74,108,247,0.10)',
+    borderColor: colors.overlay.ctaShadow,
   },
   statIcon: {
     width: 34,
@@ -1153,7 +1114,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 3,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.04)',
+    borderColor: colors.overlay.scrim,
   },
 
   row: {
@@ -1210,7 +1171,7 @@ const styles = StyleSheet.create({
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: colors.overlay.modalDark,
     justifyContent: 'flex-end',
   },
   modalSheet: {
@@ -1233,7 +1194,7 @@ const styles = StyleSheet.create({
   },
   modalHandle: {
     width: 36, height: 4, borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.45)',
+    backgroundColor: colors.overlay.whiteBold,
     alignSelf: 'center', marginBottom: 16,
   },
   modalHeaderRow: {
@@ -1245,7 +1206,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: colors.overlay.whiteGlow,
     alignItems: 'center',
     justifyContent: 'center',
   },

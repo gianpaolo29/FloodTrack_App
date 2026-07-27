@@ -2,7 +2,13 @@ export type Severity       = 'low' | 'moderate' | 'high' | 'critical';
 export type ReportStatus   = 'pending' | 'verified' | 'assigned' | 'resolved' | 'rejected';
 export type ResponderStatus = 'pending' | 'en_route' | 'on_scene' | 'resolved';
 export type UserRole       = 'Resident' | 'Responder';
-export type AlertKind      = 'critical' | 'advisory' | 'status_update' | 'rejected' | 'welcome';
+export type AlertKind      = 'critical' | 'advisory' | 'status_update' | 'rejected' | 'welcome' | 'new_assignment' | 'new_message';
+
+export interface NotificationPrefs {
+  critical: boolean;
+  advisory: boolean;
+  my_reports: boolean;
+}
 
 export interface User {
   id: string;
@@ -14,6 +20,32 @@ export interface User {
   joinedAt: string;
   avatarUrl?: string | null;
   homeAddress?: string | null;
+  teamId?: string | null;
+  isLeader?: boolean;
+  notificationPrefs?: NotificationPrefs | null;
+}
+
+export interface TeamMember {
+  id: string;
+  firstName: string;
+  lastName: string;
+  avatarUrl?: string | null;
+  isLeader: boolean;
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  leaderId: string;
+  members: TeamMember[];
+}
+
+export interface MemberStatus {
+  userId: string;
+  userName: string;
+  avatarUrl?: string | null;
+  status: ResponderStatus;
+  updatedAt: string;
 }
 
 export interface LoginPayload {
@@ -142,6 +174,15 @@ export interface Incident {
   distance: string;
   nearbyCount: number;
   reportedAt: string;
+  teamId?: string | null;
+  memberStatuses?: MemberStatus[];
+}
+
+export interface StatusHistoryEntry {
+  status: ResponderStatus;
+  notes: string;
+  updatedBy: string;
+  time: string;
 }
 
 export interface IncidentDetail extends Incident {
@@ -149,9 +190,18 @@ export interface IncidentDetail extends Incident {
   reportedBy: string;
   contactNumber: string;
   evidenceCount: number;
+  mediaUrls: string[];
+  statusHistory: StatusHistoryEntry[];
 }
 
 export interface StatusUpdatePayload {
+  incidentId: string;
+  status: ResponderStatus;
+  notes?: string;
+  media?: string[];
+}
+
+export interface MemberStatusPayload {
   incidentId: string;
   status: ResponderStatus;
   notes?: string;
@@ -185,7 +235,7 @@ export interface ResponderStats {
   resolvedThisWeek: number;
   resolvedThisMonth: number;
   activeCount: number;
-  avgResponseMinutes: number;
+  avgResponseMinutes: number | null;
 }
 
 export type CheckInStatus = 'safe' | 'need_help' | 'unknown';

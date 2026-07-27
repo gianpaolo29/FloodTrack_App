@@ -1215,11 +1215,13 @@ function WeatherStrip({
   reports,
   loading,
   isDark,
+  onExpand,
 }: {
   weather: WeatherData | null;
   reports: Report[];
   loading: boolean;
   isDark: boolean;
+  onExpand?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const expandAnim = useRef(new Animated.Value(0)).current;
@@ -1234,6 +1236,7 @@ function WeatherStrip({
   function toggle() {
     const next = !expanded;
     setExpanded(next);
+    if (next) onExpand?.();
     Animated.spring(expandAnim, { toValue: next ? 1 : 0, tension: 80, friction: 12, useNativeDriver: false }).start();
   }
 
@@ -1476,6 +1479,145 @@ const ws = StyleSheet.create({
   },
 });
 
+/* ───────────── Hazard Legend ───────────── */
+
+const HAZARD_LEGEND_GROUPS = [
+  {
+    label: 'Road Hazards',
+    icon: 'car' as keyof typeof Ionicons.glyphMap,
+    types: ['closed_road', 'debris', 'landslide', 'flooded_road', 'slow_zone'],
+  },
+  {
+    label: 'Flood Hazards',
+    icon: 'water' as keyof typeof Ionicons.glyphMap,
+    types: ['flash_flood', 'river_flood', 'coastal_flood', 'urban_flood'],
+  },
+];
+
+function HazardLegend({ isDark, onClose, top }: { isDark: boolean; onClose: () => void; top: number }) {
+  const bg       = isDark ? 'rgba(15,23,42,0.97)' : 'rgba(255,255,255,0.97)';
+  const border   = isDark ? colors.slate[700] : colors.slate[200];
+  const textMain = isDark ? colors.white      : colors.slate[900];
+  const textSub  = isDark ? colors.slate[400] : colors.slate[500];
+  const groupBg  = isDark ? colors.slate[800] : colors.slate[50];
+  const divider  = isDark ? colors.slate[700] : colors.slate[200];
+
+  return (
+    <View style={[hl.panel, { backgroundColor: bg, borderColor: border, top }]}>
+      <View style={hl.header}>
+        <Text style={[hl.headerTitle, { color: textMain }]}>Hazard Legend</Text>
+        <Pressable onPress={onClose} style={[hl.closeBtn, { backgroundColor: isDark ? colors.slate[800] : colors.slate[100] }]} hitSlop={8}>
+          <Ionicons name="close" size={14} color={isDark ? colors.slate[300] : colors.slate[600]} />
+        </Pressable>
+      </View>
+      <View style={hl.columns}>
+        {HAZARD_LEGEND_GROUPS.map((group, gi) => (
+          <View key={group.label} style={[hl.column, gi === 0 && { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: divider }]}>
+            <View style={hl.groupHeader}>
+              <Ionicons name={group.icon} size={10} color={textSub} />
+              <Text style={[hl.groupLabel, { color: textSub }]}>{group.label.toUpperCase()}</Text>
+            </View>
+            {group.types.map((type, ti) => {
+              const meta = HAZARD_MARKER_META[type];
+              return (
+                <View
+                  key={type}
+                  style={[
+                    hl.row,
+                    ti < group.types.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border },
+                    { backgroundColor: groupBg },
+                    ti === 0 && { borderTopLeftRadius: 8, borderTopRightRadius: 8 },
+                    ti === group.types.length - 1 && { borderBottomLeftRadius: 8, borderBottomRightRadius: 8 },
+                  ]}
+                >
+                  <View style={[hl.dot, { backgroundColor: meta?.color ?? colors.brand[500] }]}>
+                    <Ionicons name={meta?.icon ?? 'alert'} size={8} color="#fff" />
+                  </View>
+                  <Text style={[hl.rowLabel, { color: textMain }]} numberOfLines={1}>
+                    {HAZARD_TYPE_LABELS[type] ?? type}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const hl = StyleSheet.create({
+  panel: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    elevation: 20,
+    zIndex: 20,
+    paddingBottom: 12,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+  },
+  closeBtn: {
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  columns: {
+    flexDirection: 'row',
+    paddingHorizontal: 10,
+  },
+  column: {
+    flex: 1,
+    paddingHorizontal: 6,
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 5,
+  },
+  groupLabel: {
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+  },
+  dot: {
+    width: 16, height: 16, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  rowLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+    flex: 1,
+  },
+});
+
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function MapScreen() {
@@ -1496,6 +1638,7 @@ export default function MapScreen() {
   const [selectedHazard,     setSelectedHazard]     = useState<Hazard | null>(null);
   const [selectedEvac,       setSelectedEvac]       = useState<EvacCenter | null>(null);
   const [layersVisible,      setLayersVisible]      = useState(false);
+  const [legendVisible,      setLegendVisible]      = useState(false);
   const [locating,           setLocating]           = useState(false);
   const [searchQuery,        setSearchQuery]        = useState('');
   const [searchFocused,      setSearchFocused]      = useState(false);
@@ -1665,6 +1808,7 @@ export default function MapScreen() {
 
   function handleSearchFocus() {
     setSearchFocused(true);
+    setLegendVisible(false);
     Animated.parallel([
       Animated.spring(searchFocusAnim, { toValue: 1, tension: 80, friction: 12, useNativeDriver: false }),
       Animated.timing(dropdownAnim, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
@@ -1897,6 +2041,7 @@ export default function MapScreen() {
     setPhotoUrls([]);
     setSelectedEvac(null);
     setSelectedHazard(null);
+    setLegendVisible(false);
     mapRef.current?.animateToRegion({
       latitude: report.latitude - 0.01,
       longitude: report.longitude,
@@ -1984,6 +2129,7 @@ export default function MapScreen() {
     setSelectedEvac(center);
     setSelected(null);
     setSelectedHazard(null);
+    setLegendVisible(false);
     mapRef.current?.animateToRegion({
       latitude:       center.latitude - 0.008,
       longitude:      center.longitude,
@@ -2085,6 +2231,13 @@ export default function MapScreen() {
                 setSelectedHazard(hz);
                 setSelected(null);
                 setSelectedEvac(null);
+                setLegendVisible(false);
+                mapRef.current?.animateToRegion({
+                  latitude: hz.latitude - 0.01,
+                  longitude: hz.longitude,
+                  latitudeDelta: 0.03,
+                  longitudeDelta: 0.03,
+                }, 450);
               }}
             >
               <View style={{ alignItems: 'center' }}>
@@ -2273,6 +2426,7 @@ export default function MapScreen() {
             reports={reports}
             loading={weatherLoading}
             isDark={isDark}
+            onExpand={() => setLegendVisible(false)}
           />
         )}
       </View>
@@ -2585,8 +2739,24 @@ export default function MapScreen() {
         </Animated.View>
       )}
 
-      {!selected && !selectedEvac && (
+      {!selected && !selectedEvac && !selectedHazard && (
         <>
+          <Pressable
+            style={({ pressed }) => [
+              s.ctrlBtn,
+              { bottom: tabClear + 122, right: 12, backgroundColor: ctrlBg },
+              pressed && { opacity: 0.8 },
+            ]}
+            onPress={() => setLegendVisible(v => !v)}
+            accessibilityLabel="Hazard legend"
+          >
+            <Ionicons
+              name="list"
+              size={20}
+              color={legendVisible ? colors.brand[500] : (isDark ? colors.slate[300] : colors.slate[700])}
+            />
+          </Pressable>
+
           <Pressable
             style={({ pressed }) => [
               s.ctrlBtn,
@@ -2684,6 +2854,23 @@ export default function MapScreen() {
           radiusKm={0.5}
           onClose={() => setZoneSummary(null)}
           isDark={isDark}
+        />
+      )}
+
+      {selectedHazard && (
+        <HazardSheet
+          hazard={selectedHazard}
+          onClose={() => setSelectedHazard(null)}
+          isDark={isDark}
+          bottomInset={insets.bottom}
+        />
+      )}
+
+      {legendVisible && !selected && !selectedEvac && !selectedHazard && (
+        <HazardLegend
+          isDark={isDark}
+          onClose={() => setLegendVisible(false)}
+          top={topCardHeight + 6}
         />
       )}
 

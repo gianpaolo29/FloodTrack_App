@@ -60,6 +60,7 @@ const KIND_CONFIG: Record<string, { icon: IoniconsName; color: string; label: st
   status_update: { icon: 'arrow-up-circle',    color: colors.severity.low,      label: 'Update',    pillBg: colors.severity.low + '14' },
   advisory:      { icon: 'information-circle', color: colors.brand[500],        label: 'Advisory',  pillBg: colors.brand[500] + '14' },
   welcome:       { icon: 'heart-circle',       color: colors.brand[500],        label: 'Welcome',   pillBg: colors.brand[500] + '14' },
+  new_message:   { icon: 'chatbubble-ellipses',color: '#7C3AED',               label: 'Message',   pillBg: '#7C3AED14' },
 };
 
 // ─── HeaderOrb ───────────────────────────────────────────────────────────────

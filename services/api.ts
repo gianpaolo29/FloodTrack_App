@@ -17,6 +17,8 @@ import type {
   IncidentDetail,
   IncidentMessage,
   LoginPayload,
+  MemberStatus,
+  MemberStatusPayload,
   ProtocolItem,
   RegisterPayload,
   Report,
@@ -26,6 +28,8 @@ import type {
   ResponderStatus,
   ResponderUpdate,
   StatusUpdatePayload,
+  Team,
+  TeamMember,
   TimelineEvent,
   TrainingResource,
   UpdateProfilePayload,
@@ -45,6 +49,31 @@ interface RawUser {
   avatar_url: string | null;
   created_at: string;
   home_address?: string | null;
+  team_id?: number | null;
+  is_leader?: boolean;
+  notification_prefs?: { critical: boolean; advisory: boolean; my_reports: boolean } | null;
+}
+
+interface RawTeamMember {
+  id: number;
+  name: string;
+  avatar_url: string | null;
+  is_leader: boolean;
+}
+
+interface RawTeam {
+  id: number;
+  name: string;
+  leader_id: number;
+  members: RawTeamMember[];
+}
+
+interface RawMemberStatus {
+  user_id: number;
+  user_name: string;
+  avatar_url: string | null;
+  status: string;
+  updated_at: string;
 }
 
 interface RawMedia {
@@ -74,6 +103,8 @@ interface RawReport {
   address: string | null;
   user?: { id: number; name: string; contact_number?: string | null };
   assigned_responder?: { id: number; name: string; contact_number: string | null } | null;
+  team?: { id: number; name: string } | null;
+  member_statuses?: RawMemberStatus[];
   media?: RawMedia[];
   status_updates?: RawStatusUpdate[];
   created_at: string;
@@ -136,15 +167,50 @@ function adaptUser(raw: RawUser): User {
     admin: 'Responder',
   };
   return {
-    id:          String(raw.id),
+    id:                String(raw.id),
     firstName,
     lastName,
-    email:       raw.email,
-    contact:     raw.contact_number ?? '',
-    role:        roleMap[raw.role] ?? 'Resident',
-    joinedAt:    raw.created_at,
-    avatarUrl:   raw.avatar_url ?? null,
-    homeAddress: raw.home_address ?? null,
+    email:             raw.email,
+    contact:           raw.contact_number ?? '',
+    role:              roleMap[raw.role] ?? 'Resident',
+    joinedAt:          raw.created_at,
+    avatarUrl:         raw.avatar_url ?? null,
+    homeAddress:       raw.home_address ?? null,
+    teamId:            raw.team_id ? String(raw.team_id) : null,
+    isLeader:          raw.is_leader ?? false,
+    notificationPrefs: raw.notification_prefs ?? null,
+  };
+}
+
+function adaptTeamMember(raw: RawTeamMember): TeamMember {
+  const parts     = raw.name.trim().split(' ');
+  const lastName  = parts.length > 1 ? parts[parts.length - 1] : '';
+  const firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : parts[0] ?? '';
+  return {
+    id:        String(raw.id),
+    firstName,
+    lastName,
+    avatarUrl: raw.avatar_url ?? null,
+    isLeader:  raw.is_leader,
+  };
+}
+
+function adaptTeam(raw: RawTeam): Team {
+  return {
+    id:       String(raw.id),
+    name:     raw.name,
+    leaderId: String(raw.leader_id),
+    members:  raw.members.map(adaptTeamMember),
+  };
+}
+
+function adaptMemberStatus(raw: RawMemberStatus): MemberStatus {
+  return {
+    userId:    String(raw.user_id),
+    userName:  raw.user_name,
+    avatarUrl: raw.avatar_url ?? null,
+    status:    raw.status as ResponderStatus,
+    updatedAt: formatRelativeTime(raw.updated_at),
   };
 }
 
@@ -234,31 +300,96 @@ export function adaptAlert(raw: RawAlert): AlertItem {
 }
 
 function adaptIncident(raw: RawReport): Incident {
-  const lastUpdate = (raw.status_updates ?? []).findLast(
-    u => ['en_route', 'on_scene', 'pending'].includes(u.status),
+  // status_updates is ordered newest-first (.latest()), so index 0 = most recent
+  const relevantUpdates = (raw.status_updates ?? []).filter(
+    u => ['en_route', 'on_scene', 'resolved', 'pending'].includes(u.status),
   );
+  const lastUpdate = relevantUpdates[0] ?? null;
   const responderStatus: ResponderStatus =
-    lastUpdate?.status === 'en_route' ? 'en_route'
+    lastUpdate?.status === 'resolved' ? 'resolved'
     : lastUpdate?.status === 'on_scene' ? 'on_scene'
+    : lastUpdate?.status === 'en_route' ? 'en_route'
     : 'pending';
 
   return {
     ...adaptReport(raw),
     reportStatus:    raw.status,
     responderStatus,
-    distance:   '',
-    nearbyCount: 0,
+    distance:        '',
+    nearbyCount:     0,
+    teamId:          raw.team ? String(raw.team.id) : null,
+    memberStatuses:  raw.member_statuses?.map(adaptMemberStatus),
   };
 }
 
 function adaptIncidentDetail(raw: RawReport): IncidentDetail {
+  const statusHistory = (raw.status_updates ?? [])
+    .filter(u => ['en_route', 'on_scene', 'resolved'].includes(u.status))
+    .map(u => ({
+      status:    u.status as ResponderStatus,
+      notes:     u.notes ?? '',
+      updatedBy: u.user?.name ?? 'System',
+      time:      formatRelativeTime(u.created_at),
+    }));
+
   return {
     ...adaptIncident(raw),
     description:   raw.description ?? '',
     reportedBy:    raw.user?.name ?? 'Unknown',
     contactNumber: raw.user?.contact_number ?? '',
     evidenceCount: raw.media?.length ?? 0,
+    mediaUrls:     raw.media?.map(m => m.url) ?? [],
+    statusHistory,
   };
+}
+
+// ─── Team / member-status helpers ─────────────────────────────────────────────
+
+export async function getMyTeam(token: string): Promise<Team | null> {
+  const res = await get<{ data: RawTeam | null }>('/responder/team', token);
+  if (!res.data) return null;
+  return adaptTeam(res.data);
+}
+
+export async function getTeamIncidents(token: string): Promise<Incident[]> {
+  const data = await get<{ data: RawReport[] }>('/reports?assigned=team', token);
+  return data.data.map(adaptIncident);
+}
+
+export async function getMemberStatuses(incidentId: string, token: string): Promise<MemberStatus[]> {
+  const raw = await get<{ data: RawMemberStatus[] }>(
+    `/responder/reports/${incidentId}/member-statuses`,
+    token,
+  );
+  return (Array.isArray(raw) ? raw : raw.data).map(adaptMemberStatus);
+}
+
+export async function submitMemberStatus(
+  payload: MemberStatusPayload,
+  token: string,
+): Promise<void> {
+  const path = `/responder/reports/${payload.incidentId}/member-status`;
+  if (payload.media?.length) {
+    const form = new FormData();
+    form.append('status', payload.status);
+    if (payload.notes) form.append('notes', payload.notes);
+    payload.media.forEach((uri, i) => {
+      const ext      = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+      const mimeType = ['mp4', 'mov'].includes(ext) ? `video/${ext}` : `image/${ext}`;
+      form.append('media[]', { uri, name: `update_${i}.${ext}`, type: mimeType } as unknown as Blob);
+    });
+    await formPatch(path, form, token);
+  } else {
+    await patch(path, { status: payload.status, notes: payload.notes }, token);
+  }
+}
+
+export async function confirmTeamStatus(
+  incidentId: string,
+  status: ResponderStatus,
+  token: string,
+): Promise<void> {
+  await patch(`/responder/reports/${incidentId}/confirm-status`, { status }, token);
 }
 
 class ApiError extends Error {
@@ -508,16 +639,25 @@ interface RawUserNotification {
 }
 
 function adaptUserNotification(raw: RawUserNotification): AlertItem {
-  const isRejected = raw.new_status === 'rejected'
+  const isRejected    = raw.new_status === 'rejected'
     || raw.title?.toLowerCase().includes('not verified')
     || raw.title?.toLowerCase().includes('rejected');
-  const isWelcome = raw.type === 'welcome';
+  const isWelcome     = raw.type === 'welcome';
+  const isMessage     = raw.type === 'new_message';
+  const isAssignment  = raw.type === 'assignment';
+
+  const kind = isWelcome    ? 'welcome'
+    : isRejected             ? 'rejected'
+    : isMessage              ? 'new_message'
+    : isAssignment           ? 'new_assignment'
+    : 'status_update';
+
   return {
-    id:       `notif_${raw.id}`,
-    kind:     isWelcome ? 'welcome' : isRejected ? 'rejected' : 'status_update',
-    title:    raw.title,
-    body:     raw.message,
-    area:     '',
+    id:        `notif_${raw.id}`,
+    kind,
+    title:     raw.title,
+    body:      raw.message,
+    area:      '',
     time:      formatRelativeTime(raw.created_at),
     createdAt: raw.created_at,
     read:      raw.read_at !== null,
@@ -648,21 +788,21 @@ export async function updateDutyStatus(isOnDuty: boolean, token: string): Promis
 }
 
 export async function getReportMessages(reportId: string, token: string): Promise<IncidentMessage[]> {
-  const raw = await get<{ data: Array<{
+  const raw = await get<any>(`/reports/${reportId}/messages`, token);
+  const data: Array<{
     id: number;
     body: string;
     is_quick_reply: boolean;
     read_at: string | null;
     user: { id: number; name: string; role: string };
     created_at: string;
-  }> }>(`/reports/${reportId}/messages`, token);
-  const data = Array.isArray(raw) ? raw : raw.data;
-  return data.map(m => ({
+  }> = Array.isArray(raw) ? raw : (raw?.data ?? []);
+  return data.filter(m => m != null).map(m => ({
     id: String(m.id),
     reportId,
-    userId: String(m.user.id),
-    userName: m.user.name,
-    userRole: m.user.role,
+    userId: String(m.user?.id ?? ''),
+    userName: m.user?.name ?? 'Unknown',
+    userRole: m.user?.role ?? 'responder',
     body: m.body,
     isQuickReply: m.is_quick_reply,
     readAt: m.read_at,
@@ -679,7 +819,28 @@ export async function sendReportMessage(
   await post(`/reports/${reportId}/messages`, { body, is_quick_reply: isQuickReply }, token);
 }
 
-export const getIncidentMessages = getReportMessages;
+export async function getIncidentMessages(reportId: string, token: string): Promise<IncidentMessage[]> {
+  const raw = await get<any>(`/responder/reports/${reportId}/messages`, token);
+  const data: Array<{
+    id: number;
+    body: string;
+    is_quick_reply: boolean;
+    read_at: string | null;
+    user: { id: number; name: string; role: string };
+    created_at: string;
+  }> = Array.isArray(raw) ? raw : (raw?.data ?? []);
+  return data.filter(m => m != null).map(m => ({
+    id: String(m.id),
+    reportId,
+    userId: String(m.user?.id ?? ''),
+    userName: m.user?.name ?? 'Unknown',
+    userRole: m.user?.role ?? 'responder',
+    body: m.body,
+    isQuickReply: m.is_quick_reply,
+    readAt: m.read_at,
+    createdAt: formatRelativeTime(m.created_at),
+  }));
+}
 
 export async function sendIncidentMessage(
   reportId: string,
@@ -687,15 +848,24 @@ export async function sendIncidentMessage(
   isQuickReply: boolean,
   token: string,
 ): Promise<void> {
-  await sendReportMessage(reportId, body, token, isQuickReply);
+  await post(`/responder/reports/${reportId}/messages`, { body, is_quick_reply: isQuickReply }, token);
 }
 
 export async function markMessagesRead(reportId: string, token: string): Promise<void> {
   await post(`/reports/${reportId}/messages/read`, {}, token);
 }
 
+export async function markIncidentMessagesRead(reportId: string, token: string): Promise<void> {
+  await post(`/responder/reports/${reportId}/messages/read`, {}, token);
+}
+
 export async function getUnreadCount(reportId: string, token: string): Promise<number> {
   const data = await get<{ unread_count: number }>(`/reports/${reportId}/messages/unread-count`, token);
+  return data.unread_count;
+}
+
+export async function getIncidentUnreadCount(reportId: string, token: string): Promise<number> {
+  const data = await get<{ unread_count: number }>(`/responder/reports/${reportId}/messages/unread-count`, token);
   return data.unread_count;
 }
 
@@ -738,31 +908,58 @@ export async function saveFieldReport(
   reportId: string,
   data: Omit<FieldReportData, 'id' | 'reportId'>,
   token: string,
+  isExisting = false,
 ): Promise<void> {
-  await post(`/responder/reports/${reportId}/field-report`, {
+  const body = {
     actions_taken: data.actionsTaken,
     resources_used: data.resourcesUsed || null,
     people_assisted: data.peopleAssisted,
     damage_assessment: data.damageAssessment || null,
     checklist: data.checklist,
-  }, token);
+  };
+  await post(`/responder/reports/${reportId}/field-report`, body, token);
 }
 
 export async function getResponderStats(token: string): Promise<ResponderStats> {
-  const raw = await get<{
+  type StatsPayload = {
     resolved_total: number;
     resolved_this_week: number;
     resolved_this_month: number;
     active_count: number;
-    avg_response_minutes: number;
-  }>('/responder/stats', token);
-  return {
-    resolvedTotal: raw.resolved_total,
-    resolvedThisWeek: raw.resolved_this_week,
-    resolvedThisMonth: raw.resolved_this_month,
-    activeCount: raw.active_count,
-    avgResponseMinutes: raw.avg_response_minutes,
+    avg_response_minutes: number | null;
   };
+  const res = await get<StatsPayload | { data: StatsPayload }>('/responder/stats', token);
+  const raw: StatsPayload = (res as any)?.data ?? (res as StatsPayload);
+  return {
+    resolvedTotal: raw.resolved_total ?? 0,
+    resolvedThisWeek: raw.resolved_this_week ?? 0,
+    resolvedThisMonth: raw.resolved_this_month ?? 0,
+    activeCount: raw.active_count ?? 0,
+    avgResponseMinutes: raw.avg_response_minutes ?? null,
+  };
+}
+
+export async function getTeamStats(token: string): Promise<ResponderStats | null> {
+  type StatsPayload = {
+    resolved_total: number;
+    resolved_this_week: number;
+    resolved_this_month: number;
+    active_count: number;
+    avg_response_minutes: number | null;
+  };
+  try {
+    const res = await get<StatsPayload | { data: StatsPayload }>('/responder/team/stats', token);
+    const raw: StatsPayload = (res as any)?.data ?? (res as StatsPayload);
+    return {
+      resolvedTotal: raw.resolved_total ?? 0,
+      resolvedThisWeek: raw.resolved_this_week ?? 0,
+      resolvedThisMonth: raw.resolved_this_month ?? 0,
+      activeCount: raw.active_count ?? 0,
+      avgResponseMinutes: raw.avg_response_minutes ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export interface WeatherData {

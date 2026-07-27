@@ -3,13 +3,11 @@ import {
   ActivityIndicator,
   Animated,
   LayoutAnimation,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  UIManager,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -21,10 +19,6 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { getProtocols, getTrainingResources } from '@/services/api';
 import type { TrainingResource } from '@/types';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 interface Protocol {
   id: string;

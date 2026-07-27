@@ -4,6 +4,7 @@ import {
   Animated,
   Dimensions,
   Easing,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -27,7 +28,7 @@ import { apiCheckEmail, apiRegister, apiDeleteAccount, apiMarkEmailVerified } fr
 import { sendEmailVerificationOtp } from '@/services/brevo';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const HERO_H = SCREEN_H * 0.30;
+const HERO_H = SCREEN_H * 0.25;
 
 
 const EMAIL_RE     = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -334,7 +335,7 @@ export default function SignUpScreen() {
 
             <View style={s.logoBadge}>
               <View style={s.logoBadgeInner}>
-                <Ionicons name="water" size={44} color={colors.white} />
+                <Image source={require('@/assets/images/logo-water.png')} style={{ width: 64, height: 64 }} resizeMode="contain" />
               </View>
               <View style={s.logoBadgeRing} />
             </View>
@@ -522,36 +523,6 @@ export default function SignUpScreen() {
               </Pressable>
             </Animated.View>
 
-            {/* Divider */}
-            <Animated.View style={[s.dividerRow, { opacity: socialOpacity, transform: [{ translateY: socialTransY }] }]}>
-              <View style={s.dividerLine} />
-              <View style={s.dividerPill}>
-                <Text style={s.dividerText}>or sign up with</Text>
-              </View>
-              <View style={s.dividerLine} />
-            </Animated.View>
-
-            {/* Google */}
-            <Animated.View style={[s.socialRow, { opacity: socialOpacity, transform: [{ translateY: socialTransY }] }]}>
-              <Pressable
-                style={({ pressed }) => [s.socialBtn, s.googleBtn, pressed && { transform: [{ scale: 0.97 }] }]}
-                onPress={handleGoogleSignUp}
-                disabled={isLoading || isGoogleLoading}
-                accessibilityLabel="Sign up with Google"
-              >
-                {isGoogleLoading ? (
-                  <ActivityIndicator size="small" color={colors.social.google} />
-                ) : (
-                  <>
-                    <View style={s.googleIconCircle}>
-                      <Text style={s.googleG}>G</Text>
-                    </View>
-                    <Text style={s.googleBtnText}>Google</Text>
-                  </>
-                )}
-              </Pressable>
-            </Animated.View>
-
             {/* Footer */}
             <Animated.View style={[s.footer, { opacity: footerOpacity }]}>
               <Text style={s.footerText}>Already have an account?</Text>
@@ -696,13 +667,13 @@ const s = StyleSheet.create({
 
   logoBadge: { alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   logoBadgeInner: {
-    width: 80, height: 80, borderRadius: 26,
+    width: 100, height: 100, borderRadius: 30,
     backgroundColor: colors.overlay.whiteRegular,
     borderWidth: 1.5, borderColor: colors.overlay.whiteFirm,
     alignItems: 'center', justifyContent: 'center',
   },
   logoBadgeRing: {
-    position: 'absolute', width: 100, height: 100, borderRadius: 50,
+    position: 'absolute', width: 122, height: 122, borderRadius: 61,
     borderWidth: 1, borderColor: colors.overlay.whiteLight,
   },
   logoTitle: { fontSize: 24, fontWeight: '900', color: colors.white, letterSpacing: 5 },
@@ -722,12 +693,12 @@ const s = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 },
   titleBold: { fontSize: 30, fontWeight: '800', color: colors.auth.heading },
   titleLight: { fontSize: 30, fontWeight: '300', color: colors.auth.heading },
-  titleSub: { fontSize: 14, color: colors.auth.muted, marginBottom: 20 },
+  titleSub: { fontSize: 14, color: colors.auth.muted, marginBottom: 14 },
 
-  nameRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  nameRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
   nameHalf: { flex: 1 },
 
-  fieldWrap: { marginBottom: 14 },
+  fieldWrap: { marginBottom: 12 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
     height: 56, borderRadius: 16,
@@ -762,7 +733,7 @@ const s = StyleSheet.create({
   ctaBtn: {
     height: 56, borderRadius: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 10, marginTop: 4,
+    gap: 10, marginTop: 12,
     shadowColor: colors.auth.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35, shadowRadius: 18, elevation: 10,
@@ -807,7 +778,7 @@ const s = StyleSheet.create({
 
   footer: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    marginBottom: 12,
+    marginTop: 20, marginBottom: 12,
   },
   footerText: { fontSize: 14, color: colors.auth.muted },
   footerLink: { fontSize: 14, fontWeight: '800', color: colors.auth.primary },

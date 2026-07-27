@@ -422,15 +422,17 @@ export default function ProfileScreen() {
     }
   }
 
+  // Load notification preferences: prefer AsyncStorage, fall back to server-stored prefs
   useEffect(() => {
     Promise.all([
       Storage.getItem('ft_notif_critical'),
       Storage.getItem('ft_notif_advisory'),
       Storage.getItem('ft_notif_reports'),
     ]).then(([nc, na, nr]) => {
-      if (nc !== null) setNotifCritical(nc !== 'false');
-      if (na !== null) setNotifAdvisory(na !== 'false');
-      if (nr !== null) setNotifMyReports(nr !== 'false');
+      const serverPrefs = user?.notificationPrefs;
+      setNotifCritical(nc !== null ? nc !== 'false' : (serverPrefs?.critical ?? true));
+      setNotifAdvisory(na !== null ? na !== 'false' : (serverPrefs?.advisory ?? true));
+      setNotifMyReports(nr !== null ? nr !== 'false' : (serverPrefs?.my_reports ?? true));
     }).catch(() => {});
   }, []);
 

@@ -814,23 +814,6 @@ function EvidenceStep({
     }
   }
 
-  async function openGallery() {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      onShowAlert({ type: 'warning', title: 'Gallery Access Needed', message: 'Allow gallery permission to attach photos or videos to your report.' });
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
-      allowsMultipleSelection: true,
-      quality: 0.8,
-      selectionLimit: remaining,
-    });
-    if (!result.canceled) {
-      onPhotosChange([...photos, ...result.assets.map(a => a.uri)].slice(0, 5));
-    }
-  }
-
   function removePhoto(uri: string) {
     onPhotosChange(photos.filter(p => p !== uri));
   }
@@ -873,7 +856,7 @@ function EvidenceStep({
           {remaining > 0 && (
             <Pressable
               style={[styles.photoAddCell, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}
-              onPress={openGallery}
+              onPress={openCamera}
               accessibilityLabel="Add more photos"
             >
               <Ionicons name="add" size={28} color={colors.brand[500]} />
@@ -886,61 +869,33 @@ function EvidenceStep({
       )}
 
       {photos.length === 0 && (
-        <View style={styles.evidenceGrid}>
-          <Pressable
-            style={[styles.evidenceAdd, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
-            onPress={openCamera}
-            accessibilityRole="button"
-            accessibilityLabel="Take a photo"
-          >
-            <View style={[styles.evidenceIconCircle, isDark && { backgroundColor: 'rgba(79,142,247,0.15)' }]}>
-              <Ionicons name="camera" size={32} color={colors.brand[500]} />
-            </View>
-            <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[300] }]}>
-              Take Photo
-            </Text>
-            <Text style={[styles.evidenceAddSub, isDark && { color: colors.slate[500] }]}>
-              Use your camera
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.evidenceAdd, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
-            onPress={openGallery}
-            accessibilityRole="button"
-            accessibilityLabel="Choose from gallery"
-          >
-            <View style={[styles.evidenceIconCircle, isDark && { backgroundColor: 'rgba(124,58,237,0.12)' }]}>
-              <Ionicons name="images" size={32} color="#7C3AED" />
-            </View>
-            <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[300] }]}>
-              Gallery
-            </Text>
-            <Text style={[styles.evidenceAddSub, isDark && { color: colors.slate[500] }]}>
-              Choose existing
-            </Text>
-          </Pressable>
-        </View>
+        <Pressable
+          style={[styles.evidenceAdd, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
+          onPress={openCamera}
+          accessibilityRole="button"
+          accessibilityLabel="Take a photo"
+        >
+          <View style={[styles.evidenceIconCircle, isDark && { backgroundColor: 'rgba(79,142,247,0.15)' }]}>
+            <Ionicons name="camera" size={32} color={colors.brand[500]} />
+          </View>
+          <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[300] }]}>
+            Take Photo
+          </Text>
+          <Text style={[styles.evidenceAddSub, isDark && { color: colors.slate[500] }]}>
+            Use your camera
+          </Text>
+        </Pressable>
       )}
 
       {photos.length > 0 && remaining > 0 && (
-        <View style={styles.evidenceRowBtns}>
-          <Pressable
-            style={[styles.evidenceRowBtn, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}
-            onPress={openCamera}
-            accessibilityLabel="Take a photo"
-          >
-            <Ionicons name="camera-outline" size={18} color={colors.brand[500]} />
-            <Text style={[styles.evidenceRowBtnText, isDark && { color: colors.slate[300] }]}>Camera</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.evidenceRowBtn, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}
-            onPress={openGallery}
-            accessibilityLabel="Choose from gallery"
-          >
-            <Ionicons name="images-outline" size={18} color={colors.brand[500]} />
-            <Text style={[styles.evidenceRowBtnText, isDark && { color: colors.slate[300] }]}>Gallery</Text>
-          </Pressable>
-        </View>
+        <Pressable
+          style={[styles.evidenceRowBtn, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}
+          onPress={openCamera}
+          accessibilityLabel="Take a photo"
+        >
+          <Ionicons name="camera-outline" size={18} color={colors.brand[500]} />
+          <Text style={[styles.evidenceRowBtnText, isDark && { color: colors.slate[300] }]}>Camera</Text>
+        </Pressable>
       )}
 
       <View style={[styles.evidenceHint, isDark && { backgroundColor: colors.slate[900] }]}>

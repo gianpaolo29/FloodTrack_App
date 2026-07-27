@@ -10,6 +10,8 @@ import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { AlertProvider } from '@/context/AlertContext';
 import { AlertBadgeProvider } from '@/context/AlertBadgeContext';
 import { initNotifications, onNotificationResponse } from '@/services/notifications';
+import * as Storage from '@/utils/storage';
+import { SESSION_KEY } from '@/app/responder/incident/[id]';
 
 function AuthGuard() {
   const { user, isLoading } = useAuth();
@@ -34,6 +36,32 @@ function AuthGuard() {
       } else {
         router.replace('/resident');
       }
+    } else if (user && user.role === 'Responder' && user.isLeader) {
+      // Resume any active session that survived an app close
+      Storage.getItem(SESSION_KEY).then(raw => {
+        if (!raw) return;
+        try {
+          const session = JSON.parse(raw) as {
+            incidentId: string; destLat: string; destLng: string; destTitle: string;
+            reporterName?: string; reportedAt?: string; severity?: string; incidentType?: string;
+          };
+          router.replace({
+            pathname: '/responder/(tabs)/map',
+            params: {
+              destLat:       session.destLat,
+              destLng:       session.destLng,
+              destTitle:     session.destTitle,
+              incidentId:    session.incidentId,
+              isLeaderParam: '1',
+              sessionLocked: '1',
+              reporterName:  session.reporterName ?? '',
+              reportedAt:    session.reportedAt  ?? '',
+              severity:      session.severity    ?? '',
+              incidentType:  session.incidentType ?? '',
+            },
+          } as never);
+        } catch {}
+      });
     }
   }, [user, isLoading, segments]);
 

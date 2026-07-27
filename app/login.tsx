@@ -4,6 +4,7 @@ import {
   Animated,
   Dimensions,
   Easing,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -39,7 +40,7 @@ try {
 }
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const HERO_H = SCREEN_H * 0.27;
+const HERO_H = SCREEN_H * 0.42;
 
 function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: number; size?: number }) {
   const translateY = useRef(new Animated.Value(0)).current;
@@ -285,7 +286,7 @@ export default function LoginScreen() {
             transform: [{ scale: splashLogoScale }],
           }]}>
             <View style={s.splashLogoBadge}>
-              <Ionicons name="water" size={50} color={colors.white} />
+              <Image source={require('@/assets/images/logo-water.png')} style={{ width: 80, height: 80 }} resizeMode="contain" />
               <Animated.View style={[s.shimmerBar, { transform: [{ translateX: shimmerX }] }]} />
             </View>
           </Animated.View>
@@ -326,7 +327,7 @@ export default function LoginScreen() {
 
               <View style={s.logoBadge}>
                 <View style={s.logoBadgeInner}>
-                  <Ionicons name="water" size={44} color={colors.white} />
+                  <Image source={require('@/assets/images/logo-water.png')} style={{ width: 64, height: 64 }} resizeMode="contain" />
                 </View>
                 <View style={s.logoBadgeRing} />
               </View>
@@ -457,34 +458,6 @@ export default function LoginScreen() {
                 </Pressable>
               </Animated.View>
 
-              <Animated.View style={[s.dividerRow, { opacity: gBtnOpacity, transform: [{ translateY: gBtnTransY }] }]}>
-                <View style={s.dividerLine} />
-                <View style={s.dividerPill}>
-                  <Text style={s.dividerText}>or continue with</Text>
-                </View>
-                <View style={s.dividerLine} />
-              </Animated.View>
-
-              <Animated.View style={[s.socialRow, { opacity: gBtnOpacity, transform: [{ translateY: gBtnTransY }] }]}>
-                <Pressable
-                  style={({ pressed }) => [s.socialBtn, s.googleBtn, s.googleBtnFull, pressed && { transform: [{ scale: 0.97 }] }]}
-                  onPress={handleGoogleLogin}
-                  disabled={isLoading || isGoogleLoading}
-                  accessibilityLabel="Sign in with Google"
-                >
-                  {isGoogleLoading ? (
-                    <ActivityIndicator size="small" color={colors.social.google} />
-                  ) : (
-                    <>
-                      <View style={s.googleIconCircle}>
-                        <Text style={s.googleG}>G</Text>
-                      </View>
-                      <Text style={s.googleBtnText}>Google</Text>
-                    </>
-                  )}
-                </Pressable>
-              </Animated.View>
-
               <Animated.View style={[s.footer, { opacity: footerOpacity }]}>
                 <Text style={s.footerText}>Don't have an account?</Text>
                 <Pressable onPress={() => router.push('/signup')} hitSlop={8}>
@@ -524,7 +497,7 @@ const s = StyleSheet.create({
   },
   splashLogoWrap: { marginBottom: 18, alignItems: 'center' },
   splashLogoBadge: {
-    width: 110, height: 110, borderRadius: 32,
+    width: 140, height: 140, borderRadius: 38,
     backgroundColor: colors.overlay.whiteSoft,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: colors.overlay.whiteBright,
@@ -571,14 +544,14 @@ const s = StyleSheet.create({
     marginBottom: 16,
   },
   logoBadgeInner: {
-    width: 80, height: 80, borderRadius: 26,
+    width: 100, height: 100, borderRadius: 30,
     backgroundColor: colors.overlay.whiteRegular,
     borderWidth: 1.5, borderColor: colors.overlay.whiteFirm,
     alignItems: 'center', justifyContent: 'center',
   },
   logoBadgeRing: {
     position: 'absolute',
-    width: 100, height: 100, borderRadius: 50,
+    width: 122, height: 122, borderRadius: 61,
     borderWidth: 1, borderColor: colors.overlay.whiteLight,
   },
   logoTitle: {
@@ -615,9 +588,9 @@ const s = StyleSheet.create({
   },
   titleBold: { fontSize: 30, fontWeight: '800', color: colors.auth.heading },
   titleLight: { fontSize: 30, fontWeight: '300', color: colors.auth.heading },
-  titleSub: { fontSize: 13, color: colors.auth.muted, marginBottom: 18 },
+  titleSub: { fontSize: 13, color: colors.auth.muted, marginBottom: 14 },
 
-  fieldWrap: { marginBottom: 14 },
+  fieldWrap: { marginBottom: 12 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
     height: 56, borderRadius: 16,
@@ -657,7 +630,7 @@ const s = StyleSheet.create({
   optionsRow: {
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 22, marginTop: 2,
+    marginBottom: 24, marginTop: 2,
   },
   rememberRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   checkbox: {
@@ -730,7 +703,7 @@ const s = StyleSheet.create({
 
   footer: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    marginBottom: 12,
+    marginTop: 20, marginBottom: 12,
   },
   footerText: { fontSize: 14, color: colors.auth.muted },
   footerLink: { fontSize: 14, fontWeight: '800', color: colors.auth.primary },

@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAlertBadge } from '@/context/AlertBadgeContext';
+import { useNetworkStatus } from '@/hooks/use-network-status';
+import { OfflineBanner } from '@/components/OfflineBanner';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -22,7 +24,7 @@ const tabMeta: Record<string, { icon: IoniconsName; iconFocused: IoniconsName; l
   profile:      { icon: 'person-circle-outline', iconFocused: 'person-circle', label: 'Profile' },
 };
 
-function CustomTabBar({ state, navigation }: BottomTabBarProps) {
+function CustomTabBar({ state, navigation, isOnline }: BottomTabBarProps & { isOnline: boolean }) {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
@@ -38,6 +40,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 
   return (
     <View style={[st.barOuter, { paddingBottom: bottom, backgroundColor: barBg }]}>
+      <OfflineBanner isOnline={isOnline} syncing={false} />
       <View style={st.bar}>
         {state.routes.map((route, i) => {
           const focused = state.index === i;
@@ -88,8 +91,13 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 }
 
 export default function ResidentTabLayout() {
+  const isOnline = useNetworkStatus();
+
   return (
-    <Tabs tabBar={(props) => <CustomTabBar {...props} />} screenOptions={{ headerShown: false }}>
+    <Tabs
+      tabBar={(props) => <CustomTabBar {...props} isOnline={isOnline} />}
+      screenOptions={{ headerShown: false }}
+    >
       <Tabs.Screen name="index" />
       <Tabs.Screen name="my-reports" />
       <Tabs.Screen name="report" />

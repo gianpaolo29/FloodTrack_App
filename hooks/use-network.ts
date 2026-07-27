@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
-import { updateIncidentStatus } from '@/services/api';
+import { submitMemberStatus } from '@/services/api';
 import {
   getPendingUpdates,
+  getPendingCount,
   removePendingUpdate,
 } from '@/services/offline';
 
@@ -10,9 +11,15 @@ const PING_INTERVAL = 15_000;
 const PING_URL = 'https://clients3.google.com/generate_204';
 
 export function useNetwork(token: string | null) {
-  const [isOnline, setIsOnline] = useState(true);
-  const [syncing, setSyncing] = useState(false);
+  const [isOnline, setIsOnline]         = useState(true);
+  const [syncing, setSyncing]           = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const wasOffline = useRef(false);
+
+  // Refresh pending count whenever syncing state changes
+  useEffect(() => {
+    getPendingCount().then(setPendingCount);
+  }, [syncing]);
 
   useEffect(() => {
     async function check() {
@@ -25,11 +32,13 @@ export function useNetwork(token: string | null) {
 
         if (wasOffline.current && token) {
           wasOffline.current = false;
-          syncQueue(token);
+          await syncQueue(token);
         }
       } catch {
         setIsOnline(false);
         wasOffline.current = true;
+        // Update pending count while offline so banner shows correct number
+        getPendingCount().then(setPendingCount);
       }
     }
 
@@ -47,7 +56,7 @@ export function useNetwork(token: string | null) {
 
     for (const item of queue) {
       try {
-        await updateIncidentStatus(item.payload, authToken);
+        await submitMemberStatus(item.payload, authToken);
         await removePendingUpdate(item.id);
         successCount++;
       } catch {
@@ -65,5 +74,5 @@ export function useNetwork(token: string | null) {
     }
   }
 
-  return { isOnline, syncing };
+  return { isOnline, syncing, pendingCount };
 }

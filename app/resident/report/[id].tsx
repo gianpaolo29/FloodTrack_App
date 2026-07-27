@@ -27,7 +27,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
-import { getReportDetail, updateReport, deleteReportMedia, withdrawReport } from '@/services/api';
+import { getReportDetail, updateReport, deleteReportMedia, withdrawReport, getUnreadCount } from '@/services/api';
 import { socketService } from '@/services/socket';
 import type { ReportDetail, MediaItem } from '@/types';
 
@@ -104,104 +104,117 @@ const metaStyles = StyleSheet.create({
   value: { fontSize: 14, fontWeight: '600', color: colors.slate[800] },
 });
 
-// ─── Timeline item ───────────────────────────────────────────────────────────
+// ─── Horizontal Stepper ──────────────────────────────────────────────────────
 
-function TimelineItem({
-  event,
-  isLast,
+const STEP_DOT = 34;
+const STEP_DONE_COLOR   = '#00C48C';
+const STEP_ACTIVE_COLOR = '#00BCD4';
+const STEP_REJECT_COLOR = colors.severity.critical;
+
+function HorizontalStepper({
+  events,
   isDark,
 }: {
-  event: ReportDetail['timeline'][number];
-  isLast: boolean;
+  events: ReportDetail['timeline'];
   isDark: boolean;
 }) {
-  const isRejected = event.status === 'rejected' && event.done;
-  const dotColor = isRejected
-    ? colors.severity.critical
-    : event.done
-      ? colors.brand[500]
-      : isDark
-        ? colors.slate[700]
-        : colors.slate[200];
-  const lineColor = isRejected
-    ? colors.severity.critical + '20'
-    : event.done
-      ? colors.brand[100]
-      : isDark
-        ? colors.slate[800]
-        : colors.slate[100];
-
   return (
-    <View style={tlStyles.row}>
-      <View style={tlStyles.leftCol}>
-        <View
-          style={[
-            tlStyles.dot,
-            { backgroundColor: event.done ? dotColor : 'transparent', borderColor: dotColor },
-          ]}
-        >
-          {event.done && (
-            <Ionicons
-              name={isRejected ? 'close' : 'checkmark'}
-              size={10}
-              color={colors.white}
-            />
-          )}
-        </View>
-        {!isLast && <View style={[tlStyles.line, { backgroundColor: lineColor }]} />}
+    <View style={hs.container}>
+      {/* Dots + lines */}
+      <View style={hs.dotsRow}>
+        {events.map((evt, i) => {
+          const isRejected = evt.status === 'rejected' && evt.done;
+          const dotBg = isRejected
+            ? STEP_REJECT_COLOR
+            : evt.done
+            ? STEP_DONE_COLOR
+            : STEP_ACTIVE_COLOR;
+          const lineBg = events[i - 1]?.done
+            ? STEP_DONE_COLOR
+            : isDark
+            ? colors.dark.border
+            : colors.slate[200];
+
+          return (
+            <>
+              {i > 0 && (
+                <View key={`line-${i}`} style={[hs.line, { backgroundColor: lineBg }]} />
+              )}
+              <View key={evt.status} style={[hs.dot, { backgroundColor: dotBg }]}>
+                {evt.done ? (
+                  <Ionicons
+                    name={isRejected ? 'close' : 'checkmark'}
+                    size={17}
+                    color={colors.white}
+                  />
+                ) : (
+                  <Text style={hs.stepNum}>{i + 1}</Text>
+                )}
+              </View>
+            </>
+          );
+        })}
       </View>
-      <View style={[tlStyles.content, isLast && { paddingBottom: 0 }]}>
-        <View style={tlStyles.topRow}>
-          <Text
-            style={[
-              tlStyles.label,
-              isDark && { color: colors.white },
-              !event.done && { color: colors.slate[400] },
-            ]}
-          >
-            {event.label}
-          </Text>
-          {event.time ? (
-            <Text style={[tlStyles.time, isDark && { color: colors.slate[600] }]}>
-              {event.time}
+
+      {/* Labels */}
+      <View style={hs.labelsRow}>
+        {events.map((evt, i) => {
+          const isRejected = evt.status === 'rejected' && evt.done;
+          const labelColor = isRejected
+            ? STEP_REJECT_COLOR
+            : evt.done
+            ? STEP_DONE_COLOR
+            : isDark
+            ? colors.slate[500]
+            : colors.slate[400];
+          return (
+            <Text
+              key={evt.status}
+              style={[hs.label, { color: labelColor }]}
+              numberOfLines={1}
+            >
+              {evt.label.toUpperCase()}
             </Text>
-          ) : null}
-        </View>
-        <Text
-          style={[
-            tlStyles.detail,
-            isDark && { color: colors.slate[400] },
-            !event.done && { color: colors.slate[400] },
-          ]}
-        >
-          {event.detail}
-        </Text>
+          );
+        })}
       </View>
     </View>
   );
 }
 
-const tlStyles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: 14 },
-  leftCol: { alignItems: 'center', width: 24 },
+const hs = StyleSheet.create({
+  container: { gap: 8 },
+  dotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   dot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
+    width: STEP_DOT,
+    height: STEP_DOT,
+    borderRadius: STEP_DOT / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  line: { flex: 1, width: 2, marginVertical: 2, borderRadius: 1 },
-  content: { flex: 1, paddingBottom: 22, gap: 3 },
-  topRow: {
+  line: {
+    flex: 1,
+    height: 2,
+    borderRadius: 1,
+  },
+  labelsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'baseline',
+    paddingHorizontal: 2,
   },
-  label: { fontSize: 14, fontWeight: '600', color: colors.slate[900] },
-  time: { fontSize: 11, color: colors.slate[400], fontWeight: '500' },
-  detail: { fontSize: 13, color: colors.slate[500], lineHeight: 18 },
+  label: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+  },
+  stepNum: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.white,
+  },
 });
 
 // ─── Gallery slide with error fallback ───────────────────────────────────────
@@ -299,7 +312,7 @@ function PhotoGallery({ urls, isDark }: { urls: string[]; isDark: boolean }) {
 
         {/* Gradient overlay at bottom for badge contrast */}
         <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.4)']}
+          colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.4)']}
           style={gal.slideGradient}
           pointerEvents="none"
         />
@@ -566,6 +579,7 @@ export default function ReportDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [chatUnread, setChatUnread] = useState(0);
   const [editSeverity, setEditSeverity] = useState<Severity>('low');
   const [editDescription, setEditDescription] = useState('');
   const [editMedia, setEditMedia] = useState<MediaItem[]>([]);
@@ -662,6 +676,9 @@ export default function ReportDetailScreen() {
       setError(null);
       const data = await getReportDetail(id, token);
       setReport(data);
+      if (data.status === 'assigned' || data.status === 'resolved') {
+        getUnreadCount(id, token).then(setChatUnread).catch(() => {});
+      }
     } catch {
       setError('Could not load report details.');
       showAlert({
@@ -685,6 +702,21 @@ export default function ReportDetailScreen() {
     socketService.on('report-status', handleStatus);
     return () => socketService.off('report-status', handleStatus);
   }, [id, load]);
+
+  useEffect(() => {
+    if (!token) return;
+    socketService.joinReport(id);
+    const handleNewMessage = (raw: { report_id?: number | string }) => {
+      if (String(raw?.report_id) === String(id)) {
+        setChatUnread(c => c + 1);
+      }
+    };
+    socketService.on('new-message', handleNewMessage);
+    return () => {
+      socketService.leaveReport(id);
+      socketService.off('new-message', handleNewMessage);
+    };
+  }, [id, token]);
 
   return (
     <View style={[s.root, { backgroundColor: screenBg }]}>
@@ -930,7 +962,7 @@ export default function ReportDetailScreen() {
                           resizeMode="cover"
                         />
                         <LinearGradient
-                          colors={['transparent', 'rgba(0,0,0,0.3)']}
+                          colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.3)']}
                           style={StyleSheet.absoluteFill}
                           pointerEvents="none"
                         />
@@ -1005,16 +1037,7 @@ export default function ReportDetailScreen() {
           {/* ── Status timeline ── */}
           <SectionCard isDark={isDark}>
             <SectionLabel text="Status Timeline" icon="git-commit-outline" iconColor="#8B5CF6" isDark={isDark} />
-            <View style={{ paddingTop: 4 }}>
-              {report.timeline.map((evt, i) => (
-                <TimelineItem
-                  key={evt.status}
-                  event={evt}
-                  isLast={i === report.timeline.length - 1}
-                  isDark={isDark}
-                />
-              ))}
-            </View>
+            <HorizontalStepper events={report.timeline} isDark={isDark} />
           </SectionCard>
 
           {/* ── Responder updates ── */}
@@ -1058,7 +1081,10 @@ export default function ReportDetailScreen() {
           {/* ── Message responder ── */}
           {(report.status === 'assigned' || report.status === 'resolved') && (
             <Pressable
-              onPress={() => router.push(`/resident/report/${id}/chat` as never)}
+              onPress={() => {
+                setChatUnread(0);
+                router.push(`/resident/report/${id}/chat` as never);
+              }}
               style={({ pressed }) => [
                 s.messageBtn,
                 isDark && {
@@ -1070,20 +1096,29 @@ export default function ReportDetailScreen() {
               accessibilityRole="button"
               accessibilityLabel="Message responder"
             >
-              <LinearGradient
-                colors={[colors.brand[500] + '18', colors.accent[500] + '10']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={s.messageBtnIcon}
-              >
-                <Ionicons name="chatbubbles" size={20} color={colors.brand[500]} />
-              </LinearGradient>
+              <View>
+                <LinearGradient
+                  colors={[colors.brand[500] + '18', colors.accent[500] + '10']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={s.messageBtnIcon}
+                >
+                  <Ionicons name="chatbubbles" size={20} color={colors.brand[500]} />
+                </LinearGradient>
+                {chatUnread > 0 && (
+                  <View style={s.chatBadge}>
+                    <Text style={s.chatBadgeText}>{chatUnread > 9 ? '9+' : chatUnread}</Text>
+                  </View>
+                )}
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={[s.messageBtnTitle, isDark && { color: colors.white }]}>
                   Message Responder
                 </Text>
                 <Text style={[s.messageBtnSub, isDark && { color: colors.slate[500] }]}>
-                  Chat with the assigned responder
+                  {chatUnread > 0
+                    ? `${chatUnread} new message${chatUnread > 1 ? 's' : ''}`
+                    : 'Chat with the assigned responder'}
                 </Text>
               </View>
               <Ionicons
@@ -1336,6 +1371,15 @@ const s = StyleSheet.create({
   },
   messageBtnTitle: { fontSize: 15, fontWeight: '700', color: colors.slate[900] },
   messageBtnSub: { fontSize: 12, color: colors.slate[400], marginTop: 1 },
+  chatBadge: {
+    position: 'absolute', top: -4, right: -4,
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: '#EF4444',
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5, borderColor: '#fff',
+  },
+  chatBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
 
   /* Withdraw */
   withdrawBtn: {
