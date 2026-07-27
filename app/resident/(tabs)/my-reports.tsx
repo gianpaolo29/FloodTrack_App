@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  Dimensions,
   Easing,
   FlatList,
   Image,
@@ -28,7 +27,7 @@ import { getMyReports } from '@/services/api';
 import { socketService } from '@/services/socket';
 import type { Report, ReportStatus } from '@/types';
 
-const { width: SCREEN_W } = Dimensions.get('window');
+// Removed static Dimensions — using percentage-based styles instead
 
 const HEADER_GRADIENT: [string, string, string] = ['#00D2FF', '#4A6CF7', '#7C3AED'];
 
@@ -838,7 +837,7 @@ const styles = StyleSheet.create({
     color: colors.slate[500],
     textAlign: 'center',
     lineHeight: 20,
-    maxWidth: SCREEN_W * 0.72,
+    maxWidth: '72%',
   },
   retryBtn: {
     flexDirection: 'row',
@@ -876,7 +875,7 @@ const styles = StyleSheet.create({
     color: colors.slate[400],
     textAlign: 'center',
     lineHeight: 20,
-    maxWidth: SCREEN_W * 0.72,
+    maxWidth: '72%',
   },
   emptyActionBtn: {
     flexDirection: 'row',

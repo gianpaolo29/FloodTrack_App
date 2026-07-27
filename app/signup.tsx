@@ -13,6 +13,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -27,8 +28,8 @@ import { colors } from '@/theme/colors';
 import { apiCheckEmail, apiRegister, apiDeleteAccount, apiMarkEmailVerified } from '@/services/api';
 import { sendEmailVerificationOtp } from '@/services/brevo';
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const HERO_H = SCREEN_H * 0.25;
+const { width: INIT_W, height: INIT_H } = Dimensions.get('window');
+const HERO_H = INIT_H * 0.22;
 
 
 const EMAIL_RE     = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -72,6 +73,9 @@ export default function SignUpScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { login } = useAuth();
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const heroH = Math.min(screenH * 0.22, 200);
+  const isSmall = screenH < 700;
 
   // ── Entrance animations ──────────────────────────────────────────────────
   const heroOpacity  = useRef(new Animated.Value(0)).current;
@@ -315,7 +319,7 @@ export default function SignUpScreen() {
 
       <KeyboardAvoidingView
         style={s.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {/* ── Hero ─────────────────────────────────────────────────────── */}
         <Animated.View style={{ opacity: heroOpacity, transform: [{ scale: heroScale }] }}>
@@ -323,24 +327,24 @@ export default function SignUpScreen() {
             colors={colors.gradients.hero}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[s.hero, { paddingTop: insets.top + 12 }]}
+            style={[s.hero, { height: heroH, paddingTop: insets.top + 8, paddingBottom: isSmall ? 20 : 36 }]}
           >
             <View style={[s.orb, s.orb1]} />
             <View style={[s.orb, s.orb2]} />
-            <View style={[s.orb, s.orb3]} />
+            <View style={[s.orb, s.orb3, { left: screenW * 0.55 }]} />
 
-            <Particle delay={200}  x={SCREEN_W * 0.1}  y={40} size={3} />
-            <Particle delay={800}  x={SCREEN_W * 0.85} y={60} size={4} />
-            <Particle delay={1200} x={SCREEN_W * 0.4}  y={30} size={3} />
+            <Particle delay={200}  x={screenW * 0.1}  y={40} size={3} />
+            <Particle delay={800}  x={screenW * 0.85} y={60} size={4} />
+            <Particle delay={1200} x={screenW * 0.4}  y={30} size={3} />
 
-            <View style={s.logoBadge}>
-              <View style={s.logoBadgeInner}>
-                <Image source={require('@/assets/images/logo-water.png')} style={{ width: 64, height: 64 }} resizeMode="contain" />
+            <View style={isSmall ? s.logoBadgeSmall : s.logoBadge}>
+              <View style={isSmall ? s.logoBadgeInnerSmall : s.logoBadgeInner}>
+                <Image source={require('@/assets/images/logo-water.png')} style={{ width: isSmall ? 40 : 64, height: isSmall ? 40 : 64 }} resizeMode="contain" />
               </View>
-              <View style={s.logoBadgeRing} />
+              {!isSmall && <View style={s.logoBadgeRing} />}
             </View>
 
-            <Text style={s.logoTitle}>FLOODTRACK</Text>
+            <Text style={[s.logoTitle, isSmall && { fontSize: 18, letterSpacing: 3 }]}>FLOODTRACK</Text>
             <Text style={s.logoSub}>Create your account</Text>
           </LinearGradient>
 
@@ -363,10 +367,10 @@ export default function SignUpScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={s.titleRow}>
-              <Text style={s.titleBold}>Create </Text>
-              <Text style={s.titleLight}>account</Text>
+              <Text style={[s.titleBold, isSmall && { fontSize: 24 }]}>Create </Text>
+              <Text style={[s.titleLight, isSmall && { fontSize: 24 }]}>account</Text>
             </View>
-            <Text style={s.titleSub}>Fill in the details to get started</Text>
+            <Text style={[s.titleSub, isSmall && { marginBottom: 8 }]}>Fill in the details to get started</Text>
 
             {/* First + Last name */}
             <View style={s.nameRow}>
@@ -663,11 +667,18 @@ const s = StyleSheet.create({
   orb: { position: 'absolute', borderRadius: 999, backgroundColor: colors.overlay.whiteThin },
   orb1: { width: 200, height: 200, top: -60, right: -50 },
   orb2: { width: 140, height: 140, bottom: 10, left: -40, backgroundColor: colors.overlay.whiteSubtle },
-  orb3: { width: 80, height: 80, top: 40, left: SCREEN_W * 0.55, backgroundColor: colors.overlay.whiteFaint },
+  orb3: { width: 80, height: 80, top: 40, backgroundColor: colors.overlay.whiteFaint },
 
   logoBadge: { alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  logoBadgeSmall: { alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
   logoBadgeInner: {
     width: 100, height: 100, borderRadius: 30,
+    backgroundColor: colors.overlay.whiteRegular,
+    borderWidth: 1.5, borderColor: colors.overlay.whiteFirm,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  logoBadgeInnerSmall: {
+    width: 60, height: 60, borderRadius: 18,
     backgroundColor: colors.overlay.whiteRegular,
     borderWidth: 1.5, borderColor: colors.overlay.whiteFirm,
     alignItems: 'center', justifyContent: 'center',

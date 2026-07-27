@@ -6,7 +6,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Dimensions,
   Image,
   Pressable,
   ScrollView,
@@ -14,6 +13,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -31,8 +31,7 @@ import { getReportDetail, updateReport, deleteReportMedia, withdrawReport, getUn
 import { socketService } from '@/services/socket';
 import type { ReportDetail, MediaItem } from '@/types';
 
-const { width: SCREEN_W } = Dimensions.get('window');
-const GALLERY_W = SCREEN_W - 48; // 24px padding each side
+// Gallery width computed dynamically inside components via useWindowDimensions
 
 // ─── Severity color helper ───────────────────────────────────────────────────
 
@@ -224,11 +223,13 @@ function GallerySlide({
   index,
   total,
   isDark,
+  slideW,
 }: {
   url: string;
   index: number;
   total: number;
   isDark: boolean;
+  slideW: number;
 }) {
   const [errored, setErrored] = useState(false);
 
@@ -237,7 +238,7 @@ function GallerySlide({
       <View
         style={[
           gal.slide,
-          { width: GALLERY_W, alignItems: 'center', justifyContent: 'center' },
+          { width: slideW, alignItems: 'center', justifyContent: 'center' },
           isDark && { backgroundColor: colors.dark.elevated },
         ]}
       >
@@ -252,7 +253,7 @@ function GallerySlide({
   return (
     <Image
       source={{ uri: url }}
-      style={[gal.slide, { width: GALLERY_W }]}
+      style={[gal.slide, { width: slideW }]}
       resizeMode="cover"
       onError={() => setErrored(true)}
       accessibilityLabel={`Photo ${index + 1} of ${total}`}
@@ -265,10 +266,12 @@ function GallerySlide({
 function PhotoGallery({ urls, isDark }: { urls: string[]; isDark: boolean }) {
   const [active, setActive] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
+  const { width: screenW } = useWindowDimensions();
+  const galleryW = screenW - 48;
 
   function goTo(i: number) {
     setActive(i);
-    scrollRef.current?.scrollTo({ x: i * GALLERY_W, animated: true });
+    scrollRef.current?.scrollTo({ x: i * galleryW, animated: true });
   }
 
   if (urls.length === 0) {
@@ -294,10 +297,10 @@ function PhotoGallery({ urls, isDark }: { urls: string[]; isDark: boolean }) {
           showsHorizontalScrollIndicator={false}
           scrollEventThrottle={16}
           onScroll={(e) => {
-            const idx = Math.round(e.nativeEvent.contentOffset.x / GALLERY_W);
+            const idx = Math.round(e.nativeEvent.contentOffset.x / galleryW);
             if (idx !== active) setActive(idx);
           }}
-          style={{ width: GALLERY_W }}
+          style={{ width: galleryW }}
         >
           {urls.map((url, i) => (
             <GallerySlide
@@ -306,6 +309,7 @@ function PhotoGallery({ urls, isDark }: { urls: string[]; isDark: boolean }) {
               index={i}
               total={urls.length}
               isDark={isDark}
+              slideW={galleryW}
             />
           ))}
         </ScrollView>
@@ -1449,7 +1453,7 @@ const editS = StyleSheet.create({
     gap: 10,
   },
   photoItem: {
-    width: (GALLERY_W - 10) / 2,
+    width: '48%',
     height: 130,
     borderRadius: 14,
     overflow: 'hidden',

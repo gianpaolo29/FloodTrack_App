@@ -320,7 +320,7 @@ export default function AssignmentsTab() {
           {filtered.length === 0 ? (
             <View style={s.empty}>
               <LinearGradient
-                colors={[colors.brand[400], colors.brand[700]]}
+                colors={[colors.brand[300], colors.brand[700]]}
                 style={s.emptyIcon}
               >
                 <Ionicons name="shield-outline" size={28} color="#fff" />

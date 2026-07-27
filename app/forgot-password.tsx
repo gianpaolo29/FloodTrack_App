@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  Dimensions,
   Easing,
   KeyboardAvoidingView,
   Platform,
@@ -11,6 +10,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -25,7 +25,7 @@ import { sendPasswordResetEmail } from '@/services/brevo';
 import { apiCheckEmail } from '@/services/api';
 import { setItem } from '@/utils/storage';
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+// Dynamic dimensions are now obtained via useWindowDimensions() inside components
 
 export const OTP_CODE_KEY   = 'floodtrack_reset_otp';
 export const OTP_EMAIL_KEY  = 'floodtrack_reset_email';
@@ -74,6 +74,8 @@ function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: numb
 export default function ForgotPasswordScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const heroH = Math.min(screenH * 0.24, 220);
 
   const heroOpacity  = useRef(new Animated.Value(0)).current;
   const heroTransY   = useRef(new Animated.Value(-20)).current;
@@ -184,14 +186,14 @@ export default function ForgotPasswordScreen() {
             colors={colors.gradients.hero}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[s.hero, { paddingTop: insets.top + 8 }]}
+            style={[s.hero, { paddingTop: insets.top + 8, height: heroH }]}
           >
             <View style={[s.orb, s.orb1]} />
             <View style={[s.orb, s.orb2]} />
 
-            <Particle delay={200}  x={SCREEN_W * 0.1}  y={36} size={3} />
-            <Particle delay={900}  x={SCREEN_W * 0.82} y={50} size={4} />
-            <Particle delay={1400} x={SCREEN_W * 0.45} y={28} size={3} />
+            <Particle delay={200}  x={screenW * 0.1}  y={36} size={3} />
+            <Particle delay={900}  x={screenW * 0.82} y={50} size={4} />
+            <Particle delay={1400} x={screenW * 0.45} y={28} size={3} />
 
             <Pressable
               onPress={() => router.back()}
@@ -319,7 +321,6 @@ const s = StyleSheet.create({
   flex: { flex: 1 },
 
   hero: {
-    height: SCREEN_H * 0.24,
     alignItems: 'center',
     justifyContent: 'center',
     paddingBottom: 28,

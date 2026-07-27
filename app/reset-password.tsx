@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  Dimensions,
   Easing,
   KeyboardAvoidingView,
   Platform,
@@ -11,6 +10,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -26,7 +26,7 @@ import { sendPasswordResetEmail } from '@/services/brevo';
 import { getItem, deleteItem, setItem } from '@/utils/storage';
 import { OTP_CODE_KEY, OTP_EMAIL_KEY, OTP_EXPIRY_KEY } from './forgot-password';
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+// Dynamic dimensions are now obtained via useWindowDimensions() inside components
 const OTP_LENGTH = 6;
 const OTP_TTL_MS = 10 * 60 * 1000;
 
@@ -80,6 +80,9 @@ function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: numb
 export default function ResetPasswordScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const heroH = Math.min(screenH * 0.23, 200);
+  const otpBoxW = Math.max(36, (screenW - 56 - 50) / 6);
 
   // ── Animations ────────────────────────────────────────────────────────────
   const heroOpacity   = useRef(new Animated.Value(0)).current;
@@ -348,14 +351,14 @@ export default function ResetPasswordScreen() {
             colors={colors.gradients.hero}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[s.hero, { paddingTop: insets.top + 8 }]}
+            style={[s.hero, { paddingTop: insets.top + 8, height: heroH }]}
           >
             <View style={[s.orb, s.orb1]} />
             <View style={[s.orb, s.orb2]} />
 
-            <Particle delay={300}  x={SCREEN_W * 0.08} y={38} size={3} />
-            <Particle delay={800}  x={SCREEN_W * 0.80} y={52} size={4} />
-            <Particle delay={1500} x={SCREEN_W * 0.50} y={26} size={3} />
+            <Particle delay={300}  x={screenW * 0.08} y={38} size={3} />
+            <Particle delay={800}  x={screenW * 0.80} y={52} size={4} />
+            <Particle delay={1500} x={screenW * 0.50} y={26} size={3} />
 
             {/* Step indicator */}
             <View style={s.stepPills}>
@@ -416,6 +419,7 @@ export default function ResetPasswordScreen() {
                         onPress={() => otpRefs.current[i]?.focus()}
                         style={[
                           s.otpBox,
+                          { width: otpBoxW },
                           activeOtpIdx === i && s.otpBoxActive,
                           d !== '' && s.otpBoxFilled,
                         ]}
@@ -622,7 +626,6 @@ const s = StyleSheet.create({
 
   // ── Hero ──────────────────────────────────────────────────────────────────
   hero: {
-    height: SCREEN_H * 0.23,
     alignItems: 'center', justifyContent: 'center',
     paddingBottom: 26, overflow: 'hidden',
   },
@@ -672,7 +675,6 @@ const s = StyleSheet.create({
   // ── OTP boxes ─────────────────────────────────────────────────────────────
   otpRow: { flexDirection: 'row', gap: 10, justifyContent: 'center', marginBottom: 14 },
   otpBox: {
-    width: (SCREEN_W - 56 - 50) / 6,
     aspectRatio: 1,
     borderRadius: 14,
     backgroundColor: colors.auth.inputBg,

@@ -12,6 +12,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -39,8 +40,9 @@ try {
   // Native module not available — requires a dev build (npx expo run:android)
 }
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const HERO_H = SCREEN_H * 0.42;
+const { width: INIT_W, height: INIT_H } = Dimensions.get('window');
+// Static fallbacks for StyleSheet — live values come from useWindowDimensions
+const HERO_H = INIT_H * 0.36;
 
 function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: number; size?: number }) {
   const translateY = useRef(new Animated.Value(0)).current;
@@ -115,6 +117,8 @@ export default function LoginScreen() {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const { login } = useAuth();
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const heroH = Math.min(screenH * 0.36, 320);
 
   const [showSplash, setShowSplash] = useState(true);
   const splashLogoScale   = useRef(new Animated.Value(0.3)).current;
@@ -256,6 +260,7 @@ export default function LoginScreen() {
   const shimmerX = splashShimmer.interpolate({ inputRange: [0, 1], outputRange: [-120, 220] });
   const emailBorder = emailGlow.interpolate({ inputRange: [0, 1], outputRange: ['rgba(0,0,0,0)', colors.auth.primary] });
   const pwdBorder   = pwdGlow.interpolate({   inputRange: [0, 1], outputRange: ['rgba(0,0,0,0)', colors.auth.primary] });
+  const isSmall = screenH < 700;
 
   return (
     <View style={s.root}>
@@ -275,11 +280,11 @@ export default function LoginScreen() {
             <PulseRing size={340} color={colors.overlay.whiteSubtle} delay={1600} />
           </View>
 
-          <Particle delay={100}  x={SCREEN_W * 0.12} y={SCREEN_H * 0.3} />
-          <Particle delay={500}  x={SCREEN_W * 0.8}  y={SCREEN_H * 0.35} size={3} />
-          <Particle delay={900}  x={SCREEN_W * 0.25} y={SCREEN_H * 0.58} size={5} />
-          <Particle delay={1300} x={SCREEN_W * 0.7}  y={SCREEN_H * 0.28} />
-          <Particle delay={700}  x={SCREEN_W * 0.5}  y={SCREEN_H * 0.62} size={3} />
+          <Particle delay={100}  x={screenW * 0.12} y={screenH * 0.3} />
+          <Particle delay={500}  x={screenW * 0.8}  y={screenH * 0.35} size={3} />
+          <Particle delay={900}  x={screenW * 0.25} y={screenH * 0.58} size={5} />
+          <Particle delay={1300} x={screenW * 0.7}  y={screenH * 0.28} />
+          <Particle delay={700}  x={screenW * 0.5}  y={screenH * 0.62} size={3} />
 
           <Animated.View style={[s.splashLogoWrap, {
             opacity: splashLogoOpacity,
@@ -315,24 +320,24 @@ export default function LoginScreen() {
               colors={colors.gradients.hero}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={[s.hero, { paddingTop: insets.top + 12 }]}
+              style={[s.hero, { height: heroH, paddingTop: insets.top + 12 }]}
             >
               <View style={[s.orb, s.orb1]} />
               <View style={[s.orb, s.orb2]} />
-              <View style={[s.orb, s.orb3]} />
+              <View style={[s.orb, s.orb3, { left: screenW * 0.55 }]} />
 
-              <Particle delay={200}  x={SCREEN_W * 0.1}  y={40} size={3} />
-              <Particle delay={800}  x={SCREEN_W * 0.85} y={60} size={4} />
-              <Particle delay={1200} x={SCREEN_W * 0.4}  y={30} size={3} />
+              <Particle delay={200}  x={screenW * 0.1}  y={40} size={3} />
+              <Particle delay={800}  x={screenW * 0.85} y={60} size={4} />
+              <Particle delay={1200} x={screenW * 0.4}  y={30} size={3} />
 
-              <View style={s.logoBadge}>
-                <View style={s.logoBadgeInner}>
-                  <Image source={require('@/assets/images/logo-water.png')} style={{ width: 64, height: 64 }} resizeMode="contain" />
+              <View style={isSmall ? s.logoBadgeSmall : s.logoBadge}>
+                <View style={isSmall ? s.logoBadgeInnerSmall : s.logoBadgeInner}>
+                  <Image source={require('@/assets/images/logo-water.png')} style={{ width: isSmall ? 48 : 64, height: isSmall ? 48 : 64 }} resizeMode="contain" />
                 </View>
-                <View style={s.logoBadgeRing} />
+                {!isSmall && <View style={s.logoBadgeRing} />}
               </View>
 
-              <Text style={s.logoTitle}>FLOODTRACK</Text>
+              <Text style={[s.logoTitle, isSmall && { fontSize: 20, letterSpacing: 4 }]}>FLOODTRACK</Text>
               <Text style={s.logoSub}>Stay informed, stay safe</Text>
             </LinearGradient>
 
@@ -354,10 +359,10 @@ export default function LoginScreen() {
               showsVerticalScrollIndicator={false}
             >
               <View style={s.titleRow}>
-                <Text style={s.titleBold}>Welcome </Text>
-                <Text style={s.titleLight}>back !</Text>
+                <Text style={[s.titleBold, isSmall && { fontSize: 24 }]}>Welcome </Text>
+                <Text style={[s.titleLight, isSmall && { fontSize: 24 }]}>back !</Text>
               </View>
-              <Text style={s.titleSub}>Sign in to access your dashboard</Text>
+              <Text style={[s.titleSub, isSmall && { marginBottom: 10 }]}>Sign in to access your dashboard</Text>
 
 
               <Animated.View style={[s.fieldWrap, { opacity: f1Opacity, transform: [{ translateX: f1TransX }] }]}>
@@ -537,14 +542,24 @@ const s = StyleSheet.create({
   },
   orb1: { width: 200, height: 200, top: -60, right: -50 },
   orb2: { width: 140, height: 140, bottom: 10, left: -40, backgroundColor: colors.overlay.whiteSubtle },
-  orb3: { width: 80,  height: 80,  top: 40,   left: SCREEN_W * 0.55, backgroundColor: colors.overlay.whiteFaint },
+  orb3: { width: 80,  height: 80,  top: 40, backgroundColor: colors.overlay.whiteFaint },
 
   logoBadge: {
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 16,
   },
+  logoBadgeSmall: {
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 8,
+  },
   logoBadgeInner: {
     width: 100, height: 100, borderRadius: 30,
+    backgroundColor: colors.overlay.whiteRegular,
+    borderWidth: 1.5, borderColor: colors.overlay.whiteFirm,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  logoBadgeInnerSmall: {
+    width: 72, height: 72, borderRadius: 22,
     backgroundColor: colors.overlay.whiteRegular,
     borderWidth: 1.5, borderColor: colors.overlay.whiteFirm,
     alignItems: 'center', justifyContent: 'center',

@@ -251,7 +251,7 @@ const DEPTH_LEVELS = [
 type DepthKey = typeof DEPTH_LEVELS[number]['key'];
 
 // Initial values for StyleSheet (static); components use useWindowDimensions for live values
-const { height: INIT_SCREEN_H, width: INIT_SCREEN_W } = Dimensions.get('window');
+const { height: INIT_SCREEN_H } = Dimensions.get('window');
 const INIT_PICKER_H = Math.max(280, Math.min(480, INIT_SCREEN_H * 0.45));
 const FIGURE_SCALE = INIT_PICKER_H / 400;
 
@@ -264,11 +264,13 @@ function FloodDepthPicker({
   onSelect,
   isDark,
   pickerH,
+  screenW,
 }: {
   selected: DepthKey | null;
   onSelect: (key: DepthKey, severity: Severity) => void;
   isDark: boolean;
   pickerH: number;
+  screenW: number;
 }) {
   const initIdx  = selected ? DEPTH_LEVELS.findIndex(d => d.key === selected) : -1;
   const initFrac = initIdx >= 0 ? SNAPS[initIdx] : 0;
@@ -395,7 +397,7 @@ function FloodDepthPicker({
 
   return (
     <View
-      style={fdp.stepBody}
+      style={[fdp.stepBody, screenW < 360 && { padding: 16, paddingTop: 12 }]}
       accessibilityRole="adjustable"
       accessibilityLabel={selected ? `Flood depth: ${selectedLabel}` : 'Flood depth picker'}
       accessibilityHint="Swipe up or down to change flood depth, or tap a level on the right"
@@ -412,8 +414,8 @@ function FloodDepthPicker({
         }
       }}
     >
-      <Text style={[fdp.title, { color: textColor }]}>How deep is the flood?</Text>
-      <Text style={[fdp.subtitle, { color: subColor }]}>
+      <Text style={[fdp.title, { color: textColor }, screenW < 360 && { fontSize: 19 }]}>How deep is the flood?</Text>
+      <Text style={[fdp.subtitle, { color: subColor }, screenW < 360 && { fontSize: 13 }]}>
         Drag the water level or tap a depth level.
       </Text>
 
@@ -537,7 +539,7 @@ function FloodDepthPicker({
               )}
             </View>
 
-            <View style={fdp.labelCol}>
+            <View style={[fdp.labelCol, { width: screenW < 360 ? 86 : 102 }]}>
               {DEPTH_LEVELS.map((level, i) => {
                 const c = colors.severity[level.severity];
                 const active = selected === level.key;
@@ -561,7 +563,7 @@ function FloodDepthPicker({
                     <View style={active ? [fdp.labelPill, { backgroundColor: c + '18', borderColor: c + '30' }] : undefined}>
                       <Text style={[
                         fdp.labelText,
-                        { color: active ? c : subColor },
+                        { color: active ? c : subColor, fontSize: screenW < 360 ? 10 : 11 },
                         active && fdp.labelTextActive,
                       ]}>
                         {level.label}
@@ -588,9 +590,9 @@ function DepthFtText({ depthFt }: { depthFt: SharedValue<number> }) {
 const s = (v: number) => Math.round(v * FIGURE_SCALE);
 
 const fdp = StyleSheet.create({
-  stepBody:  { padding: INIT_SCREEN_W < 360 ? 16 : 24, paddingTop: INIT_SCREEN_W < 360 ? 12 : 14, gap: 14 },
-  title:     { fontSize: INIT_SCREEN_W < 360 ? 19 : 22, fontWeight: '800', letterSpacing: -0.3 },
-  subtitle:  { fontSize: INIT_SCREEN_W < 360 ? 13 : 14, lineHeight: 20, letterSpacing: 0.1, marginBottom: 2 },
+  stepBody:  { padding: 24, paddingTop: 14, gap: 14 },
+  title:     { fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
+  subtitle:  { fontSize: 14, lineHeight: 20, letterSpacing: 0.1, marginBottom: 2 },
 
   card: {
     flexDirection: 'row',
@@ -739,7 +741,6 @@ const fdp = StyleSheet.create({
   dragHintText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
 
   labelCol: {
-    width: INIT_SCREEN_W < 360 ? 86 : 102,
     position: 'relative', zIndex: 3,
   },
   labelItem: {
@@ -762,7 +763,7 @@ const fdp = StyleSheet.create({
   labelPill: {
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1,
   },
-  labelText: { fontSize: INIT_SCREEN_W < 360 ? 10 : 11, fontWeight: '600' },
+  labelText: { fontSize: 11, fontWeight: '600' },
   labelTextActive: { fontWeight: '800', letterSpacing: 0.2 },
 
   banner: {
@@ -1010,7 +1011,7 @@ export default function ReportScreen() {
   const isDark   = scheme === 'dark';
   const { token } = useAuth();
   const { showAlert } = useAlert();
-  const { height: screenH } = useWindowDimensions();
+  const { height: screenH, width: screenW } = useWindowDimensions();
   const pickerH = Math.max(280, Math.min(480, screenH * 0.42));
 
   const [step, setStep]                   = useState(0);
@@ -1271,6 +1272,7 @@ export default function ReportScreen() {
             }}
             isDark={isDark}
             pickerH={pickerH}
+            screenW={screenW}
           />
         )}
         {step === 2 && (

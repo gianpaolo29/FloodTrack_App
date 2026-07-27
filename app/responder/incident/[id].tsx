@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
-  Dimensions,
   Image,
   Linking,
   Modal,
@@ -12,6 +11,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -40,8 +40,7 @@ import {
 import { socketService } from '@/services/socket';
 import type { IncidentDetail, MemberStatus, ResponderStatus, Severity, Team, TeamMember } from '@/types';
 
-const { width: SCREEN_W } = Dimensions.get('window');
-const THUMB_SIZE = Math.floor((SCREEN_W - 32 - 36 - 28) / 4); // 4 per row with 16px padding + gaps
+// Thumb size computed dynamically inside components via useWindowDimensions
 
 // ─── Severity gradient ───────────────────────────────────────────────────────
 const SEVERITY_GRADIENTS: Record<Severity, readonly [string, string, string]> = {
@@ -704,7 +703,7 @@ function LightboxModal({
 const lb = StyleSheet.create({
   root:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
   backdrop: StyleSheet.absoluteFillObject,
-  image:   { width: SCREEN_W, height: SCREEN_W, maxHeight: '70%' },
+  image:   { width: '100%', aspectRatio: 1, maxHeight: '70%' },
   closeBtn: {
     position: 'absolute', top: 56, right: 20,
     width: 40, height: 40, borderRadius: 20,
@@ -731,6 +730,8 @@ export default function IncidentDetailScreen() {
   const scheme    = useColorScheme();
   const isDark    = scheme === 'dark';
   const { token, user } = useAuth();
+  const { width: screenW } = useWindowDimensions();
+  const thumbSize = Math.floor((screenW - 32 - 36 - 28) / 4);
 
   const [incident, setIncident]           = useState<IncidentDetail | null>(null);
   const [loading, setLoading]             = useState(true);
@@ -1123,7 +1124,7 @@ export default function IncidentDetailScreen() {
                       onPress={() => setLightboxIdx(idx)}
                       style={({ pressed }) => [
                         styles.evidenceThumb,
-                        { width: THUMB_SIZE, height: THUMB_SIZE },
+                        { width: thumbSize, height: thumbSize },
                         pressed && { opacity: 0.8 },
                       ]}
                       accessibilityRole="button"

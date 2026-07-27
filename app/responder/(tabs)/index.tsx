@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  Dimensions,
   Easing,
   Image,
   Modal,
@@ -43,7 +42,6 @@ import { useNetworkStatus } from '@/hooks/use-network-status';
 import { socketService } from '@/services/socket';
 import type { Incident, MemberStatus, ResponderStats, ResponderStatus, Team } from '@/types';
 
-const { width: SCREEN_W } = Dimensions.get('window');
 const H_PAD = 20;
 const CARD_GAP = 14;
 
@@ -1589,7 +1587,7 @@ const $ = StyleSheet.create({
     marginBottom: 10,
   },
   perfBox: {
-    width: (SCREEN_W - H_PAD * 2 - 2 - 24 - 10) / 2,
+    flex: 1,
     alignItems: 'center',
     paddingVertical: 20,
     borderRadius: 14,
