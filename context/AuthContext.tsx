@@ -58,8 +58,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(u);
 
           getExpoPushToken().then(async (pushToken) => {
+            console.log('[Auth] push token result:', pushToken ? pushToken.substring(0, 20) + '...' : null);
             if (pushToken) {
-              await registerPushToken(pushToken, storedToken).catch(() => {});
+              try {
+                await registerPushToken(pushToken, storedToken);
+                console.log('[Auth] push token registered with backend');
+              } catch (e) {
+                console.error('[Auth] push token registration failed:', e);
+              }
               await Storage.setItem(PUSH_TOKEN_KEY, pushToken);
             }
           });
@@ -131,8 +137,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(u);
 
     getExpoPushToken().then(async (pushToken) => {
+      console.log('[Auth] persist push token result:', pushToken ? pushToken.substring(0, 20) + '...' : null);
       if (pushToken) {
-        await registerPushToken(pushToken, t).catch(() => {});
+        try {
+          await registerPushToken(pushToken, t);
+          console.log('[Auth] persist push token registered');
+        } catch (e) {
+          console.error('[Auth] persist push token registration failed:', e);
+        }
         await Storage.setItem(PUSH_TOKEN_KEY, pushToken);
       }
     });

@@ -5,6 +5,7 @@
 export default {
   name: 'FloodTrack',
   slug: 'FloodTrack',
+  owner: 'gianpaolo29',
   version: '1.0.0',
   orientation: 'portrait',
   icon: './assets/images/icon.png',
@@ -47,6 +48,7 @@ export default {
 
   plugins: [
     'expo-router',
+    'expo-av',
     [
       'expo-splash-screen',
       {
@@ -58,6 +60,15 @@ export default {
       },
     ],
     'expo-secure-store',
+    [
+      'expo-notifications',
+      {
+        icon: './assets/images/icon.png',
+        color: '#1F6FBF',
+        defaultChannel: 'floodtrack',
+        sounds: [],
+      },
+    ],
   ],
 
   extra: {

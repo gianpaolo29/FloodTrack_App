@@ -11,9 +11,25 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
-import { encode as btoa } from 'base-64';
+
+// Lazy-load native modules to prevent crash if unavailable
+let Audio: typeof import('expo-av').Audio | null = null;
+let FileSystem: typeof import('expo-file-system') | null = null;
+try {
+  Audio = require('expo-av').Audio;
+  console.log('[EmergencyAlert] expo-av loaded');
+} catch (e) {
+  console.warn('[EmergencyAlert] expo-av failed to load:', e);
+}
+try {
+  FileSystem = require('expo-file-system');
+  console.log('[EmergencyAlert] expo-file-system loaded');
+} catch (e) {
+  console.warn('[EmergencyAlert] expo-file-system failed to load:', e);
+}
+
+// Always use base-64 package — Hermes btoa can't handle binary strings (bytes > 127)
+const { encode: encodeBtoa } = require('base-64');
 
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -86,7 +102,7 @@ function generateWavBase64(segments: ToneSegment[], volume = 0.5, waveType: 'sin
   const bytes = new Uint8Array(buffer);
   let binary = '';
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
+  return encodeBtoa(binary);
 }
 
 // Tone definitions per alert type
@@ -127,15 +143,25 @@ const wavCache: Record<string, string> = {};
 
 async function getWavUri(type: string): Promise<string> {
   if (wavCache[type]) return wavCache[type];
+  if (!FileSystem) {
+    console.warn('[EmergencyAlert] FileSystem not available, cannot generate WAV');
+    return '';
+  }
 
   const tone = TONES[type];
   if (!tone) return '';
 
-  const base64 = generateWavBase64(tone.segments, tone.volume, tone.wave);
-  const path = `${FileSystem.cacheDirectory}alert_${type}.wav`;
-  await FileSystem.writeAsStringAsync(path, base64, { encoding: FileSystem.EncodingType.Base64 });
-  wavCache[type] = path;
-  return path;
+  try {
+    const base64 = generateWavBase64(tone.segments, tone.volume, tone.wave);
+    const path = `${FileSystem.cacheDirectory}alert_${type}.wav`;
+    await FileSystem.writeAsStringAsync(path, base64, { encoding: FileSystem.EncodingType.Base64 });
+    console.log('[EmergencyAlert] WAV written:', path);
+    wavCache[type] = path;
+    return path;
+  } catch (e) {
+    console.error('[EmergencyAlert] WAV generation failed:', e);
+    return '';
+  }
 }
 
 interface EmergencyAlert {
@@ -189,7 +215,7 @@ export function EmergencyAlertProvider({ children }: { children: React.ReactNode
   const { token, user } = useAuth();
   const [queue, setQueue] = useState<EmergencyAlert[]>([]);
   const current = queue[0] ?? null;
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<any>(null);
 
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
@@ -209,27 +235,38 @@ export function EmergencyAlertProvider({ children }: { children: React.ReactNode
   }, []);
 
   const playSound = useCallback(async (type: string) => {
+    if (!Audio) {
+      console.warn('[EmergencyAlert] Audio not available, skipping sound');
+      return;
+    }
     try {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
+        shouldDuckAndroid: false,
+        staysActiveInBackground: true,
       });
 
       const uri = await getWavUri(type);
-      if (!uri) return;
+      if (!uri) {
+        console.warn('[EmergencyAlert] No WAV URI for type:', type);
+        return;
+      }
 
       // Unload previous
       if (soundRef.current) {
         try { await soundRef.current.unloadAsync(); } catch {}
       }
 
+      console.log('[EmergencyAlert] Playing sound:', uri);
       const { sound } = await Audio.Sound.createAsync(
         { uri },
         { shouldPlay: true, volume: 1.0 }
       );
       soundRef.current = sound;
-    } catch {}
+    } catch (e) {
+      console.error('[EmergencyAlert] playSound failed:', e);
+    }
   }, []);
 
   const stopFeedback = useCallback(() => {

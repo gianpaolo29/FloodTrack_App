@@ -1,4 +1,4 @@
-import { AppState, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Storage from '@/utils/storage';
 
@@ -11,8 +11,12 @@ if (!isExpoGo) {
   try {
     Notifications = require('expo-notifications');
     Device = require('expo-device');
-  } catch {
+    console.log('[Notifications] modules loaded successfully');
+  } catch (e) {
+    console.warn('[Notifications] failed to load modules:', e);
   }
+} else {
+  console.log('[Notifications] skipping module load — running in Expo Go');
 }
 
 export interface NotificationPrefs {
@@ -52,7 +56,10 @@ function shouldShowNotification(data: any, prefs: NotificationPrefs): boolean {
 let initialized = false;
 
 export function initNotifications() {
-  if (initialized || !Notifications) return;
+  if (initialized || !Notifications) {
+    console.log('[Notifications] initNotifications skipped:', { initialized, hasNotifications: !!Notifications });
+    return;
+  }
   initialized = true;
 
   try {
@@ -62,16 +69,11 @@ export function initNotifications() {
         const prefs = await getNotificationPrefs();
         const show = shouldShowNotification(data, prefs);
 
-        // When app is in foreground and it's an alert notification,
-        // suppress sound/banner — the in-app popup handles it
-        const isForeground = AppState.currentState === 'active';
-        const isAlert = data?.type === 'alert';
-
         return {
-          shouldShowAlert: show && !(isForeground && isAlert),
-          shouldPlaySound: show && !(isForeground && isAlert),
+          shouldShowAlert: show,
+          shouldPlaySound: show,
           shouldSetBadge: show,
-          shouldShowBanner: show && !(isForeground && isAlert),
+          shouldShowBanner: show,
           shouldShowList: show,
         };
       },
@@ -80,21 +82,29 @@ export function initNotifications() {
     if (Platform.OS === 'android') {
       Notifications.setNotificationChannelAsync('floodtrack', {
         name: 'FloodTrack Alerts',
-        importance: Notifications.AndroidImportance.HIGH,
+        importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#1F6FBF',
         sound: 'default',
       });
     }
-  } catch {
+    console.log('[Notifications] handler and channel configured');
+  } catch (e) {
+    console.error('[Notifications] initNotifications failed:', e);
   }
 }
 
 export async function getExpoPushToken(): Promise<string | null> {
-  if (!Notifications || !Device || isExpoGo) return null;
+  if (!Notifications || !Device || isExpoGo) {
+    console.warn('[Notifications] getExpoPushToken skipped:', { hasNotifications: !!Notifications, hasDevice: !!Device, isExpoGo });
+    return null;
+  }
 
   try {
-    if (!Device.isDevice) return null;
+    if (!Device.isDevice) {
+      console.warn('[Notifications] not a physical device');
+      return null;
+    }
 
     const { status: existing } = await Notifications.getPermissionsAsync();
     let finalStatus = existing;
@@ -104,16 +114,25 @@ export async function getExpoPushToken(): Promise<string | null> {
       finalStatus = status;
     }
 
-    if (finalStatus !== 'granted') return null;
+    if (finalStatus !== 'granted') {
+      console.warn('[Notifications] permission not granted:', finalStatus);
+      return null;
+    }
 
     const projectId = Constants.expoConfig?.extra?.eas?.projectId
       ?? Constants.easConfig?.projectId;
 
-    if (!projectId) return null;
+    if (!projectId) {
+      console.error('[Notifications] no EAS projectId found. expoConfig:', JSON.stringify(Constants.expoConfig?.extra), 'easConfig:', JSON.stringify(Constants.easConfig));
+      return null;
+    }
 
+    console.log('[Notifications] requesting push token with projectId:', projectId);
     const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+    console.log('[Notifications] push token obtained:', tokenData.data);
     return tokenData.data;
-  } catch {
+  } catch (e) {
+    console.error('[Notifications] getExpoPushToken failed:', e);
     return null;
   }
 }
