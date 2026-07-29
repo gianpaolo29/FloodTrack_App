@@ -1662,6 +1662,7 @@ export default function MapScreen() {
   const [weather,        setWeather]        = useState<WeatherData | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [showHomeSetup,   setShowHomeSetup]   = useState(false);
+  const hasPannedToUser = useRef(false);
   const [homeSetupLoading, setHomeSetupLoading] = useState(false);
   const [homeSetupDone,   setHomeSetupDone]   = useState(false);
   const heatmapOpacity = useRef(new Animated.Value(0)).current;
@@ -1985,16 +1986,30 @@ export default function MapScreen() {
       .catch(() => {})
       .finally(() => setWeatherLoading(false));
 
-    // Real-time location tracking
+    // Real-time location tracking — auto-pan to user on first fix
     let locationSub: Location.LocationSubscription | null = null;
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') return;
+        const last = await Location.getLastKnownPositionAsync();
+        if (last) {
+          const coords = { latitude: last.coords.latitude, longitude: last.coords.longitude };
+          setUserLocation(coords);
+          if (!hasPannedToUser.current) {
+            hasPannedToUser.current = true;
+            mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 700);
+          }
+        }
         locationSub = await Location.watchPositionAsync(
           { accuracy: Location.Accuracy.Balanced, distanceInterval: 10, timeInterval: 5000 },
           (loc) => {
-            setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+            const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+            setUserLocation(coords);
+            if (!hasPannedToUser.current) {
+              hasPannedToUser.current = true;
+              mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 700);
+            }
           },
         );
       } catch {}

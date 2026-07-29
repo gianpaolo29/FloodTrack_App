@@ -127,7 +127,6 @@ interface RawAlert {
   area?: string | null;
   address?: string | null;
   report_id?: number | null;
-  expires_at: string | null;
   created_at: string;
 }
 
@@ -1280,6 +1279,10 @@ export async function updateHazard(id: string, payload: Partial<HazardPayload> &
 
 export async function deleteHazard(id: string, token: string): Promise<void> {
   await del(`/admin/hazards/${id}`, token);
+}
+
+export async function syncWeatherHazards(token: string): Promise<{ message: string }> {
+  return post<{ message: string }>('/admin/hazards/sync-weather', {}, token);
 }
 
 export async function getCurrentUser(token: string): Promise<User & { isOnDuty?: boolean }> {

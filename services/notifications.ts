@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Storage from '@/utils/storage';
 
@@ -62,11 +62,16 @@ export function initNotifications() {
         const prefs = await getNotificationPrefs();
         const show = shouldShowNotification(data, prefs);
 
+        // When app is in foreground and it's an alert notification,
+        // suppress sound/banner — the in-app popup handles it
+        const isForeground = AppState.currentState === 'active';
+        const isAlert = data?.type === 'alert';
+
         return {
-          shouldShowAlert: show,
-          shouldPlaySound: show,
+          shouldShowAlert: show && !(isForeground && isAlert),
+          shouldPlaySound: show && !(isForeground && isAlert),
           shouldSetBadge: show,
-          shouldShowBanner: show,
+          shouldShowBanner: show && !(isForeground && isAlert),
           shouldShowList: show,
         };
       },

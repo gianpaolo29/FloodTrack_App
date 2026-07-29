@@ -9,6 +9,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { AlertProvider } from '@/context/AlertContext';
 import { AlertBadgeProvider } from '@/context/AlertBadgeContext';
+import { EmergencyAlertProvider } from '@/context/EmergencyAlertContext';
 import { initNotifications, onNotificationResponse } from '@/services/notifications';
 import * as Storage from '@/utils/storage';
 import { SESSION_KEY } from '@/app/responder/incident/[id]';
@@ -134,9 +135,11 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <AuthProvider>
         <AlertBadgeProvider>
-          <AlertProvider>
-            <RootLayoutInner />
-          </AlertProvider>
+          <EmergencyAlertProvider>
+            <AlertProvider>
+              <RootLayoutInner />
+            </AlertProvider>
+          </EmergencyAlertProvider>
         </AlertBadgeProvider>
       </AuthProvider>
     </SafeAreaProvider>
