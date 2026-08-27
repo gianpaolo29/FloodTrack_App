@@ -123,7 +123,8 @@ export default function ResidentChatScreen() {
   const scheme    = useColorScheme();
   const isDark    = scheme === 'dark';
   const { token, user } = useAuth();
-  const flatListRef   = useRef<FlatList>(null);
+  const flatListRef      = useRef<FlatList>(null);
+  const isNearBottomRef  = useRef(true);
   const isConnected   = useNetworkStatus();
 
   const [messages, setMessages]             = useState<IncidentMessage[]>([]);
@@ -177,7 +178,9 @@ export default function ResidentChatScreen() {
       if (msg.userId === user.id) return;
       setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
       markMessagesRead(id, token).catch(() => {});
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      if (isNearBottomRef.current) {
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      }
     };
 
     const handleTypingUpdate = (data: TypingUser) => {
@@ -245,6 +248,7 @@ export default function ResidentChatScreen() {
     const tempId = `pending_${Date.now()}`;
     setText('');
     setPendingMessages(prev => [...prev, { id: tempId, body: msg, status: 'sending' }]);
+    isNearBottomRef.current = true;
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     try {
       await sendReportMessage(id, msg, token!);
@@ -360,7 +364,18 @@ export default function ResidentChatScreen() {
           data={allMessages}
           keyExtractor={m => m.id}
           contentContainerStyle={[s.messageList, { paddingBottom: 8 }]}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          keyboardDismissMode="interactive"
+          onContentSizeChange={() => {
+            if (isNearBottomRef.current) {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }
+          }}
+          onScroll={(e) => {
+            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+            const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+            isNearBottomRef.current = distanceFromBottom < 150;
+          }}
+          scrollEventThrottle={100}
           ListEmptyComponent={
             <View style={s.emptyState}>
               <View style={[s.emptyIconWrap, isDark && { backgroundColor: colors.dark.card }]}>

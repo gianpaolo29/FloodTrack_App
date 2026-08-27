@@ -7,16 +7,12 @@ const isExpoGo = Constants.appOwnership === 'expo';
 let Notifications: typeof import('expo-notifications') | null = null;
 let Device: typeof import('expo-device') | null = null;
 
-if (!isExpoGo) {
-  try {
-    Notifications = require('expo-notifications');
-    Device = require('expo-device');
-    console.log('[Notifications] modules loaded successfully');
-  } catch (e) {
-    console.warn('[Notifications] failed to load modules:', e);
-  }
-} else {
-  console.log('[Notifications] skipping module load — running in Expo Go');
+try {
+  Notifications = require('expo-notifications');
+  Device = require('expo-device');
+  console.log('[Notifications] modules loaded successfully (expoGo:', isExpoGo, ')');
+} catch (e) {
+  console.warn('[Notifications] failed to load modules:', e);
 }
 
 export interface NotificationPrefs {
@@ -95,8 +91,8 @@ export function initNotifications() {
 }
 
 export async function getExpoPushToken(): Promise<string | null> {
-  if (!Notifications || !Device || isExpoGo) {
-    console.warn('[Notifications] getExpoPushToken skipped:', { hasNotifications: !!Notifications, hasDevice: !!Device, isExpoGo });
+  if (!Notifications || !Device) {
+    console.warn('[Notifications] getExpoPushToken skipped:', { hasNotifications: !!Notifications, hasDevice: !!Device });
     return null;
   }
 

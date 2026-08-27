@@ -21,11 +21,13 @@ export default {
     infoPlist: {
       NSLocationWhenInUseUsageDescription:
         'FloodTrack needs your location to show nearby hazards and auto-fill your report location.',
+      LSApplicationQueriesSchemes: ['fbapi', 'fb-messenger-share-api', 'fbauth2', 'fbshareextension'],
     },
   },
 
   android: {
     package: 'com.gianpaolo29.floodtrack',
+    googleServicesFile: './google-services.json',
     config: {
       googleMaps: {
         apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID,
@@ -37,6 +39,10 @@ export default {
       backgroundImage: './assets/images/android-icon-background.png',
       monochromeImage: './assets/images/android-icon-monochrome.png',
     },
+    queries: {
+      schemes: ['fb', 'fbapi', 'fbauth2'],
+    },
+    softwareKeyboardLayoutMode: 'resize',
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
   },

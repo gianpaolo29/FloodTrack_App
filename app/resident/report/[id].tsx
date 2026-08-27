@@ -3,7 +3,7 @@
  * Hero header with status, glass cards, icon-led metadata,
  * refined gallery, polished timeline, and sleek action buttons.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -135,11 +135,11 @@ function HorizontalStepper({
             : colors.slate[200];
 
           return (
-            <>
+            <React.Fragment key={evt.status}>
               {i > 0 && (
-                <View key={`line-${i}`} style={[hs.line, { backgroundColor: lineBg }]} />
+                <View style={[hs.line, { backgroundColor: lineBg }]} />
               )}
-              <View key={evt.status} style={[hs.dot, { backgroundColor: dotBg }]}>
+              <View style={[hs.dot, { backgroundColor: dotBg }]}>
                 {evt.done ? (
                   <Ionicons
                     name={isRejected ? 'close' : 'checkmark'}
@@ -150,7 +150,7 @@ function HorizontalStepper({
                   <Text style={hs.stepNum}>{i + 1}</Text>
                 )}
               </View>
-            </>
+            </React.Fragment>
           );
         })}
       </View>
@@ -650,6 +650,7 @@ export default function ReportDetailScreen() {
       message: `FloodTrack Report\nRef: ${report.reference}\n${report.title}\nLocation: ${report.address}\nStatus: ${report.status}\nReported: ${report.reportedAt}`,
     });
   }
+
 
   async function handleWithdraw() {
     showAlert({

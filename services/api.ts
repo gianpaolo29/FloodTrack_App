@@ -588,7 +588,7 @@ export async function getReportDetail(id: string, token: string): Promise<Report
 export async function submitReport(
   payload: ReportSubmission,
   token: string,
-): Promise<{ reference: string }> {
+): Promise<{ id: string; reference: string }> {
   const form = new FormData();
   form.append('hazard_type',  payload.hazardType);
   form.append('severity',     payload.severity);
@@ -608,7 +608,15 @@ export async function submitReport(
   });
 
   const raw = await formPost<RawReport>('/reports', form, token);
-  return { reference: raw.reference_number };
+  return { id: String(raw.id), reference: raw.reference_number };
+}
+
+export async function markReportShared(
+  reportId: string,
+  token: string,
+  facebookPostId?: string,
+): Promise<void> {
+  await post('/reports/' + reportId + '/mark-shared', { facebook_post_id: facebookPostId }, token);
 }
 
 export async function getAlerts(token: string): Promise<AlertItem[]> {

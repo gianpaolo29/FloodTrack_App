@@ -47,5 +47,4 @@ app-example
 # Claude Code local settings
 settings.local.json
 
-# EAS
-eas.json
+# EAS — eas.json must NOT be gitignored (EAS Build needs it)

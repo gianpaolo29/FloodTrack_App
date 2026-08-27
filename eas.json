@@ -1,0 +1,40 @@
+{
+  "cli": {
+    "version": ">= 3.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_MAPS_ANDROID": "AIzaSyABQ0EoZ3pjFRa1hiMyCGjqvMLWKu6ZwyA",
+        "EXPO_PUBLIC_GOOGLE_MAPS_IOS": "AIzaSyABQ0EoZ3pjFRa1hiMyCGjqvMLWKu6ZwyA",
+        "EXPO_PUBLIC_API_URL": "https://floodtrack.on-forge.com/api",
+        "EXPO_PUBLIC_SOCKET_URL": "https://floodtrack.on-forge.com",
+        "EXPO_PUBLIC_BREVO_SENDER_EMAIL": "mulingbayan.gianpaolo@gmail.com"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_MAPS_ANDROID": "AIzaSyABQ0EoZ3pjFRa1hiMyCGjqvMLWKu6ZwyA",
+        "EXPO_PUBLIC_GOOGLE_MAPS_IOS": "AIzaSyABQ0EoZ3pjFRa1hiMyCGjqvMLWKu6ZwyA",
+        "EXPO_PUBLIC_API_URL": "https://floodtrack.on-forge.com/api",
+        "EXPO_PUBLIC_SOCKET_URL": "https://floodtrack.on-forge.com",
+        "EXPO_PUBLIC_BREVO_SENDER_EMAIL": "mulingbayan.gianpaolo@gmail.com"
+      }
+    },
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_MAPS_ANDROID": "AIzaSyABQ0EoZ3pjFRa1hiMyCGjqvMLWKu6ZwyA",
+        "EXPO_PUBLIC_GOOGLE_MAPS_IOS": "AIzaSyABQ0EoZ3pjFRa1hiMyCGjqvMLWKu6ZwyA",
+        "EXPO_PUBLIC_API_URL": "https://floodtrack.on-forge.com/api",
+        "EXPO_PUBLIC_SOCKET_URL": "https://floodtrack.on-forge.com",
+        "EXPO_PUBLIC_BREVO_SENDER_EMAIL": "mulingbayan.gianpaolo@gmail.com"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
