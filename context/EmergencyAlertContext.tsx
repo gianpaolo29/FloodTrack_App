@@ -154,7 +154,7 @@ async function getWavUri(type: string): Promise<string> {
   try {
     const base64 = generateWavBase64(tone.segments, tone.volume, tone.wave);
     const path = `${FileSystem.cacheDirectory}alert_${type}.wav`;
-    await FileSystem.writeAsStringAsync(path, base64, { encoding: FileSystem.EncodingType.Base64 });
+    await FileSystem.writeAsStringAsync(path, base64, { encoding: 'base64' });
     console.log('[EmergencyAlert] WAV written:', path);
     wavCache[type] = path;
     return path;

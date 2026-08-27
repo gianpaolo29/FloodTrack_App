@@ -28,6 +28,20 @@ import { colors } from '@/theme/colors';
 import { apiCheckEmail, apiRegister, apiDeleteAccount, apiMarkEmailVerified } from '@/services/api';
 import { sendEmailVerificationOtp } from '@/services/brevo';
 
+let GoogleSignin: any = null;
+let statusCodes: any = {};
+try {
+  const mod = require('@react-native-google-signin/google-signin');
+  GoogleSignin = mod.GoogleSignin;
+  statusCodes = mod.statusCodes;
+  GoogleSignin.configure({
+    webClientId: '27555047365-djh6rc1h40nob87nu20ghtc5irp4eagb.apps.googleusercontent.com',
+    offlineAccess: true,
+  });
+} catch {
+  // Native module not available
+}
+
 const { width: INIT_W, height: INIT_H } = Dimensions.get('window');
 const HERO_H = INIT_H * 0.22;
 
@@ -304,14 +318,31 @@ export default function SignUpScreen() {
   }
 
   const handleGoogleSignUp = useCallback(async () => {
+    if (!GoogleSignin) {
+      setAlertConfig({ type: 'info', title: 'Not Available', message: 'Google Sign-In requires a native build.', confirmText: 'OK' });
+      return;
+    }
     setIsGoogleLoading(true);
     try {
-      await new Promise(r => setTimeout(r, 1500));
-      setAlertConfig({ type: 'info', title: 'Coming Soon', message: 'Google sign-up is not yet configured.', confirmText: 'OK' });
+      await GoogleSignin.hasPlayServices();
+      const response = await GoogleSignin.signIn();
+      if (response.data?.idToken) {
+        await login({ googleIdToken: response.data.idToken });
+      } else {
+        throw new Error('No ID token returned from Google.');
+      }
+    } catch (e: any) {
+      if (e.code === statusCodes.SIGN_IN_CANCELLED) return;
+      if (e.code === statusCodes.IN_PROGRESS) return;
+      if (e.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        setAlertConfig({ type: 'error', title: 'Not Available', message: 'Google Play Services is not available on this device.', confirmText: 'OK' });
+        return;
+      }
+      setAlertConfig({ type: 'error', title: 'Google Sign-Up Failed', message: e?.message ?? 'Could not sign in with Google.', confirmText: 'OK' });
     } finally {
       setIsGoogleLoading(false);
     }
-  }, []);
+  }, [login]);
 
   return (
     <View style={s.root}>
@@ -339,7 +370,7 @@ export default function SignUpScreen() {
 
             <View style={isSmall ? s.logoBadgeSmall : s.logoBadge}>
               <View style={isSmall ? s.logoBadgeInnerSmall : s.logoBadgeInner}>
-                <Image source={require('@/assets/images/logo-water.png')} style={{ width: isSmall ? 40 : 64, height: isSmall ? 40 : 64 }} resizeMode="contain" />
+                <Image source={require('@/assets/images/floodtrack-badge-primary.png')} style={{ width: isSmall ? 40 : 64, height: isSmall ? 40 : 64 }} resizeMode="contain" />
               </View>
               {!isSmall && <View style={s.logoBadgeRing} />}
             </View>

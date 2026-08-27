@@ -8,7 +8,7 @@ export default {
   owner: 'gianpaolo29',
   version: '1.0.0',
   orientation: 'portrait',
-  icon: './assets/images/icon.png',
+  icon: './assets/images/floodtrack-badge-primary.png',
   scheme: 'floodtrack',
   userInterfaceStyle: 'automatic',
   newArchEnabled: true,
@@ -34,31 +34,30 @@ export default {
       },
     },
     adaptiveIcon: {
-      backgroundColor: '#E6F4FE',
-      foregroundImage: './assets/images/android-icon-foreground.png',
-      backgroundImage: './assets/images/android-icon-background.png',
-      monochromeImage: './assets/images/android-icon-monochrome.png',
+      backgroundColor: '#0B2F52',
+      foregroundImage: './assets/images/floodtrack-badge-primary.png',
+      monochromeImage: './assets/images/floodtrack-badge-primary.png',
     },
     queries: {
       schemes: ['fb', 'fbapi', 'fbauth2'],
     },
-    softwareKeyboardLayoutMode: 'resize',
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
   },
 
   web: {
     output: 'static',
-    favicon: './assets/images/favicon.png',
+    favicon: './assets/images/floodtrack-badge-primary.png',
   },
 
   plugins: [
     'expo-router',
     'expo-av',
+    '@react-native-google-signin/google-signin',
     [
       'expo-splash-screen',
       {
-        image: './assets/images/splash-icon.png',
+        image: './assets/images/floodtrack-badge-primary.png',
         imageWidth: 200,
         resizeMode: 'contain',
         backgroundColor: '#ffffff',
@@ -69,7 +68,7 @@ export default {
     [
       'expo-notifications',
       {
-        icon: './assets/images/icon.png',
+        icon: './assets/images/floodtrack-badge-primary.png',
         color: '#1F6FBF',
         defaultChannel: 'floodtrack',
         sounds: [],

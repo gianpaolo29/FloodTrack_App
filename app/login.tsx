@@ -33,7 +33,7 @@ try {
   GoogleSignin = mod.GoogleSignin;
   statusCodes = mod.statusCodes;
   GoogleSignin.configure({
-    webClientId: '777585497819-ihl5mc9l1r97kh0updk6u40fm3b09scj.apps.googleusercontent.com',
+    webClientId: '27555047365-djh6rc1h40nob87nu20ghtc5irp4eagb.apps.googleusercontent.com',
     offlineAccess: true,
   });
 } catch {
@@ -291,7 +291,7 @@ export default function LoginScreen() {
             transform: [{ scale: splashLogoScale }],
           }]}>
             <View style={s.splashLogoBadge}>
-              <Image source={require('@/assets/images/logo-water.png')} style={{ width: 80, height: 80 }} resizeMode="contain" />
+              <Image source={require('@/assets/images/floodtrack-badge-primary.png')} style={{ width: 80, height: 80 }} resizeMode="contain" />
               <Animated.View style={[s.shimmerBar, { transform: [{ translateX: shimmerX }] }]} />
             </View>
           </Animated.View>
@@ -332,7 +332,7 @@ export default function LoginScreen() {
 
               <View style={isSmall ? s.logoBadgeSmall : s.logoBadge}>
                 <View style={isSmall ? s.logoBadgeInnerSmall : s.logoBadgeInner}>
-                  <Image source={require('@/assets/images/logo-water.png')} style={{ width: isSmall ? 48 : 64, height: isSmall ? 48 : 64 }} resizeMode="contain" />
+                  <Image source={require('@/assets/images/floodtrack-badge-primary.png')} style={{ width: isSmall ? 48 : 64, height: isSmall ? 48 : 64 }} resizeMode="contain" />
                 </View>
                 {!isSmall && <View style={s.logoBadgeRing} />}
               </View>

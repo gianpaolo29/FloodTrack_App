@@ -5,13 +5,11 @@ import {
   Animated,
   FlatList,
   Keyboard,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
-  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -142,6 +140,28 @@ export default function ResidentChatScreen() {
 
   const typingTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingClearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const keyboardHeight    = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const onShow = Keyboard.addListener(showEvent, (e) => {
+      Animated.timing(keyboardHeight, {
+        toValue: e.endCoordinates.height,
+        duration: Platform.OS === 'ios' ? 250 : 150,
+        useNativeDriver: false,
+      }).start();
+    });
+    const onHide = Keyboard.addListener(hideEvent, () => {
+      Animated.timing(keyboardHeight, {
+        toValue: 0,
+        duration: Platform.OS === 'ios' ? 200 : 100,
+        useNativeDriver: false,
+      }).start();
+    });
+    return () => { onShow.remove(); onHide.remove(); };
+  }, [keyboardHeight]);
 
   const isChatClosed   = reportStatus === 'resolved';
   const isChatBlocked  = reportStatus !== null && reportStatus !== 'assigned' && !isChatClosed;
@@ -297,10 +317,8 @@ export default function ResidentChatScreen() {
     ?.id ?? null;
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-    <KeyboardAvoidingView
-      style={[s.root, { backgroundColor: screenBg }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <Animated.View
+      style={[s.root, { backgroundColor: screenBg, paddingBottom: keyboardHeight }]}
     >
 
       {/* ── Gradient header ── */}
@@ -367,7 +385,12 @@ export default function ResidentChatScreen() {
           keyboardDismissMode="interactive"
           onContentSizeChange={() => {
             if (isNearBottomRef.current) {
-              flatListRef.current?.scrollToEnd({ animated: true });
+              setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+            }
+          }}
+          onLayout={() => {
+            if (isNearBottomRef.current) {
+              setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
             }
           }}
           onScroll={(e) => {
@@ -551,8 +574,7 @@ export default function ResidentChatScreen() {
           </View>
         </View>
       )}
-    </KeyboardAvoidingView>
-    </TouchableWithoutFeedback>
+    </Animated.View>
   );
 }
 

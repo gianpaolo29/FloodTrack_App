@@ -1,44 +1,26 @@
 {
   "project_info": {
-    "project_number": "777585497819",
-    "project_id": "floodtrack-7ceb0",
-    "storage_bucket": "floodtrack-7ceb0.firebasestorage.app"
+    "project_number": "454711048875",
+    "project_id": "floodtrack-personal",
+    "storage_bucket": "floodtrack-personal.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:777585497819:android:204aaac71b1c3420d99efe",
+        "mobilesdk_app_id": "1:454711048875:android:f46a8dfe543108d92855ee",
         "android_client_info": {
           "package_name": "com.gianpaolo29.floodtrack"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "777585497819-hi9oal4tsrstbjdl0miovfa2k8k334du.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.gianpaolo29.floodtrack",
-            "certificate_hash": "ba57fdfb35b3c2d1238532aa0f772484e84ddd8a"
-          }
-        },
-        {
-          "client_id": "777585497819-ihl5mc9l1r97kh0updk6u40fm3b09scj.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyA1jQv0HtsTO8C0g93ZiPOV0kmsYyBJJsk"
+          "current_key": "AIzaSyAJ-CgLWJV_pA19G4vn7W2pDBD31ZQLwgg"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "777585497819-ihl5mc9l1r97kh0updk6u40fm3b09scj.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }
