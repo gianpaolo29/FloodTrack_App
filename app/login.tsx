@@ -389,6 +389,9 @@ export default function LoginScreen() {
                     </View>
                   )}
                 </Animated.View>
+                {email.length > 0 && !emailValid && (
+                  <Text style={s.fieldHint}>Enter a valid email address</Text>
+                )}
               </Animated.View>
 
               <Animated.View style={[s.fieldWrap, { opacity: f2Opacity, transform: [{ translateX: f2TransX }] }]}>
@@ -462,6 +465,31 @@ export default function LoginScreen() {
                   </LinearGradient>
                 </Pressable>
               </Animated.View>
+
+              <View style={s.dividerRow}>
+                <View style={s.dividerLine} />
+                <Text style={s.dividerText}>or</Text>
+                <View style={s.dividerLine} />
+              </View>
+
+              <Pressable
+                onPress={handleGoogleLogin}
+                disabled={isLoading || isGoogleLoading}
+                style={[s.socialBtn, s.googleBtn]}
+                accessibilityRole="button"
+                accessibilityLabel="Sign in with Google"
+              >
+                {isGoogleLoading ? (
+                  <ActivityIndicator size="small" color={colors.social.google} />
+                ) : (
+                  <>
+                    <View style={s.googleIconCircle}>
+                      <Text style={s.googleG}>G</Text>
+                    </View>
+                    <Text style={s.googleBtnText}>Continue with Google</Text>
+                  </>
+                )}
+              </Pressable>
 
               <Animated.View style={[s.footer, { opacity: footerOpacity }]}>
                 <Text style={s.footerText}>Don't have an account?</Text>
@@ -697,6 +725,19 @@ const s = StyleSheet.create({
     flex: 1, height: 52, borderRadius: 14,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 10,
+  },
+  fieldHint: {
+    fontSize: 11, fontWeight: '600', color: colors.feedback.error,
+    marginTop: 4, marginLeft: 4,
+  },
+  dividerRow: {
+    flexDirection: 'row', alignItems: 'center', marginVertical: 16, gap: 12,
+  },
+  dividerLine: {
+    flex: 1, height: 1, backgroundColor: colors.auth.placeholder,
+  },
+  dividerText: {
+    fontSize: 13, fontWeight: '600', color: colors.auth.muted,
   },
   googleBtn: {
     backgroundColor: colors.white,

@@ -43,7 +43,7 @@ try {
 }
 
 const { width: INIT_W, height: INIT_H } = Dimensions.get('window');
-const HERO_H = INIT_H * 0.22;
+const HERO_H = INIT_H * 0.28;
 
 
 const EMAIL_RE     = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -88,7 +88,7 @@ export default function SignUpScreen() {
   const insets = useSafeAreaInsets();
   const { login } = useAuth();
   const { width: screenW, height: screenH } = useWindowDimensions();
-  const heroH = Math.min(screenH * 0.22, 200);
+  const heroH = Math.min(screenH * 0.28, 260);
   const isSmall = screenH < 700;
 
   // ── Entrance animations ──────────────────────────────────────────────────
@@ -358,7 +358,7 @@ export default function SignUpScreen() {
             colors={colors.gradients.hero}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[s.hero, { height: heroH, paddingTop: insets.top + 8, paddingBottom: isSmall ? 20 : 36 }]}
+            style={[s.hero, { height: heroH, paddingTop: insets.top + 8 }]}
           >
             <View style={[s.orb, s.orb1]} />
             <View style={[s.orb, s.orb2]} />
@@ -370,7 +370,7 @@ export default function SignUpScreen() {
 
             <View style={isSmall ? s.logoBadgeSmall : s.logoBadge}>
               <View style={isSmall ? s.logoBadgeInnerSmall : s.logoBadgeInner}>
-                <Image source={require('@/assets/images/floodtrack-badge-primary.png')} style={{ width: isSmall ? 40 : 64, height: isSmall ? 40 : 64 }} resizeMode="contain" />
+                <Image source={require('@/assets/images/floodtrack-badge-primary.png')} style={{ width: isSmall ? 40 : 56, height: isSmall ? 40 : 56 }} resizeMode="contain" />
               </View>
               {!isSmall && <View style={s.logoBadgeRing} />}
             </View>
@@ -393,15 +393,15 @@ export default function SignUpScreen() {
         {/* ── Form ─────────────────────────────────────────────────────── */}
         <Animated.View style={[s.formArea, { opacity: formOpacity, transform: [{ translateY: formTransY }] }]}>
           <ScrollView
-            contentContainerStyle={[s.formScroll, { paddingBottom: insets.bottom + 36 }]}
+            contentContainerStyle={[s.formScroll, { paddingBottom: insets.bottom + 20 }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
             <View style={s.titleRow}>
-              <Text style={[s.titleBold, isSmall && { fontSize: 24 }]}>Create </Text>
-              <Text style={[s.titleLight, isSmall && { fontSize: 24 }]}>account</Text>
+              <Text style={s.titleBold}>Create </Text>
+              <Text style={s.titleLight}>account</Text>
             </View>
-            <Text style={[s.titleSub, isSmall && { marginBottom: 8 }]}>Fill in the details to get started</Text>
+            <Text style={s.titleSub}>Fill in the details to get started</Text>
 
             {/* First + Last name */}
             <View style={s.nameRow}>
@@ -454,7 +454,15 @@ export default function SignUpScreen() {
                   value={email}
                   onChangeText={setEmail}
                 />
+                {email.length > 0 && EMAIL_RE.test(email.trim()) && (
+                  <View style={s.checkBadge}>
+                    <Ionicons name="checkmark" size={14} color={colors.white} />
+                  </View>
+                )}
               </View>
+              {email.length > 0 && !EMAIL_RE.test(email.trim()) && (
+                <Text style={s.fieldHint}>Enter a valid email address</Text>
+              )}
             </View>
 
             {/* Mobile */}
@@ -474,6 +482,9 @@ export default function SignUpScreen() {
                   maxLength={9}
                 />
               </View>
+              {contact.length > 0 && contact.length < 9 && (
+                <Text style={s.fieldHint}>Enter 9 digits after 09</Text>
+              )}
             </View>
 
             {/* Password */}
@@ -527,6 +538,12 @@ export default function SignUpScreen() {
                   <Ionicons name={showConfirm ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.auth.muted} />
                 </Pressable>
               </View>
+              {confirmPassword.length > 0 && confirmPassword !== password && (
+                <Text style={s.fieldHint}>Passwords don't match</Text>
+              )}
+              {confirmPassword.length > 0 && confirmPassword === password && password.length >= 8 && (
+                <Text style={s.fieldHintSuccess}>Passwords match</Text>
+              )}
             </View>
 
             {/* CTA */}
@@ -693,7 +710,7 @@ const s = StyleSheet.create({
   hero: {
     height: HERO_H,
     alignItems: 'center', justifyContent: 'center',
-    paddingBottom: 36, overflow: 'hidden',
+    paddingBottom: 16, overflow: 'hidden',
   },
   orb: { position: 'absolute', borderRadius: 999, backgroundColor: colors.overlay.whiteThin },
   orb1: { width: 200, height: 200, top: -60, right: -50 },
@@ -733,14 +750,14 @@ const s = StyleSheet.create({
   formScroll: { paddingHorizontal: 28, paddingTop: 4 },
 
   titleRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 },
-  titleBold: { fontSize: 30, fontWeight: '800', color: colors.auth.heading },
-  titleLight: { fontSize: 30, fontWeight: '300', color: colors.auth.heading },
-  titleSub: { fontSize: 14, color: colors.auth.muted, marginBottom: 14 },
+  titleBold: { fontSize: 26, fontWeight: '800', color: colors.auth.heading },
+  titleLight: { fontSize: 26, fontWeight: '300', color: colors.auth.heading },
+  titleSub: { fontSize: 14, color: colors.auth.muted, marginBottom: 12 },
 
-  nameRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  nameRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   nameHalf: { flex: 1 },
 
-  fieldWrap: { marginBottom: 12 },
+  fieldWrap: { marginBottom: 8 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
     height: 56, borderRadius: 16,
@@ -763,6 +780,19 @@ const s = StyleSheet.create({
   inputIconActive: { backgroundColor: colors.auth.inputIconActive },
   input: { flex: 1, fontSize: 15, color: colors.auth.heading, paddingHorizontal: 12, height: '100%' },
   eyeBtn: { paddingHorizontal: 12 },
+  checkBadge: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: colors.feedback.success,
+    alignItems: 'center', justifyContent: 'center', marginRight: 10,
+  },
+  fieldHint: {
+    fontSize: 11, fontWeight: '600', color: colors.feedback.error,
+    marginTop: 4, marginLeft: 4,
+  },
+  fieldHintSuccess: {
+    fontSize: 11, fontWeight: '600', color: colors.feedback.success,
+    marginTop: 4, marginLeft: 4,
+  },
 
   strengthRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -773,9 +803,9 @@ const s = StyleSheet.create({
   strengthLabel: { fontSize: 11, fontWeight: '700' },
 
   ctaBtn: {
-    height: 56, borderRadius: 16,
+    height: 52, borderRadius: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 10, marginTop: 12,
+    gap: 10, marginTop: 6,
     shadowColor: colors.auth.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35, shadowRadius: 18, elevation: 10,
