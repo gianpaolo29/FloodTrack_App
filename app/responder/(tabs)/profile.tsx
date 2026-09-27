@@ -388,7 +388,11 @@ export default function ProfileScreen() {
         showAlert({ type: 'error', title: 'Permission denied', message: 'Location access is required to use this feature.' });
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      let pos = await Location.getLastKnownPositionAsync();
+      if (!pos) {
+        try { pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }); } catch {}
+      }
+      if (!pos) throw new Error('Location unavailable');
       const [geo] = await Location.reverseGeocodeAsync({
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,

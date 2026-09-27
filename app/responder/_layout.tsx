@@ -6,7 +6,6 @@ export default function ResponderLayout() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="incident/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="incident/[id]/chat" options={{ presentation: 'card' }} />
-      <Stack.Screen name="incident/[id]/field-report" options={{ presentation: 'card' }} />
       <Stack.Screen name="protocols" options={{ presentation: 'card' }} />
     </Stack>
   );

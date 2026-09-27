@@ -9,6 +9,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAlertBadge } from '@/context/AlertBadgeContext';
 import { useAuth } from '@/context/AuthContext';
 import { useNetwork } from '@/hooks/use-network';
+import { useLocationBroadcast } from '@/hooks/use-location-broadcast';
 import { OfflineBanner } from '@/components/OfflineBanner';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
@@ -78,6 +79,9 @@ function CustomTabBar({ state, navigation, isOnline, syncing, pendingCount }: Bo
 export default function ResponderTabLayout() {
   const { token } = useAuth();
   const { isOnline, syncing, pendingCount } = useNetwork(token);
+
+  // Broadcast location to admins while the responder app is open
+  useLocationBroadcast(!!token);
 
   return (
     <Tabs

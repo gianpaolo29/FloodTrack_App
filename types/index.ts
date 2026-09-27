@@ -1,5 +1,5 @@
 export type Severity       = 'low' | 'moderate' | 'high' | 'critical';
-export type ReportStatus   = 'pending' | 'verified' | 'assigned' | 'resolved' | 'rejected';
+export type ReportStatus   = 'pending' | 'verified' | 'acknowledged' | 'assigned' | 'resolved' | 'rejected';
 export type ResponderStatus = 'pending' | 'en_route' | 'on_scene' | 'resolved';
 export type UserRole       = 'Resident' | 'Responder';
 export type AlertKind      = 'critical' | 'advisory' | 'status_update' | 'rejected' | 'welcome' | 'new_assignment' | 'new_message';
@@ -124,6 +124,16 @@ export interface ReportDetail extends Report {
   aiImageVerified: boolean | null;
   aiImageNotes: string | null;
   aiHasDuplicate: boolean;
+  advisory: {
+    nearby_centers: Array<{
+      id: number; name: string; address: string; type: string;
+      distance_km: number; capacity: number; current_occupancy: number; occupancy_pct: number;
+      latitude: number; longitude: number;
+    }>;
+    safety_tips: Array<{ tip: string; steps: string[] }>;
+    suggested_actions: string[];
+    generated_at: string;
+  } | null;
 }
 
 export interface AdminReport extends Report {
@@ -220,44 +230,12 @@ export interface IncidentMessage {
   createdAt: string;
 }
 
-export interface FieldReportData {
-  id?: string;
-  reportId: string;
-  actionsTaken: string;
-  resourcesUsed: string;
-  peopleAssisted: number;
-  damageAssessment: string;
-  checklist: Record<string, boolean>;
-}
-
 export interface ResponderStats {
   resolvedTotal: number;
   resolvedThisWeek: number;
   resolvedThisMonth: number;
   activeCount: number;
   avgResponseMinutes: number | null;
-}
-
-export type CheckInStatus = 'safe' | 'need_help' | 'unknown';
-
-export interface FamilyMember {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  checkInStatus: CheckInStatus;
-  checkedInAt: string | null;
-  isCreator: boolean;
-  latitude: number | null;
-  longitude: number | null;
-}
-
-export interface FamilyGroup {
-  id: string;
-  name: string;
-  inviteCode: string;
-  members: FamilyMember[];
-  createdAt: string;
 }
 
 export interface EvacuationCenter {

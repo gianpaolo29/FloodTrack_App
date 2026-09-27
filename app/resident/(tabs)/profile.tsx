@@ -344,7 +344,11 @@ export default function ProfileScreen() {
         showAlert({ type: 'error', title: 'Permission denied', message: 'Location access is required to use this feature.' });
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      let pos = await Location.getLastKnownPositionAsync();
+      if (!pos) {
+        try { pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }); } catch {}
+      }
+      if (!pos) throw new Error('Location unavailable');
       const [geo] = await Location.reverseGeocodeAsync({
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
@@ -606,13 +610,6 @@ export default function ProfileScreen() {
               icon="home-outline"
               label="Home address"
               description={user?.homeAddress ?? 'Not set — edit profile to add'}
-              isDark={isDark}
-            />
-            <SettingRow
-              icon="people-outline"
-              label="Family safety group"
-              description="Check-in & see family status"
-              onPress={() => router.push('/resident/family')}
               isDark={isDark}
               isLast
             />

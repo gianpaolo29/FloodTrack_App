@@ -36,9 +36,11 @@ export function useETA(destLat: number, destLng: number, active: boolean) {
         const { status } = await Location.getForegroundPermissionsAsync();
         if (status !== 'granted') return;
 
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+        let loc = await Location.getLastKnownPositionAsync();
+        if (!loc) {
+          try { loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }); } catch {}
+        }
+        if (!loc) return;
 
         const dist = getDistanceKm(
           loc.coords.latitude, loc.coords.longitude,

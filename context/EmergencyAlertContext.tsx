@@ -13,13 +13,12 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 // Lazy-load native modules to prevent crash if unavailable
-let Audio: typeof import('expo-av').Audio | null = null;
+let ExpoAudio: typeof import('expo-audio') | null = null;
 let FileSystem: typeof import('expo-file-system') | null = null;
 try {
-  Audio = require('expo-av').Audio;
-  console.log('[EmergencyAlert] expo-av loaded');
+  ExpoAudio = require('expo-audio');
 } catch (e) {
-  console.warn('[EmergencyAlert] expo-av failed to load:', e);
+  console.warn('[EmergencyAlert] expo-audio failed to load:', e);
 }
 try {
   FileSystem = require('expo-file-system');
@@ -153,8 +152,9 @@ async function getWavUri(type: string): Promise<string> {
 
   try {
     const base64 = generateWavBase64(tone.segments, tone.volume, tone.wave);
-    const path = `${FileSystem.cacheDirectory}alert_${type}.wav`;
-    await FileSystem.writeAsStringAsync(path, base64, { encoding: 'base64' });
+    const cacheDir = (FileSystem as any).cacheDirectory ?? (FileSystem as any).CacheDirectory ?? '';
+    const path = `${cacheDir}alert_${type}.wav`;
+    await (FileSystem as any).writeAsStringAsync(path, base64, { encoding: 'base64' });
     console.log('[EmergencyAlert] WAV written:', path);
     wavCache[type] = path;
     return path;
@@ -224,27 +224,24 @@ export function EmergencyAlertProvider({ children }: { children: React.ReactNode
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const backdropOp  = useRef(new Animated.Value(0)).current;
 
-  const stopSound = useCallback(async () => {
+  const stopSound = useCallback(() => {
     if (soundRef.current) {
       try {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
+        (soundRef.current as any).pause?.();
+        (soundRef.current as any).release?.();
       } catch {}
       soundRef.current = null;
     }
   }, []);
 
   const playSound = useCallback(async (type: string) => {
-    if (!Audio) {
-      console.warn('[EmergencyAlert] Audio not available, skipping sound');
+    if (!ExpoAudio) {
+      console.warn('[EmergencyAlert] expo-audio not available, skipping sound');
       return;
     }
     try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: false,
-        staysActiveInBackground: true,
+      await ExpoAudio.setAudioModeAsync({
+        playsInSilentMode: true,
       });
 
       const uri = await getWavUri(type);
@@ -253,17 +250,15 @@ export function EmergencyAlertProvider({ children }: { children: React.ReactNode
         return;
       }
 
-      // Unload previous
+      // Stop previous
       if (soundRef.current) {
-        try { await soundRef.current.unloadAsync(); } catch {}
+        try { (soundRef.current as any).release?.(); } catch {}
       }
 
-      console.log('[EmergencyAlert] Playing sound:', uri);
-      const { sound } = await Audio.Sound.createAsync(
-        { uri },
-        { shouldPlay: true, volume: 1.0 }
-      );
-      soundRef.current = sound;
+      const player = ExpoAudio.createAudioPlayer({ uri });
+      player.volume = 1.0;
+      player.play();
+      soundRef.current = player as any;
     } catch (e) {
       console.error('[EmergencyAlert] playSound failed:', e);
     }

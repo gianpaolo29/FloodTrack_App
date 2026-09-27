@@ -6,11 +6,7 @@ import type {
   AlertItem,
   AppConfig,
   ChangePasswordPayload,
-  CheckInStatus,
   EvacuationCenter,
-  FamilyGroup,
-  FamilyMember,
-  FieldReportData,
   Hazard,
   HazardPayload,
   Incident,
@@ -96,7 +92,7 @@ interface RawReport {
   reference_number: string;
   hazard_type: 'flood';
   severity: 'low' | 'moderate' | 'high' | 'critical';
-  status: 'pending' | 'verified' | 'assigned' | 'resolved' | 'rejected';
+  status: 'pending' | 'verified' | 'acknowledged' | 'assigned' | 'resolved' | 'rejected';
   description: string | null;
   latitude: number;
   longitude: number;
@@ -104,6 +100,7 @@ interface RawReport {
   user?: { id: number; name: string; contact_number?: string | null };
   assigned_responder?: { id: number; name: string; contact_number: string | null } | null;
   team?: { id: number; name: string } | null;
+  assigned_team?: { id: number; name: string } | null;
   member_statuses?: RawMemberStatus[];
   media?: RawMedia[];
   status_updates?: RawStatusUpdate[];
@@ -115,6 +112,7 @@ interface RawReport {
   ai_exif_status?: 'pass' | 'fail' | 'no_data' | null;
   ai_exif_notes?: string | null;
   potential_duplicate_of?: number | null;
+  advisory?: any;
 }
 
 interface RawAlert {
@@ -143,6 +141,12 @@ const TIMELINE_STEPS: Array<{ status: string; label: string }> = [
   { status: 'verified', label: 'Verified'           },
   { status: 'assigned', label: 'Responder assigned' },
   { status: 'resolved', label: 'Resolved'           },
+];
+
+const ADVISORY_TIMELINE_STEPS: Array<{ status: string; label: string }> = [
+  { status: 'pending',      label: 'Submitted'      },
+  { status: 'verified',     label: 'Verified'        },
+  { status: 'acknowledged', label: 'Advisory Issued' },
 ];
 
 function formatRelativeTime(iso: string): string {
@@ -226,7 +230,7 @@ function adaptReport(raw: RawReport): Report {
     longitude:    raw.longitude,
     reportedAt:   formatRelativeTime(raw.created_at),
     createdAt:    raw.created_at,
-    thumbnailUrl: raw.media?.[0]?.url,
+    thumbnailUrl: raw.media?.find((m: any) => m.file_type === 'image')?.url ?? raw.media?.[0]?.url,
     mediaCount:   raw.media?.length ?? 0,
   };
 }
@@ -234,13 +238,16 @@ function adaptReport(raw: RawReport): Report {
 function adaptReportDetail(raw: RawReport): ReportDetail {
   const updates = raw.status_updates ?? [];
 
-  // Use different timeline steps based on whether the report was rejected
-  const isRejected = raw.status === 'rejected';
+  // Use different timeline steps based on status
+  const isRejected     = raw.status === 'rejected';
+  const isAcknowledged = raw.status === 'acknowledged';
   const steps = isRejected
     ? [
         { status: 'pending',  label: 'Submitted' },
         { status: 'rejected', label: 'Rejected'  },
       ]
+    : isAcknowledged
+    ? ADVISORY_TIMELINE_STEPS
     : TIMELINE_STEPS;
 
   const timeline: TimelineEvent[] = steps.map(step => {
@@ -276,6 +283,7 @@ function adaptReportDetail(raw: RawReport): ReportDetail {
     aiImageVerified: raw.ai_image_verified ?? null,
     aiImageNotes:    raw.ai_image_notes ?? null,
     aiHasDuplicate:  raw.potential_duplicate_of != null,
+    advisory:        raw.advisory ?? null,
   };
 }
 
@@ -299,16 +307,32 @@ export function adaptAlert(raw: RawAlert): AlertItem {
 }
 
 function adaptIncident(raw: RawReport): Incident {
-  // status_updates is ordered newest-first (.latest()), so index 0 = most recent
-  const relevantUpdates = (raw.status_updates ?? []).filter(
-    u => ['en_route', 'on_scene', 'resolved', 'pending'].includes(u.status),
-  );
-  const lastUpdate = relevantUpdates[0] ?? null;
-  const responderStatus: ResponderStatus =
-    lastUpdate?.status === 'resolved' ? 'resolved'
-    : lastUpdate?.status === 'on_scene' ? 'on_scene'
-    : lastUpdate?.status === 'en_route' ? 'en_route'
-    : 'pending';
+  // Determine responder status from member_statuses (pivot) first, then fall back to status_updates
+  const myMemberStatus = raw.member_statuses?.find(m => m.status && ['en_route', 'on_scene', 'resolved'].includes(m.status));
+  let responderStatus: ResponderStatus = 'pending';
+
+  if (myMemberStatus) {
+    // Use the highest priority status from any member (for team view)
+    const statusPriority: Record<string, number> = { resolved: 3, on_scene: 2, en_route: 1, pending: 0 };
+    const sorted = [...(raw.member_statuses ?? [])].sort(
+      (a, b) => (statusPriority[b.status] ?? 0) - (statusPriority[a.status] ?? 0),
+    );
+    const top = sorted[0];
+    if (top) {
+      responderStatus = (['resolved', 'on_scene', 'en_route'].includes(top.status) ? top.status : 'pending') as ResponderStatus;
+    }
+  } else {
+    // Fallback to status_updates
+    const relevantUpdates = (raw.status_updates ?? []).filter(
+      u => ['en_route', 'on_scene', 'resolved', 'pending'].includes(u.status),
+    );
+    const lastUpdate = relevantUpdates[0] ?? null;
+    responderStatus =
+      lastUpdate?.status === 'resolved' ? 'resolved'
+      : lastUpdate?.status === 'on_scene' ? 'on_scene'
+      : lastUpdate?.status === 'en_route' ? 'en_route'
+      : 'pending';
+  }
 
   return {
     ...adaptReport(raw),
@@ -316,7 +340,7 @@ function adaptIncident(raw: RawReport): Incident {
     responderStatus,
     distance:        '',
     nearbyCount:     0,
-    teamId:          raw.team ? String(raw.team.id) : null,
+    teamId:          raw.assigned_team ? String(raw.assigned_team.id) : (raw.team ? String(raw.team.id) : null),
     memberStatuses:  raw.member_statuses?.map(adaptMemberStatus),
   };
 }
@@ -351,8 +375,9 @@ export async function getMyTeam(token: string): Promise<Team | null> {
 }
 
 export async function getTeamIncidents(token: string): Promise<Incident[]> {
-  const data = await get<{ data: RawReport[] }>('/reports?assigned=team', token);
-  return data.data.map(adaptIncident);
+  const raw = await get<{ data: RawReport[] } | RawReport[]>('/reports?assigned=team', token);
+  const list = Array.isArray(raw) ? raw : (raw.data ?? []);
+  return list.map(adaptIncident);
 }
 
 export async function getMemberStatuses(incidentId: string, token: string): Promise<MemberStatus[]> {
@@ -599,7 +624,7 @@ export async function submitReport(
 
   payload.photos?.forEach((uri, i) => {
     const ext      = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
-    const mimeType = ['mp4', 'mov'].includes(ext) ? `video/${ext}` : `image/${ext}`;
+    const mimeType = ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext) ? `video/${ext}` : `image/${ext}`;
     form.append('media[]', {
       uri,
       name: `photo_${i}.${ext}`,
@@ -743,8 +768,9 @@ export async function uploadAvatar(
 }
 
 export async function getAssignedIncidents(token: string): Promise<Incident[]> {
-  const data = await get<{ data: RawReport[] }>('/reports?assigned=me', token);
-  return data.data.map(adaptIncident);
+  const raw = await get<{ data: RawReport[] } | RawReport[]>('/reports?assigned=me', token);
+  const list = Array.isArray(raw) ? raw : (raw.data ?? []);
+  return list.map(adaptIncident);
 }
 
 export async function getIncidentDetail(id: string, token: string): Promise<IncidentDetail> {
@@ -885,48 +911,6 @@ export async function getTypingUsers(reportId: string, token: string): Promise<A
   return data.typing;
 }
 
-export async function getFieldReport(reportId: string, token: string): Promise<FieldReportData | null> {
-  try {
-    const raw = await get<{
-      id: number;
-      report_id: number;
-      actions_taken: string;
-      resources_used: string | null;
-      people_assisted: number;
-      damage_assessment: string | null;
-      checklist: Record<string, boolean> | null;
-    }>(`/responder/reports/${reportId}/field-report`, token);
-    return {
-      id: String(raw.id),
-      reportId: String(raw.report_id),
-      actionsTaken: raw.actions_taken,
-      resourcesUsed: raw.resources_used ?? '',
-      peopleAssisted: raw.people_assisted,
-      damageAssessment: raw.damage_assessment ?? '',
-      checklist: raw.checklist ?? {},
-    };
-  } catch (e: any) {
-    if (e?.status === 404) return null;
-    throw e;
-  }
-}
-
-export async function saveFieldReport(
-  reportId: string,
-  data: Omit<FieldReportData, 'id' | 'reportId'>,
-  token: string,
-  isExisting = false,
-): Promise<void> {
-  const body = {
-    actions_taken: data.actionsTaken,
-    resources_used: data.resourcesUsed || null,
-    people_assisted: data.peopleAssisted,
-    damage_assessment: data.damageAssessment || null,
-    checklist: data.checklist,
-  };
-  await post(`/responder/reports/${reportId}/field-report`, body, token);
-}
-
 export async function getResponderStats(token: string): Promise<ResponderStats> {
   type StatsPayload = {
     resolved_total: number;
@@ -1064,96 +1048,6 @@ export async function getWeatherWithFallback(lat: number, lon: number, token: st
 
 export async function withdrawReport(id: string, token: string): Promise<void> {
   await del('/reports/' + id, token);
-}
-
-interface RawFamilyMember {
-  id: number;
-  name: string;
-  email: string;
-  check_in_status: 'safe' | 'need_help' | 'unknown';
-  checked_in_at: string | null;
-  is_creator: boolean;
-  latitude: number | null;
-  longitude: number | null;
-}
-
-interface RawFamilyGroup {
-  id: number;
-  name: string;
-  invite_code: string;
-  members: RawFamilyMember[];
-  created_at: string;
-}
-
-function adaptFamilyMember(raw: RawFamilyMember): FamilyMember {
-  const parts     = raw.name.trim().split(' ');
-  const lastName  = parts.length > 1 ? parts[parts.length - 1] : '';
-  const firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : parts[0] ?? '';
-  return {
-    id:            String(raw.id),
-    firstName,
-    lastName,
-    email:         raw.email,
-    checkInStatus: raw.check_in_status,
-    checkedInAt:   raw.checked_in_at,
-    isCreator:     raw.is_creator,
-    latitude:      raw.latitude ?? null,
-    longitude:     raw.longitude ?? null,
-  };
-}
-
-function adaptFamilyGroup(raw: RawFamilyGroup): FamilyGroup {
-  return {
-    id:         String(raw.id),
-    name:       raw.name,
-    inviteCode: raw.invite_code,
-    members:    raw.members.map(adaptFamilyMember),
-    createdAt:  raw.created_at,
-  };
-}
-
-export async function getFamily(token: string): Promise<FamilyGroup | null> {
-  try {
-    const raw = await get<RawFamilyGroup>('/family', token);
-    return adaptFamilyGroup(raw);
-  } catch (e: any) {
-    if (e?.status === 404) return null;
-    throw e;
-  }
-}
-
-export async function createFamily(name: string, token: string): Promise<FamilyGroup> {
-  const raw = await post<RawFamilyGroup>('/family', { name }, token);
-  return adaptFamilyGroup(raw);
-}
-
-export async function inviteFamilyMember(email: string, token: string): Promise<void> {
-  await post('/family/invite', { email }, token);
-}
-
-export async function joinFamily(code: string, token: string): Promise<FamilyGroup> {
-  const raw = await post<RawFamilyGroup>(`/family/join/${code}`, {}, token);
-  return adaptFamilyGroup(raw);
-}
-
-export async function familyCheckIn(
-  status: CheckInStatus,
-  token: string,
-  location?: { latitude: number; longitude: number },
-): Promise<void> {
-  await post('/family/check-in', {
-    status,
-    latitude: location?.latitude,
-    longitude: location?.longitude,
-  }, token);
-}
-
-export async function leaveFamily(token: string): Promise<void> {
-  await del('/family/leave', token);
-}
-
-export async function removeFamilyMember(memberId: string, token: string): Promise<void> {
-  await del(`/family/members/${memberId}`, token);
 }
 
 export async function getEvacuationCenters(token: string): Promise<EvacuationCenter[]> {

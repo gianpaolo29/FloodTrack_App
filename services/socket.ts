@@ -99,6 +99,10 @@ class SocketService {
     this.socket?.emit('typing', reportId);
   }
 
+  emitLocation(latitude: number, longitude: number) {
+    this.socket?.emit('location-update', { latitude, longitude });
+  }
+
   on<T>(event: string, cb: (data: T) => void) {
     this.socket?.on(event, cb as (...args: unknown[]) => void);
   }

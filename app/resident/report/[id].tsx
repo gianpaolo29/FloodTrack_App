@@ -20,16 +20,19 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 
 import { colors } from '@/theme/colors';
 import { SeverityChip, type Severity } from '@/components/SeverityChip';
 import { StatusBadge } from '@/components/StatusBadge';
+import { AdvisoryCard } from '@/components/AdvisoryCard';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
 import { getReportDetail, updateReport, deleteReportMedia, withdrawReport, getUnreadCount } from '@/services/api';
 import { socketService } from '@/services/socket';
 import type { ReportDetail, MediaItem } from '@/types';
+import { inferSeverityFromNotes, severityMatches, severityLabel, severityRank } from '@/utils/ai-severity';
 
 // Gallery width computed dynamically inside components via useWindowDimensions
 
@@ -219,13 +222,13 @@ const hs = StyleSheet.create({
 // ─── Gallery slide with error fallback ───────────────────────────────────────
 
 function GallerySlide({
-  url,
+  item,
   index,
   total,
   isDark,
   slideW,
 }: {
-  url: string;
+  item: MediaItem;
   index: number;
   total: number;
   isDark: boolean;
@@ -244,15 +247,29 @@ function GallerySlide({
       >
         <Ionicons name="image-outline" size={32} color={colors.slate[400]} />
         <Text style={[gal.emptyText, { marginTop: 8 }, isDark && { color: colors.slate[500] }]}>
-          Image unavailable
+          Media unavailable
         </Text>
+      </View>
+    );
+  }
+
+  if (item.type === 'video') {
+    return (
+      <View style={[gal.slide, { width: slideW }]}>
+        <ExpoVideo
+          source={{ uri: item.url }}
+          style={{ width: slideW, height: 260 }}
+          resizeMode={ResizeMode.CONTAIN}
+          useNativeControls
+          isLooping={false}
+        />
       </View>
     );
   }
 
   return (
     <Image
-      source={{ uri: url }}
+      source={{ uri: item.url }}
       style={[gal.slide, { width: slideW }]}
       resizeMode="cover"
       onError={() => setErrored(true)}
@@ -261,9 +278,9 @@ function GallerySlide({
   );
 }
 
-// ─── Photo gallery ───────────────────────────────────────────────────────────
+// ─── Media gallery ───────────────────────────────────────────────────────────
 
-function PhotoGallery({ urls, isDark }: { urls: string[]; isDark: boolean }) {
+function PhotoGallery({ items, isDark }: { items: MediaItem[]; isDark: boolean }) {
   const [active, setActive] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
   const { width: screenW } = useWindowDimensions();
@@ -274,18 +291,21 @@ function PhotoGallery({ urls, isDark }: { urls: string[]; isDark: boolean }) {
     scrollRef.current?.scrollTo({ x: i * galleryW, animated: true });
   }
 
-  if (urls.length === 0) {
+  if (items.length === 0) {
     return (
       <View style={[gal.empty, isDark && { backgroundColor: colors.dark.elevated }]}>
         <View style={[gal.emptyIcon, isDark && { backgroundColor: colors.dark.border }]}>
           <Ionicons name="image-outline" size={28} color={colors.slate[400]} />
         </View>
         <Text style={[gal.emptyText, isDark && { color: colors.slate[500] }]}>
-          No photo evidence attached
+          No evidence attached
         </Text>
       </View>
     );
   }
+
+  const activeItem = items[active];
+  const badgeIcon = activeItem?.type === 'video' ? 'videocam' : 'camera';
 
   return (
     <View style={gal.root}>
@@ -302,12 +322,12 @@ function PhotoGallery({ urls, isDark }: { urls: string[]; isDark: boolean }) {
           }}
           style={{ width: galleryW }}
         >
-          {urls.map((url, i) => (
+          {items.map((item, i) => (
             <GallerySlide
-              key={i}
-              url={url}
+              key={item.id}
+              item={item}
               index={i}
-              total={urls.length}
+              total={items.length}
               isDark={isDark}
               slideW={galleryW}
             />
@@ -323,18 +343,18 @@ function PhotoGallery({ urls, isDark }: { urls: string[]; isDark: boolean }) {
 
         {/* Counter badge */}
         <View style={gal.badge}>
-          <Ionicons name="camera" size={12} color={colors.white} />
+          <Ionicons name={badgeIcon} size={12} color={colors.white} />
           <Text style={gal.badgeText}>
-            {active + 1} / {urls.length}
+            {active + 1} / {items.length}
           </Text>
         </View>
       </View>
 
       {/* Dot indicators */}
-      {urls.length > 1 && (
+      {items.length > 1 && (
         <View style={gal.dotsRow}>
-          {urls.map((_, i) => (
-            <Pressable key={i} onPress={() => goTo(i)} hitSlop={6}>
+          {items.map((item, i) => (
+            <Pressable key={item.id} onPress={() => goTo(i)} hitSlop={6}>
               <View
                 style={[
                   gal.dot,
@@ -420,26 +440,75 @@ function AiStatusCard({
   report: ReportDetail;
   isDark: boolean;
 }) {
-  const { aiFlagged, aiImageVerified, aiImageNotes, aiFlagReason, aiHasDuplicate } = report;
+  const { aiFlagged, aiImageVerified, aiImageNotes, aiFlagReason, aiHasDuplicate, severity } = report;
 
   const entries: AiEntry[] = [];
 
+  // Infer what severity the AI thinks the photo shows
+  const aiSeverity = inferSeverityFromNotes(aiImageNotes);
+  const hasMismatch = aiSeverity && !severityMatches(severity, aiSeverity);
+  const isOverReported = aiSeverity && severityRank(severity) > severityRank(aiSeverity);
+  const isUnderReported = aiSeverity && severityRank(severity) < severityRank(aiSeverity);
+
   if (aiImageVerified === true) {
+    const matchNote = aiSeverity && aiSeverity === severity
+      ? ` The flood level looks consistent with your "${severityLabel(severity)}" rating.`
+      : '';
     entries.push({
       icon: 'shield-checkmark',
       color: colors.severity.low,
       title: 'AI Verified',
-      note: aiImageNotes ?? 'Photo evidence confirmed flooding.',
+      note: (aiImageNotes ?? 'Photo evidence confirmed flooding.') + matchNote,
     });
   }
   if (aiImageVerified === false) {
+    // Smarter message: if notes suggest minor water, acknowledge it
+    const inferred = inferSeverityFromNotes(aiImageNotes);
+    if (inferred === 'low' && severity === 'low') {
+      entries.push({
+        icon: 'water-outline',
+        color: colors.brand[500],
+        title: 'Minor Flooding Detected',
+        note: aiImageNotes ?? 'AI detected signs of rain or minor water. This is consistent with a low severity report.',
+      });
+    } else {
+      entries.push({
+        icon: 'image-outline',
+        color: colors.severity.moderate,
+        title: 'Image Under Review',
+        note: aiImageNotes ?? 'Our AI could not confirm flooding in the submitted photo.',
+      });
+    }
+  }
+
+  // AI severity recommendation
+  if (hasMismatch && aiSeverity) {
+    const sevColor = colors.severity[aiSeverity];
+    if (isOverReported) {
+      entries.push({
+        icon: 'arrow-down-circle',
+        color: sevColor,
+        title: `AI Suggests: ${severityLabel(aiSeverity)}`,
+        note: `You reported "${severityLabel(severity)}" but the photo looks more like "${severityLabel(aiSeverity)}" level flooding. An admin may adjust the severity.`,
+      });
+    } else if (isUnderReported) {
+      entries.push({
+        icon: 'arrow-up-circle',
+        color: sevColor,
+        title: `AI Suggests: ${severityLabel(aiSeverity)}`,
+        note: `You reported "${severityLabel(severity)}" but the photo suggests "${severityLabel(aiSeverity)}" level flooding. An admin may upgrade the severity for faster response.`,
+      });
+    }
+  } else if (aiSeverity && aiSeverity !== severity && !hasMismatch) {
+    // Close enough — just a subtle note
     entries.push({
-      icon: 'image-outline',
-      color: colors.severity.moderate,
-      title: 'Image Under Review',
-      note: aiImageNotes ?? 'Our AI could not confirm flooding in the submitted photo.',
+      icon: 'checkmark-circle',
+      color: colors.severity.low,
+      title: 'Severity Looks Right',
+      note: `AI analysis is consistent with your "${severityLabel(severity)}" rating.`,
     });
   }
+
   if (aiHasDuplicate) {
     entries.push({
       icon: 'copy-outline',
@@ -1024,6 +1093,9 @@ export default function ReportDetailScreen() {
           {/* ── AI Analysis ── */}
           {!editing && <AiStatusCard report={report} isDark={isDark} />}
 
+          {/* ── Advisory Card (low/moderate acknowledged) ── */}
+          {!editing && report.advisory && <AdvisoryCard advisory={report.advisory} isDark={isDark} />}
+
           {/* ── Photo evidence ── */}
           {!editing && (
             <SectionCard isDark={isDark}>
@@ -1035,7 +1107,7 @@ export default function ReportDetailScreen() {
                   </View>
                 )}
               </View>
-              <PhotoGallery urls={report.mediaUrls ?? []} isDark={isDark} />
+              <PhotoGallery items={report.mediaItems ?? []} isDark={isDark} />
             </SectionCard>
           )}
 
@@ -1043,6 +1115,28 @@ export default function ReportDetailScreen() {
           <SectionCard isDark={isDark}>
             <SectionLabel text="Status Timeline" icon="git-commit-outline" iconColor="#8B5CF6" isDark={isDark} />
             <HorizontalStepper events={report.timeline} isDark={isDark} />
+            {report.status === 'rejected' && (() => {
+              const reason = report.timeline.find(e => e.status === 'rejected')?.detail;
+              if (!reason) return null;
+              return (
+                <View style={{
+                  marginTop: 12,
+                  backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : '#FEF2F2',
+                  borderRadius: 12,
+                  padding: 12,
+                  borderWidth: 1,
+                  borderColor: isDark ? 'rgba(239,68,68,0.2)' : '#FECACA',
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <Ionicons name="close-circle" size={14} color="#EF4444" />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#EF4444' }}>Rejection Reason</Text>
+                  </View>
+                  <Text style={{ fontSize: 13, lineHeight: 18, color: isDark ? '#FCA5A5' : '#991B1B' }}>
+                    {reason}
+                  </Text>
+                </View>
+              );
+            })()}
           </SectionCard>
 
           {/* ── Responder updates ── */}

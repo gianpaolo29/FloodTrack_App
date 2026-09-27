@@ -43,6 +43,12 @@ import type { Report as ApiReport, Hazard } from '@/types';
 import { HeatmapZoneSummary } from '@/components/HeatmapZoneSummary';
 type HazardType = 'all' | 'flood';
 
+function isVideoUrl(url?: string): boolean {
+  if (!url) return false;
+  const ext = url.split('.').pop()?.toLowerCase() ?? '';
+  return ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext);
+}
+
 interface Report {
   id: string;
   title: string;
@@ -479,11 +485,17 @@ function ReportSheet({
                     onPress={() => onViewDetail(report.id)}
                     style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
                   >
-                    <Image
-                      source={{ uri: url }}
-                      style={bs.photoThumb}
-                      resizeMode="cover"
-                    />
+                    {isVideoUrl(url) ? (
+                      <View style={[bs.photoThumb, { backgroundColor: '#1E293B', alignItems: 'center', justifyContent: 'center' }]}>
+                        <Ionicons name="videocam" size={22} color={colors.white} />
+                      </View>
+                    ) : (
+                      <Image
+                        source={{ uri: url }}
+                        style={bs.photoThumb}
+                        resizeMode="cover"
+                      />
+                    )}
                   </Pressable>
                 ))
             }
@@ -1646,6 +1658,7 @@ export default function MapScreen() {
   const [topCardHeight,      setTopCardHeight]      = useState(0);
   const [searchBarBottom,    setSearchBarBottom]    = useState(0);
   const [userLocation,       setUserLocation]       = useState<{ latitude: number; longitude: number } | null>(null);
+  const [showMyPin,          setShowMyPin]          = useState(false);
   const [photoUrls,          setPhotoUrls]          = useState<string[]>([]);
   const [photosLoading,      setPhotosLoading]      = useState(false);
   const [advisoryDismissed,  setAdvisoryDismissed]  = useState(false);
@@ -1691,7 +1704,11 @@ export default function MapScreen() {
         setShowHomeSetup(false);
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      let pos = await Location.getLastKnownPositionAsync();
+      if (!pos) {
+        try { pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }); } catch {}
+      }
+      if (!pos) { setShowHomeSetup(false); return; }
       const [geo] = await Location.reverseGeocodeAsync({
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
@@ -1992,7 +2009,10 @@ export default function MapScreen() {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') return;
-        const last = await Location.getLastKnownPositionAsync();
+        let last = await Location.getLastKnownPositionAsync();
+        if (!last) {
+          try { last = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }); } catch {}
+        }
         if (last) {
           const coords = { latitude: last.coords.latitude, longitude: last.coords.longitude };
           setUserLocation(coords);
@@ -2080,10 +2100,15 @@ export default function MapScreen() {
       if (!coords) {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') return;
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        let loc = await Location.getLastKnownPositionAsync();
+        if (!loc) {
+          try { loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }); } catch {}
+        }
+        if (!loc) return;
         coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
         setUserLocation(coords);
       }
+      setShowMyPin(true);
       mapRef.current?.animateToRegion({
         latitude:       coords.latitude,
         longitude:      coords.longitude,
@@ -2230,6 +2255,45 @@ export default function MapScreen() {
             />
           );
         })()}
+
+        {/* Current-location pin */}
+        {showMyPin && userLocation && (
+          <Marker
+            coordinate={userLocation}
+            tracksViewChanges={true}
+            anchor={{ x: 0.5, y: 1 }}
+            zIndex={20}
+            title="My Location"
+            onPress={() => setShowMyPin(false)}
+          >
+            <View style={{ alignItems: 'center', width: 40, height: 48 }}>
+              <View style={{
+                backgroundColor: colors.brand[500],
+                borderRadius: 18,
+                width: 36,
+                height: 36,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 3,
+                borderColor: '#FFFFFF',
+                elevation: 6,
+              }}>
+                <Ionicons name="person" size={18} color="#FFFFFF" />
+              </View>
+              <View style={{
+                width: 0,
+                height: 0,
+                borderLeftWidth: 6,
+                borderRightWidth: 6,
+                borderTopWidth: 8,
+                borderLeftColor: 'transparent',
+                borderRightColor: 'transparent',
+                borderTopColor: colors.brand[500],
+                marginTop: -1,
+              }} />
+            </View>
+          </Marker>
+        )}
 
         {/* Admin-created hazard markers */}
         {adminHazards.map(hz => {

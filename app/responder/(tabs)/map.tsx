@@ -21,6 +21,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 import * as Location from 'expo-location';
 import MapView, {
   Circle,
@@ -178,6 +179,11 @@ const EVAC_TYPE_META: Record<string, { icon: keyof typeof Ionicons.glyphMap; lab
 };
 
 const EVAC_COLOR = colors.evac;
+
+function isVideoUrl(url: string): boolean {
+  const ext = url.split('.').pop()?.toLowerCase();
+  return ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext ?? '');
+}
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -548,11 +554,26 @@ function ReportSheet({
                     onPress={() => onViewDetail(report.id)}
                     style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
                   >
-                    <Image
-                      source={{ uri: url }}
-                      style={bs.photoThumb}
-                      resizeMode="cover"
-                    />
+                    {isVideoUrl(url) ? (
+                      <View style={bs.photoThumb}>
+                        <ExpoVideo
+                          source={{ uri: url }}
+                          style={{ width: '100%', height: '100%' }}
+                          resizeMode={ResizeMode.COVER}
+                          shouldPlay={false}
+                          isMuted
+                        />
+                        <View style={bs.videoOverlay}>
+                          <Ionicons name="play-circle" size={22} color={colors.white} />
+                        </View>
+                      </View>
+                    ) : (
+                      <Image
+                        source={{ uri: url }}
+                        style={bs.photoThumb}
+                        resizeMode="cover"
+                      />
+                    )}
                   </Pressable>
                 ))
             }
@@ -652,6 +673,12 @@ const bs = StyleSheet.create({
     width: 90, height: 72, borderRadius: 10,
     overflow: 'hidden',
     alignItems: 'center', justifyContent: 'center',
+    position: 'relative' as const,
+  },
+  videoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center' as const, justifyContent: 'center' as const,
+    backgroundColor: 'rgba(0,0,0,0.3)',
   },
   depthRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -1939,6 +1966,7 @@ export default function ResponderMapScreen() {
   const [topCardHeight,      setTopCardHeight]      = useState(0);
   const [searchBarBottom,    setSearchBarBottom]    = useState(0);
   const [userLocation,       setUserLocation]       = useState<{ latitude: number; longitude: number } | null>(null);
+  const [showMyPin,          setShowMyPin]          = useState(false);
   const [photoUrls,          setPhotoUrls]          = useState<string[]>([]);
   const [photosLoading,      setPhotosLoading]      = useState(false);
   const [advisoryDismissed,  setAdvisoryDismissed]  = useState(false);
@@ -2007,14 +2035,11 @@ export default function ResponderMapScreen() {
       showSweetAlert({
         type: 'success',
         title: 'Incident Resolved!',
-        message: 'Great work! The incident has been successfully resolved. Please complete the field report.',
+        message: 'Great work! The incident has been successfully resolved.',
         buttons: [{
-          text: 'Open Field Report',
+          text: 'Done',
           style: 'primary',
-          onPress: () => router.replace({
-            pathname: '/responder/incident/[id]/field-report',
-            params: { id: navIncidentId },
-          } as never),
+          onPress: () => router.replace('/responder/(tabs)' as never),
         }],
       });
     } catch (e: any) {
@@ -2347,7 +2372,10 @@ export default function ResponderMapScreen() {
         try {
           const { status } = await Location.requestForegroundPermissionsAsync();
           if (status !== 'granted' || cancelled) return;
-          const last = await Location.getLastKnownPositionAsync();
+          let last = await Location.getLastKnownPositionAsync();
+          if (!last) {
+            try { last = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }); } catch {}
+          }
           if (last && !cancelled) {
             const coords = { latitude: last.coords.latitude, longitude: last.coords.longitude };
             setUserLocation(coords);
@@ -2489,10 +2517,15 @@ export default function ResponderMapScreen() {
       if (!coords) {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') return;
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        let loc = await Location.getLastKnownPositionAsync();
+        if (!loc) {
+          try { loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }); } catch {}
+        }
+        if (!loc) return;
         coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
         setUserLocation(coords);
       }
+      setShowMyPin(true);
       mapRef.current?.animateToRegion({
         latitude:       coords.latitude,
         longitude:      coords.longitude,
@@ -2639,6 +2672,45 @@ export default function ResponderMapScreen() {
             />
           );
         })()}
+
+        {/* Current-location pin */}
+        {showMyPin && userLocation && (
+          <Marker
+            coordinate={userLocation}
+            tracksViewChanges={true}
+            anchor={{ x: 0.5, y: 1 }}
+            zIndex={20}
+            title="My Location"
+            onPress={() => setShowMyPin(false)}
+          >
+            <View style={{ alignItems: 'center', width: 40, height: 48 }}>
+              <View style={{
+                backgroundColor: colors.brand[500],
+                borderRadius: 18,
+                width: 36,
+                height: 36,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 3,
+                borderColor: '#FFFFFF',
+                elevation: 6,
+              }}>
+                <Ionicons name="person" size={18} color="#FFFFFF" />
+              </View>
+              <View style={{
+                width: 0,
+                height: 0,
+                borderLeftWidth: 6,
+                borderRightWidth: 6,
+                borderTopWidth: 8,
+                borderLeftColor: 'transparent',
+                borderRightColor: 'transparent',
+                borderTopColor: colors.brand[500],
+                marginTop: -1,
+              }} />
+            </View>
+          </Marker>
+        )}
 
         {/* Admin-created hazard markers */}
         {adminHazards.map(hz => {

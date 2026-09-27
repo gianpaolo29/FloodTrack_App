@@ -20,6 +20,7 @@ import { getAdminReports, updateAdminReportStatus } from '@/services/api';
 import * as Storage from '@/utils/storage';
 import { ADMIN_AUTO_PROCESS_KEY } from './settings';
 import type { AdminReport } from '@/types';
+import { inferSeverityFromNotes, severityMatches } from '@/utils/ai-severity';
 
 const SEVERITY_COLORS: Record<string, string> = {
   low:      colors.severity.low,
@@ -68,9 +69,44 @@ export default function AdminReports() {
 
   async function runAutoProcess(data: AdminReport[]) {
     if (!token) return;
-    const pending   = data.filter(r => r.status === 'pending');
-    const toVerify  = pending.filter(r => r.aiImageVerified === true && !r.aiFlagged && !r.aiHasDuplicate);
-    const toReject  = pending.filter(r => r.aiImageVerified === false || r.aiExifStatus === 'fail');
+    const pending = data.filter(r => r.status === 'pending');
+
+    const toVerify: AdminReport[] = [];
+    const toReject: AdminReport[] = [];
+
+    for (const r of pending) {
+      // Hard reject: EXIF failed (internet/old photo)
+      if (r.aiExifStatus === 'fail') {
+        toReject.push(r);
+        continue;
+      }
+
+      // Hard reject: AI says no flood AND no notes suggest even minor flooding
+      if (r.aiImageVerified === false) {
+        const inferred = inferSeverityFromNotes(r.aiImageNotes);
+        // If notes still mention rain/puddles/minor water, don't reject low reports
+        if (r.severity === 'low' && inferred === 'low') {
+          toVerify.push(r);
+        } else {
+          toReject.push(r);
+        }
+        continue;
+      }
+
+      // Skip if flagged or duplicate — needs manual review
+      if (r.aiFlagged || r.aiHasDuplicate) continue;
+
+      // AI confirmed flood in photo
+      if (r.aiImageVerified === true) {
+        const inferred = inferSeverityFromNotes(r.aiImageNotes);
+        if (!inferred || severityMatches(r.severity, inferred)) {
+          // Severity aligns (or no inference possible) — auto-verify
+          toVerify.push(r);
+        }
+        // If severity is way off, leave for manual review with recommendation
+        continue;
+      }
+    }
 
     if (toVerify.length === 0 && toReject.length === 0) return;
 
@@ -217,6 +253,11 @@ export default function AdminReports() {
               const imageOk     = report.aiImageVerified === true && !report.aiFlagged && !exifFailed;
               const isPending   = report.status === 'pending';
 
+              // AI severity recommendation
+              const aiSeverity = inferSeverityFromNotes(report.aiImageNotes);
+              const hasMismatch = aiSeverity && !severityMatches(report.severity, aiSeverity);
+              const hasRecommendation = aiSeverity && aiSeverity !== report.severity;
+
               const aiBadgeColor = isDuplicate || imageFailed || textFlagged || exifFailed || exifNoData
                 ? colors.severity.moderate
                 : imageOk
@@ -270,6 +311,24 @@ export default function AdminReports() {
                           <Ionicons name="sparkles" size={10} color={aiBadgeColor ?? colors.slate[400]} />
                           <Text style={[$.aiBadgeText, { color: aiBadgeColor ?? colors.slate[400] }]}>
                             {aiBadgeLabel}
+                          </Text>
+                        </View>
+                      )}
+                      {hasRecommendation && isPending && (
+                        <View style={[$.aiBadge, {
+                          backgroundColor: (SEVERITY_COLORS[aiSeverity] ?? colors.slate[400]) + '18',
+                          borderWidth: hasMismatch ? 1 : 0,
+                          borderColor: (SEVERITY_COLORS[aiSeverity] ?? colors.slate[400]) + '40',
+                        }]}>
+                          <Ionicons
+                            name={hasMismatch ? 'arrow-forward-circle' : 'bulb'}
+                            size={10}
+                            color={SEVERITY_COLORS[aiSeverity] ?? colors.slate[400]}
+                          />
+                          <Text style={[$.aiBadgeText, { color: SEVERITY_COLORS[aiSeverity] ?? colors.slate[400] }]}>
+                            {hasMismatch
+                              ? `AI suggests: ${aiSeverity}`
+                              : `Matches ${aiSeverity}`}
                           </Text>
                         </View>
                       )}

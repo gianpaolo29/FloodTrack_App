@@ -100,7 +100,23 @@ export default function AdminSettings() {
               <View style={[$.howDot, { backgroundColor: colors.severity.low }]} />
               <Text style={[$.howText, { color: textSecondary }]}>
                 <Text style={{ fontWeight: '700', color: textPrimary }}>Auto-Verify: </Text>
-                AI confirmed flood in photo, no flags, not a duplicate
+                AI confirmed flood in photo, severity matches what AI sees, no flags, not a duplicate
+              </Text>
+            </View>
+
+            <View style={$.howRow}>
+              <View style={[$.howDot, { backgroundColor: colors.brand[500] }]} />
+              <Text style={[$.howText, { color: textSecondary }]}>
+                <Text style={{ fontWeight: '700', color: textPrimary }}>Smart Low Approve: </Text>
+                Low severity reports showing rain or minor flooding are approved even if AI is unsure about "flood"
+              </Text>
+            </View>
+
+            <View style={$.howRow}>
+              <View style={[$.howDot, { backgroundColor: colors.severity.moderate }]} />
+              <Text style={[$.howText, { color: textSecondary }]}>
+                <Text style={{ fontWeight: '700', color: textPrimary }}>AI Recommends: </Text>
+                When the reported severity doesn't match what AI sees in the photo, a recommendation badge is shown
               </Text>
             </View>
 
@@ -108,15 +124,15 @@ export default function AdminSettings() {
               <View style={[$.howDot, { backgroundColor: colors.severity.critical }]} />
               <Text style={[$.howText, { color: textSecondary }]}>
                 <Text style={{ fontWeight: '700', color: textPrimary }}>Auto-Reject: </Text>
-                AI found no flood in the submitted photo
+                AI found no flood and no signs of rain or water in the photo
               </Text>
             </View>
 
             <View style={$.howRow}>
-              <View style={[$.howDot, { backgroundColor: colors.severity.moderate }]} />
+              <View style={[$.howDot, { backgroundColor: colors.slate[400] }]} />
               <Text style={[$.howText, { color: textSecondary }]}>
                 <Text style={{ fontWeight: '700', color: textPrimary }}>Manual Review: </Text>
-                Duplicates, suspicious reports, or no AI verdict yet — always require your decision
+                Duplicates, suspicious reports, severity mismatch, or no AI verdict yet
               </Text>
             </View>
           </View>

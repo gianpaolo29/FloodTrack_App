@@ -42,11 +42,12 @@ export const colors = {
     critical: '#D32F2F',
   },
   status: {
-    pending:  { bg: '#FCF1DC', text: '#8A5A00' },
-    verified: { bg: '#E7F0FB', text: '#124577' },
-    assigned: { bg: '#DCF3F0', text: '#0A6E64' },
-    resolved: { bg: '#DCFCE7', text: '#166534' },
-    rejected: { bg: '#FEE2E2', text: '#B91C1C' },
+    pending:      { bg: '#FCF1DC', text: '#8A5A00' },
+    verified:     { bg: '#E7F0FB', text: '#124577' },
+    acknowledged: { bg: '#CCFBF1', text: '#0F766E' },
+    assigned:     { bg: '#DCF3F0', text: '#0A6E64' },
+    resolved:     { bg: '#DCFCE7', text: '#166534' },
+    rejected:     { bg: '#FEE2E2', text: '#B91C1C' },
   },
   heatmap: ['#3B82C4', '#2E9E5B', '#F4B400', '#EA6A0C', '#D32F2F'],
   floodDepth: {

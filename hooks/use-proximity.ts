@@ -41,9 +41,11 @@ export function useProximityAlert(
         const { status } = await Location.getForegroundPermissionsAsync();
         if (status !== 'granted') return;
 
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+        let loc = await Location.getLastKnownPositionAsync();
+        if (!loc) {
+          try { loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }); } catch {}
+        }
+        if (!loc) return;
 
         for (const incident of enRouteIncidents) {
           if (!active || alertedIds.current.has(incident.id)) continue;

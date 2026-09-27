@@ -1,14 +1,15 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { colors } from '@/theme/colors';
 
-export type ReportStatus = 'pending' | 'verified' | 'assigned' | 'resolved' | 'rejected';
+export type ReportStatus = 'pending' | 'verified' | 'acknowledged' | 'assigned' | 'resolved' | 'rejected';
 
 const STATUS_LABELS: Record<ReportStatus, string> = {
-  pending:  'Pending review',
-  verified: 'Verified',
-  assigned: 'Assigned',
-  resolved: 'Resolved',
-  rejected: 'Rejected',
+  pending:      'Pending review',
+  verified:     'Verified',
+  acknowledged: 'Advisory Issued',
+  assigned:     'Assigned',
+  resolved:     'Resolved',
+  rejected:     'Rejected',
 };
 
 interface Props {

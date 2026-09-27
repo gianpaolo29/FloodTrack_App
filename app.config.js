@@ -41,6 +41,12 @@ export default {
     queries: {
       schemes: ['fb', 'fbapi', 'fbauth2'],
     },
+    permissions: [
+      'ACCESS_FINE_LOCATION',
+      'ACCESS_COARSE_LOCATION',
+      'FOREGROUND_SERVICE',
+      'FOREGROUND_SERVICE_LOCATION',
+    ],
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
   },
@@ -65,6 +71,17 @@ export default {
       },
     ],
     'expo-secure-store',
+    [
+      'expo-location',
+      {
+        locationAlwaysAndWhenInUsePermission:
+          'FloodTrack uses your location to show nearby hazards and help responders reach you.',
+        locationWhenInUsePermission:
+          'FloodTrack needs your location to show nearby hazards and auto-fill your report location.',
+        isAndroidForegroundServiceEnabled: true,
+        isAndroidBackgroundLocationEnabled: false,
+      },
+    ],
     [
       'expo-notifications',
       {

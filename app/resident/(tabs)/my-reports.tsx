@@ -33,21 +33,12 @@ const HEADER_GRADIENT: [string, string, string] = ['#00D2FF', '#4A6CF7', '#7C3AE
 
 type FilterTab = 'all' | 'active' | 'resolved';
 
-const ACTIVE_STATUSES: ReportStatus[] = ['pending', 'verified', 'assigned'];
+const ACTIVE_STATUSES: ReportStatus[] = ['pending', 'verified', 'acknowledged', 'assigned'];
 
-/* ── Report‑type icon mapping ── */
-const TYPE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
-  'Flood':           'water-outline',
-  'Flood report':    'water-outline',
-  'Flash flood':     'thunderstorm-outline',
-  'River flood':     'water-outline',
-  'Coastal flood':   'boat-outline',
-  'Urban flood':     'business-outline',
-  'flood':           'water-outline',
-};
-
-function getTypeIcon(type: string): keyof typeof Ionicons.glyphMap {
-  return TYPE_ICONS[type] ?? 'document-text-outline';
+function isVideoUrl(url?: string): boolean {
+  if (!url) return false;
+  const ext = url.split('.').pop()?.toLowerCase() ?? '';
+  return ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext);
 }
 
 /* ── Compact Report Card ── */
@@ -106,14 +97,20 @@ function ReportCard({
           {/* Thumbnail */}
           {hasPhoto && (
             <View style={styles.thumbWrap}>
-              <Image
-                source={{ uri: report.thumbnailUrl }}
-                style={styles.thumbImg}
-                resizeMode="cover"
-              />
+              {isVideoUrl(report.thumbnailUrl) ? (
+                <View style={[StyleSheet.absoluteFillObject, styles.videoThumbPlaceholder]}>
+                  <Ionicons name="videocam" size={28} color={colors.white} />
+                </View>
+              ) : (
+                <Image
+                  source={{ uri: report.thumbnailUrl }}
+                  style={styles.thumbImg}
+                  resizeMode="cover"
+                />
+              )}
               {(report.mediaCount ?? 0) > 1 && (
                 <View style={styles.photoBadge}>
-                  <Ionicons name="camera" size={9} color={colors.white} />
+                  <Ionicons name={isVideoUrl(report.thumbnailUrl) ? 'videocam' : 'camera'} size={9} color={colors.white} />
                   <Text style={styles.photoBadgeText}>{report.mediaCount}</Text>
                 </View>
               )}
@@ -135,12 +132,6 @@ function ReportCard({
             </View>
 
             <View style={styles.cardMeta}>
-              <View style={styles.metaItem}>
-                <Ionicons name={getTypeIcon(report.type)} size={12} color={isDark ? colors.slate[400] : colors.slate[500]} />
-                <Text style={[styles.metaText, isDark && { color: colors.slate[400] }]}>
-                  {report.type}
-                </Text>
-              </View>
               <View style={styles.metaItem}>
                 <Ionicons name="location-outline" size={12} color={colors.slate[400]} />
                 <Text
@@ -758,6 +749,11 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     width: undefined,
     height: undefined,
+  },
+  videoThumbPlaceholder: {
+    backgroundColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   photoBadge: {
     position: 'absolute', bottom: 6, right: 6,

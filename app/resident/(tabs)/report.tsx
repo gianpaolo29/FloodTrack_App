@@ -36,7 +36,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 
 import { colors } from '@/theme/colors';
-import { SeverityChip, type Severity } from '@/components/SeverityChip';
+import { type Severity } from '@/components/SeverityChip';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
@@ -59,18 +59,6 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
 
 const HAZARD_TYPE = 'flood';
 
-interface SeverityOption {
-  level: Severity;
-  label: string;
-  description: string;
-}
-
-const SEVERITY_OPTIONS: SeverityOption[] = [
-  { level: 'low',      label: 'Low',      description: 'Passable, monitor only'            },
-  { level: 'moderate', label: 'Moderate', description: 'Caution, may worsen'               },
-  { level: 'high',     label: 'High',     description: 'Unsafe, prompt action needed'      },
-  { level: 'critical', label: 'Critical', description: 'Life-threatening, immediate dispatch' },
-];
 
 function ProgressBar({ current, total }: { current: number; total: number }) {
   const progress = (current + 1) / total;
@@ -169,77 +157,6 @@ function LocationBanner({
 }
 
 
-function SeverityStep({
-  selected,
-  onSelect,
-  isDark,
-}: {
-  selected: Severity | null;
-  onSelect: (s: Severity) => void;
-  isDark: boolean;
-}) {
-  return (
-    <View style={styles.stepBody}>
-      <Text style={[styles.stepTitle, isDark && { color: colors.white }]}>
-        How severe is it?
-      </Text>
-      <Text style={[styles.stepSubtitle, isDark && { color: colors.slate[400] }]}>
-        Choose the level that best describes the danger.
-      </Text>
-
-      <View style={{ gap: 12 }}>
-        {SEVERITY_OPTIONS.map(opt => {
-          const active    = selected === opt.level;
-          const levelColor = colors.severity[opt.level];
-          return (
-            <Pressable
-              key={opt.level}
-              onPress={() => onSelect(opt.level)}
-              style={({ pressed }) => [
-                styles.severityCard,
-                isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
-                active && {
-                  borderColor: levelColor + '30',
-                  backgroundColor: isDark ? levelColor + '12' : levelColor + '0A',
-                },
-                pressed && !active && { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50] },
-              ]}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: active }}
-              accessibilityLabel={`${opt.label}: ${opt.description}`}
-            >
-              {active && (
-                <View style={[styles.severityAccent, { backgroundColor: levelColor }]} />
-              )}
-              <View style={[styles.severityLeft, { borderColor: levelColor + '40', backgroundColor: levelColor + '14' }]}>
-                <Ionicons
-                  name={
-                    opt.level === 'low'      ? 'information-circle' :
-                    opt.level === 'moderate' ? 'warning'            :
-                    opt.level === 'high'     ? 'alert-circle'       : 'alert'
-                  }
-                  size={22}
-                  color={levelColor}
-                />
-              </View>
-              <View style={{ flex: 1, gap: 3 }}>
-                <Text style={[styles.severityLabel, isDark && { color: colors.white }]}>
-                  {opt.label}
-                </Text>
-                <Text style={[styles.severityDesc, isDark && { color: colors.slate[400] }]}>
-                  {opt.description}
-                </Text>
-              </View>
-              {active && (
-                <Ionicons name="checkmark-circle" size={22} color={levelColor} />
-              )}
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
 
 const DEPTH_LEVELS = [
   { key: 'ankle', label: 'Ankle-deep',    cm: 30,  severity: 'low'      as Severity, desc: '~ 1 ft — passable with caution' },
@@ -799,19 +716,29 @@ function EvidenceStep({
 }) {
   const remaining = 5 - photos.length;
 
-  async function openCamera() {
+  async function openCamera(mode: 'photo' | 'video') {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
       onShowAlert({ type: 'warning', title: 'Camera Access Needed', message: 'Allow camera permission to take photos or videos for your report.' });
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images', 'videos'],
+      mediaTypes: mode === 'video' ? ['videos'] : ['images'],
       quality: 0.8,
-      videoMaxDuration: 30,
+      videoMaxDuration: 15,
     });
     if (!result.canceled && result.assets.length > 0) {
-      onPhotosChange([...photos, result.assets[0].uri].slice(0, 5));
+      const asset = result.assets[0];
+      // Validate video duration (max 15 seconds)
+      if ((asset.type === 'video' || isVideoUri(asset.uri)) && asset.duration && asset.duration > 16_000) {
+        onShowAlert({
+          type: 'warning',
+          title: 'Video Too Long',
+          message: 'Videos must be 15 seconds or less. Please record a shorter clip.',
+        });
+        return;
+      }
+      onPhotosChange([...photos, asset.uri].slice(0, 5));
     }
   }
 
@@ -825,18 +752,19 @@ function EvidenceStep({
         Add photo/video evidence
       </Text>
       <Text style={[styles.stepSubtitle, isDark && { color: colors.slate[400] }]}>
-        Optional but strongly recommended. Helps admins verify faster.
+        At least 1 photo or video is required. Must be taken live.
       </Text>
 
       {photos.length > 0 && (
         <View style={styles.photoGrid}>
           {photos.map((uri, idx) => (
             <View key={uri} style={styles.photoCell}>
-              <Image source={{ uri }} style={styles.photoImg} resizeMode="cover" />
-              {isVideoUri(uri) && (
-                <View style={styles.videoOverlay}>
-                  <Ionicons name="play-circle" size={30} color={colors.white} />
+              {isVideoUri(uri) ? (
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1E293B', alignItems: 'center', justifyContent: 'center' }]}>
+                  <Ionicons name="videocam" size={28} color={colors.white} />
                 </View>
+              ) : (
+                <Image source={{ uri }} style={styles.photoImg} resizeMode="cover" />
               )}
               <View style={styles.photoBadge}>
                 <Text style={styles.photoBadgeText}>{idx + 1}</Text>
@@ -844,7 +772,7 @@ function EvidenceStep({
               <Pressable
                 style={styles.photoRemove}
                 onPress={() => removePhoto(uri)}
-                accessibilityLabel="Remove photo"
+                accessibilityLabel="Remove media"
                 hitSlop={6}
               >
                 <View style={styles.photoRemoveInner}>
@@ -855,55 +783,86 @@ function EvidenceStep({
           ))}
 
           {remaining > 0 && (
-            <Pressable
-              style={[styles.photoAddCell, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}
-              onPress={openCamera}
-              accessibilityLabel="Add more photos"
-            >
-              <Ionicons name="add" size={28} color={colors.brand[500]} />
+            <View style={[styles.photoAddCell, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}>
               <Text style={[styles.photoAddLabel, isDark && { color: colors.slate[400] }]}>
                 {remaining} left
               </Text>
-            </Pressable>
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
+                <Pressable onPress={() => openCamera('photo')} accessibilityLabel="Take a photo" hitSlop={6}>
+                  <Ionicons name="camera" size={24} color={colors.brand[500]} />
+                </Pressable>
+                <Pressable onPress={() => openCamera('video')} accessibilityLabel="Record a video" hitSlop={6}>
+                  <Ionicons name="videocam" size={24} color={colors.brand[500]} />
+                </Pressable>
+              </View>
+            </View>
           )}
         </View>
       )}
 
       {photos.length === 0 && (
-        <Pressable
-          style={[styles.evidenceAdd, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
-          onPress={openCamera}
-          accessibilityRole="button"
-          accessibilityLabel="Take a photo"
-        >
-          <View style={[styles.evidenceIconCircle, isDark && { backgroundColor: 'rgba(79,142,247,0.15)' }]}>
-            <Ionicons name="camera" size={32} color={colors.brand[500]} />
-          </View>
-          <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[300] }]}>
-            Take Photo
-          </Text>
-          <Text style={[styles.evidenceAddSub, isDark && { color: colors.slate[500] }]}>
-            Use your camera
-          </Text>
-        </Pressable>
+        <View style={styles.evidenceGrid}>
+          <Pressable
+            style={[styles.evidenceAdd, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
+            onPress={() => openCamera('photo')}
+            accessibilityRole="button"
+            accessibilityLabel="Take a photo"
+          >
+            <View style={[styles.evidenceIconCircle, isDark && { backgroundColor: 'rgba(79,142,247,0.15)' }]}>
+              <Ionicons name="camera" size={32} color={colors.brand[500]} />
+            </View>
+            <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[300] }]}>
+              Take Photo
+            </Text>
+            <Text style={[styles.evidenceAddSub, isDark && { color: colors.slate[500] }]}>
+              Capture a live photo
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.evidenceAdd, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
+            onPress={() => openCamera('video')}
+            accessibilityRole="button"
+            accessibilityLabel="Record a video"
+          >
+            <View style={[styles.evidenceIconCircle, isDark && { backgroundColor: 'rgba(79,142,247,0.15)' }]}>
+              <Ionicons name="videocam" size={32} color={colors.brand[500]} />
+            </View>
+            <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[300] }]}>
+              Record Video
+            </Text>
+            <Text style={[styles.evidenceAddSub, isDark && { color: colors.slate[500] }]}>
+              Max 15 seconds
+            </Text>
+          </Pressable>
+        </View>
       )}
 
       {photos.length > 0 && remaining > 0 && (
-        <Pressable
-          style={[styles.evidenceRowBtn, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}
-          onPress={openCamera}
-          accessibilityLabel="Take a photo"
-        >
-          <Ionicons name="camera-outline" size={18} color={colors.brand[500]} />
-          <Text style={[styles.evidenceRowBtnText, isDark && { color: colors.slate[300] }]}>Camera</Text>
-        </Pressable>
+        <View style={styles.evidenceRowBtns}>
+          <Pressable
+            style={[styles.evidenceRowBtn, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}
+            onPress={() => openCamera('photo')}
+            accessibilityLabel="Take a photo"
+          >
+            <Ionicons name="camera-outline" size={18} color={colors.brand[500]} />
+            <Text style={[styles.evidenceRowBtnText, isDark && { color: colors.slate[300] }]}>Photo</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.evidenceRowBtn, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}
+            onPress={() => openCamera('video')}
+            accessibilityLabel="Record a video"
+          >
+            <Ionicons name="videocam-outline" size={18} color={colors.brand[500]} />
+            <Text style={[styles.evidenceRowBtnText, isDark && { color: colors.slate[300] }]}>Video</Text>
+          </Pressable>
+        </View>
       )}
 
       <View style={[styles.evidenceHint, isDark && { backgroundColor: colors.slate[900] }]}>
         <Ionicons name="information-circle-outline" size={14} color={colors.brand[500]} />
         <Text style={[styles.evidenceHintText, isDark && { color: colors.slate[400] }]}>
           {photos.length === 0
-            ? 'Add up to 5 photos or videos. Strong evidence helps verify faster.'
+            ? 'Take up to 5 photos or videos (max 15s). At least 1 required.'
             : `${photos.length}/5 file${photos.length > 1 ? 's' : ''} selected.${remaining > 0 ? ` ${remaining} slot${remaining > 1 ? 's' : ''} remaining.` : ' Maximum reached.'}`}
         </Text>
       </View>
@@ -982,27 +941,6 @@ function DescriptionStep({
   );
 }
 
-function ConfirmationScreen({ reference, onDone }: { reference: string; onDone: () => void }) {
-  return (
-    <View style={styles.confirmRoot}>
-      <View style={styles.confirmIcon}>
-        <Ionicons name="checkmark-circle" size={64} color={colors.severity.low} />
-      </View>
-      <Text style={styles.confirmTitle}>Report submitted</Text>
-      <Text style={styles.confirmSub}>
-        Your report has been received.{reference ? (
-          <> Reference:{' '}
-            <Text style={{ fontWeight: '700', color: colors.brand[500] }}>{reference}</Text>
-          </>
-        ) : null}
-      </Text>
-      <Text style={styles.confirmNote}>
-        You'll be notified when an admin verifies your report. Track it under "My Reports".
-      </Text>
-      <PrimaryButton label="Back to map" onPress={onDone} fullWidth size="lg" />
-    </View>
-  );
-}
 
 export default function ReportScreen() {
   const router   = useRouter();
@@ -1021,8 +959,6 @@ export default function ReportScreen() {
   const [floodDepth, setFloodDepth]       = useState<DepthKey | null>(null);
   const [photos, setPhotos]               = useState<string[]>([]);
   const [description, setDescription]     = useState('');
-  const [submitted, setSubmitted]         = useState(false);
-  const [submittedRef, setSubmittedRef]   = useState('');
   const [loading, setLoading]             = useState(false);
   const [checkingDups, setCheckingDups]   = useState(false);
   const [quickChips, setQuickChips]       = useState<string[]>([]);
@@ -1061,7 +997,7 @@ export default function ReportScreen() {
     );
   }
 
-  const TOTAL_STEPS = 4;
+  const TOTAL_STEPS = 3;
   async function detectLocation() {
     setLocDetecting(true);
     try {
@@ -1075,18 +1011,37 @@ export default function ReportScreen() {
         });
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const [geo] = await Location.reverseGeocodeAsync({
-        latitude:  pos.coords.latitude,
-        longitude: pos.coords.longitude,
-      });
-      const parts = [geo?.name, geo?.street, geo?.subregion, geo?.district, geo?.city, geo?.region].filter(Boolean);
-      const unique = parts.filter((p, i) => i === 0 || p !== parts[i - 1]);
-      const address = unique.length
-        ? unique.join(', ')
-        : `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+
+      let pos = await Location.getLastKnownPositionAsync();
+      if (!pos) {
+        try {
+          pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        } catch {}
+      }
+
+      if (!pos) {
+        showAlert({
+          type: 'error',
+          title: 'Location Unavailable',
+          message: 'Could not get your location. Make sure GPS is on, then tap the refresh icon.',
+          confirmText: 'OK',
+        });
+        return;
+      }
+
+      let address = `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+      try {
+        const [geo] = await Location.reverseGeocodeAsync({
+          latitude:  pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+        const parts = [geo?.name, geo?.street, geo?.subregion, geo?.district, geo?.city, geo?.region].filter(Boolean);
+        const unique = parts.filter((p, i) => i === 0 || p !== parts[i - 1]);
+        if (unique.length) address = unique.join(', ');
+      } catch {
+        // Reverse geocode failed (no internet) — use raw coordinates
+      }
+
       setLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, address });
     } catch {
       showAlert({ type: 'error', title: 'Location Error', message: 'Could not detect your location. Tap the refresh icon to retry.' });
@@ -1116,18 +1071,21 @@ export default function ReportScreen() {
   const screenBg = isDark ? colors.dark.bg      : colors.slate[50];
   const cardBg   = isDark ? colors.dark.surface  : colors.white;
 
-  const STEP_TITLES = ['Severity', 'Flood depth', 'Evidence', 'Description'];
+  const STEP_TITLES = ['Flood depth', 'Evidence', 'Description'];
 
   function canAdvance() {
-    if (step === 0 && !severity)    return false;
-    if (step === 0 && !location)    return false;
-    if (step === 1 && !floodDepth)  return false;
+    if (step === 0 && !floodDepth)        return false;
+    if (step === 0 && !location)          return false;
+    if (step === 1 && photos.length === 0) return false;
     return true;
   }
 
   async function handleNext() {
     if (!canAdvance()) {
       triggerShake();
+      if (step === 1 && photos.length === 0) {
+        showAlert({ type: 'warning', title: 'Evidence Required', message: 'Please take at least 1 photo or video before continuing.' });
+      }
       return;
     }
     if (step < TOTAL_STEPS - 1) {
@@ -1172,8 +1130,17 @@ export default function ReportScreen() {
         },
         token!,
       );
-      setSubmittedRef(result.reference ?? '');
-      setSubmitted(true);
+      const ref = result.reference ?? '';
+      resetForm();
+      showAlert({
+        type: 'success',
+        title: 'Report Submitted!',
+        message: ref
+          ? `Your flood report has been received.\nReference: ${ref}\n\nYou'll be notified when an admin verifies it.`
+          : 'Your flood report has been received. You\'ll be notified when an admin verifies it.',
+        confirmText: 'OK',
+        onConfirm: () => router.replace('/resident'),
+      });
     } catch {
       showAlert({
         type: 'error',
@@ -1185,22 +1152,6 @@ export default function ReportScreen() {
     } finally {
       setLoading(false);
     }
-  }
-
-  function handleConfirmationDone() {
-    setSubmitted(false);
-    setSubmittedRef('');
-    resetForm();
-    detectLocation();
-    router.replace('/resident');
-  }
-
-  if (submitted) {
-    return (
-      <View style={[styles.root, { backgroundColor: screenBg }]}>
-        <ConfirmationScreen reference={submittedRef} onDone={handleConfirmationDone} />
-      </View>
-    );
   }
 
   return (
@@ -1257,13 +1208,6 @@ export default function ReportScreen() {
 
         <Animated.View style={stepAnimStyle}>
         {step === 0 && (
-          <SeverityStep
-            selected={severity}
-            onSelect={setSeverity}
-            isDark={isDark}
-          />
-        )}
-        {step === 1 && (
           <FloodDepthPicker
             selected={floodDepth}
             onSelect={(key, sev) => {
@@ -1275,7 +1219,7 @@ export default function ReportScreen() {
             screenW={screenW}
           />
         )}
-        {step === 2 && (
+        {step === 1 && (
           <EvidenceStep
             isDark={isDark}
             photos={photos}
@@ -1283,7 +1227,7 @@ export default function ReportScreen() {
             onShowAlert={showAlert}
           />
         )}
-        {step === 3 && (
+        {step === 2 && (
           <DescriptionStep
             value={description}
             onChange={setDescription}
@@ -1405,37 +1349,6 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
   },
-
-  severityCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.slate[200],
-    backgroundColor: colors.white,
-    overflow: 'hidden',
-  },
-  severityAccent: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    borderTopLeftRadius: 16,
-    borderBottomLeftRadius: 16,
-  },
-  severityLeft: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  severityLabel: { fontSize: 15, fontWeight: '700', color: colors.slate[900] },
-  severityDesc:  { fontSize: 12, color: colors.slate[500], lineHeight: 17 },
 
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   photoCell: {
@@ -1577,16 +1490,4 @@ const styles = StyleSheet.create({
   },
   summaryChipText: { fontSize: 12, color: colors.slate[600], fontWeight: '600' },
 
-  confirmRoot: {
-    flex: 1,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    gap: 20,
-  },
-  confirmIcon:  { marginBottom: 8 },
-  confirmTitle: { fontSize: 26, fontWeight: '800', color: colors.slate[900], textAlign: 'center' },
-  confirmSub:   { fontSize: 15, color: colors.slate[600], textAlign: 'center', lineHeight: 22 },
-  confirmNote:  { fontSize: 13, color: colors.slate[400], textAlign: 'center', lineHeight: 20 },
 });
