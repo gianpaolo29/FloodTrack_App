@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Animated,
   Easing,
   Image,
-  Linking,
   Modal,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -21,36 +20,34 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { useETA } from '@/hooks/use-eta';
-import { useProximityAlert } from '@/hooks/use-proximity';
+
 import { useNetworkStatus } from '@/hooks/use-network-status';
 import * as Location from 'expo-location';
 import {
   getAssignedIncidents,
   getResponderStats,
-  submitMemberStatus,
   getAppConfig,
   getWeatherWithFallback,
   getActiveHazards,
   updateProfile,
   getMyTeam,
   getTeamStats,
-  getIncidentDetail,
   getUserNotifications,
+  getSchedule,
   type WeatherData,
+  type ScheduleInfo,
 } from '@/services/api';
 import {
   cacheIncidents,
   getCachedIncidents,
-  queueStatusUpdate,
   getPendingCount,
 } from '@/services/offline';
 import { socketService } from '@/services/socket';
-import type { Hazard, Incident, MemberStatus, ResponderStats, ResponderStatus, Team } from '@/types';
+import { onNotificationReceived } from '@/services/notifications';
+import type { Hazard, Incident, ResponderStats, ResponderStatus, Team } from '@/types';
 
 /* ─── constants ─── */
 const H_PAD = 20;
-const CARD_R = 18;
 
 const STEPPER_STATUSES: ResponderStatus[] = ['pending', 'en_route', 'on_scene', 'resolved'];
 const STEPPER_LABELS: Record<ResponderStatus, string> = {
@@ -86,106 +83,67 @@ function getWeatherIcon(desc: string): keyof typeof Ionicons.glyphMap {
   return 'partly-sunny';
 }
 
-function getFloodRisk(rainH: number): { label: string; color: string } {
-  if (rainH >= 7.5) return { label: 'Critical flood risk', color: colors.severity.critical };
-  if (rainH >= 2.5) return { label: 'High flood risk', color: colors.severity.high };
-  if (rainH >= 0.1) return { label: 'Moderate risk', color: colors.severity.moderate };
-  return { label: 'Low risk', color: colors.severity.low };
-}
-
-function openDirections(lat: number, lng: number, name: string) {
-  const label = encodeURIComponent(name);
-  const url = Platform.select({
-    ios: `maps:0,0?q=${label}@${lat},${lng}`,
-    default: `geo:${lat},${lng}?q=${lat},${lng}(${label})`,
-  })!;
-  Linking.openURL(url).catch(() => {
-    Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
-  });
-}
-
-function callPhone(number: string) {
-  Linking.openURL(`tel:${number}`);
+function getFloodRisk(rainH: number): { label: string; color: string; icon: keyof typeof Ionicons.glyphMap } {
+  if (rainH >= 7.5) return { label: 'Critical', color: colors.severity.critical, icon: 'alert-circle' };
+  if (rainH >= 2.5) return { label: 'High', color: colors.severity.high, icon: 'warning' };
+  if (rainH >= 0.1) return { label: 'Moderate', color: colors.severity.moderate, icon: 'information-circle' };
+  return { label: 'Low', color: colors.severity.low, icon: 'shield-checkmark' };
 }
 
 
-/* ─── Status Stepper ─── */
-function StatusStepper({
-  current,
-}: {
-  current: ResponderStatus;
-}) {
+/* ─── Compact Status Tracker ─── */
+function StatusTracker({ current }: { current: ResponderStatus }) {
   const currentIdx = STEPPER_STATUSES.indexOf(current);
 
   return (
-    <View style={$.stepperWrap}>
-      {/* Circles + connecting lines row */}
-      <View style={$.stepperDotsRow}>
-        {STEPPER_STATUSES.map((status, idx) => {
-          const done = idx <= currentIdx;
-          const isActive = idx === currentIdx;
-          const isLast = idx === STEPPER_STATUSES.length - 1;
+    <View style={$.trackerWrap}>
+      {STEPPER_STATUSES.map((status, idx) => {
+        const done = idx <= currentIdx;
+        const isActive = idx === currentIdx;
+        const isLast = idx === STEPPER_STATUSES.length - 1;
 
-          return (
-            <View key={status} style={{ flexDirection: 'row', alignItems: 'center', flex: isLast ? 0 : 1 }}>
-              {/* Circle */}
+        return (
+          <View key={status} style={{ flexDirection: 'row', alignItems: 'center', flex: isLast ? 0 : 1 }}>
+            <View style={{ alignItems: 'center' }}>
               <View
                 style={[
-                  $.stepperCircle,
-                  done && !isActive && $.stepperCircleDone,
-                  isActive && $.stepperCircleActive,
+                  $.trackerDot,
+                  done && !isActive && $.trackerDotDone,
+                  isActive && $.trackerDotActive,
                 ]}
               >
                 {done && !isActive && (
-                  <Ionicons name="checkmark" size={10} color="#fff" />
+                  <Ionicons name="checkmark" size={9} color="#fff" />
                 )}
                 {isActive && (
-                  <View style={$.stepperInnerDot} />
+                  <View style={$.trackerInnerDot} />
                 )}
               </View>
-              {/* Line to next circle */}
-              {!isLast && (
-                <View
-                  style={[
-                    $.stepperLine,
-                    idx < currentIdx && $.stepperLineDone,
-                  ]}
-                />
-              )}
+              <Text
+                style={[
+                  $.trackerLabel,
+                  isActive && { color: colors.brand[500], fontWeight: '700' },
+                ]}
+                numberOfLines={1}
+              >
+                {STEPPER_LABELS[status]}
+              </Text>
             </View>
-          );
-        })}
-      </View>
-      {/* Labels row */}
-      <View style={$.stepperLabelsRow}>
-        {STEPPER_STATUSES.map((status, idx) => {
-          const isActive = idx === currentIdx;
-          return (
-            <Text
-              key={status}
-              style={[
-                $.stepperLabel,
-                isActive && { color: colors.brand[300], fontWeight: '700' },
-              ]}
-            >
-              {STEPPER_LABELS[status]}
-            </Text>
-          );
-        })}
-      </View>
+            {!isLast && (
+              <View
+                style={[
+                  $.trackerLine,
+                  idx < currentIdx && $.trackerLineDone,
+                ]}
+              />
+            )}
+          </View>
+        );
+      })}
     </View>
   );
 }
 
-/* ─── Risk Badge ─── */
-function RiskBadge({ label, color }: { label: string; color: string }) {
-  return (
-    <View style={[$.riskBadge, { backgroundColor: color + '22', borderColor: color + '44' }]}>
-      <Ionicons name="bar-chart" size={11} color={color} />
-      <Text style={[$.riskBadgeText, { color }]}>{label}</Text>
-    </View>
-  );
-}
 
 /* ═══════════════════════════════════════════
    MAIN SCREEN
@@ -201,15 +159,14 @@ export default function HomeTab() {
   const [stats, setStats] = useState<ResponderStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [team, setTeam] = useState<Team | null>(null);
   const [teamStats, setTeamStats] = useState<ResponderStats | null>(null);
+  const [schedule, setSchedule] = useState<ScheduleInfo | null>(null);
   const [showHomeSetup, setShowHomeSetup] = useState(false);
   const [homeSetupLoading, setHomeSetupLoading] = useState(false);
   const [homeSetupDone, setHomeSetupDone] = useState(false);
-  const [snackbar, setSnackbar] = useState<{ text: string; undoId?: string; undoStatus?: ResponderStatus } | null>(null);
-  const [primaryContact, setPrimaryContact] = useState<string | null>(null);
+  const [snackbar, setSnackbar] = useState<{ text: string } | null>(null);
   const isOnline = useNetworkStatus();
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -230,10 +187,10 @@ export default function HomeTab() {
     ]).start();
   }, [loading]);
 
-  /* theme tokens — aligned with resident theme */
-  const bg           = isDark ? colors.dark.bg       : '#F8FAFB';
+  /* theme tokens */
+  const bg           = isDark ? colors.dark.bg       : '#F0F4F8';
   const cardBg       = isDark ? colors.dark.card     : colors.white;
-  const cardBorder   = isDark ? colors.dark.border   : 'rgba(0,0,0,0.06)';
+  const cardBorder   = isDark ? colors.dark.border   : 'rgba(0,0,0,0.04)';
   const textPrimary  = isDark ? colors.dark.text     : colors.slate[900];
   const textSecondary = isDark ? colors.dark.subtext : colors.slate[500];
   const dividerColor = isDark ? colors.dark.border   : colors.slate[100];
@@ -272,6 +229,7 @@ export default function HomeTab() {
         if (ts) setTeamStats(ts);
       }
     } catch {}
+    try { setSchedule(await getSchedule(token)); } catch {}
   }, [token]);
 
   const loadWeather = useCallback(async () => {
@@ -297,36 +255,67 @@ export default function HomeTab() {
     } catch {}
   }, [token]);
 
+  // Weather only on mount (expensive)
   useEffect(() => {
-    loadIncidents();
-    loadStats();
     loadWeather();
-    loadTeam();
-  }, [loadIncidents, loadStats, loadWeather, loadTeam]);
+  }, [loadWeather]);
 
   const loadUnreadCount = useCallback(async () => {
     if (!token) return;
     try {
       const notifs = await getUserNotifications(token);
-      setUnreadCount(notifs.filter(n => !n.read).length);
+      setUnreadCount(notifs.filter(n => !n.read && n.kind !== 'new_message').length);
     } catch {}
   }, [token]);
 
   useEffect(() => {
-    const onNew = () => { loadIncidents(true); loadUnreadCount(); };
-    socketService.on('new-notification', onNew);
-    socketService.on('new-assignment', onNew);
+    const onNew = () => { loadIncidents(true); loadUnreadCount(); loadTeam(); };
+    const onSchedule = () => { loadTeam(); };
+    // Socket listeners
+    const lid1 = socketService.on('new-notification', onNew);
+    const lid2 = socketService.on('new-assignment', onNew);
+    const lid3 = socketService.on('report-status', onNew);
+    const lid4 = socketService.on('new-alert', onNew);
+    const lid5 = socketService.on('schedule-updated', onSchedule);
+    const lid6 = socketService.on('member-status-updated', onNew);
+    // Push notification listener — most reliable real-time signal
+    const pushSub = onNotificationReceived(() => onNew());
     return () => {
-      socketService.off('new-notification', onNew);
-      socketService.off('new-assignment', onNew);
+      socketService.off(lid1);
+      socketService.off(lid2);
+      socketService.off(lid3);
+      socketService.off(lid4);
+      socketService.off(lid5);
+      socketService.off(lid6);
+      pushSub?.remove();
     };
-  }, [loadIncidents, loadUnreadCount]);
+  }, [loadIncidents, loadUnreadCount, loadTeam]);
 
   useEffect(() => { loadUnreadCount(); }, [loadUnreadCount]);
 
+  // Refresh all data every time the tab is focused + reconnect socket
+  useFocusEffect(
+    useCallback(() => {
+      loadIncidents(true);
+      loadStats();
+      loadTeam();
+      loadUnreadCount();
+      socketService.reconnect();
+    }, [loadIncidents, loadStats, loadTeam, loadUnreadCount]),
+  );
+
+  // Poll schedule every 30s so duty status stays current
+  useEffect(() => {
+    if (!token) return;
+    const iv = setInterval(() => {
+      getSchedule(token).then(setSchedule).catch(() => {});
+    }, 30_000);
+    return () => clearInterval(iv);
+  }, [token]);
+
   useEffect(() => {
     if (user && !user.homeAddress) setShowHomeSetup(true);
-  }, []);
+  }, [user]);
 
   // Pending sync count
   useEffect(() => {
@@ -369,73 +358,12 @@ export default function HomeTab() {
     }
   }
 
-  const handleStatusUpdate = useCallback(async (incidentId: string, newStatus: ResponderStatus) => {
-    if (!token) return;
-    setUpdatingStatus(incidentId);
-    const prevIncidents = [...incidents];
-    try {
-      if (!isOnline) {
-        await queueStatusUpdate({ incidentId, status: newStatus });
-      } else {
-        await submitMemberStatus({ incidentId, status: newStatus }, token);
-      }
-      setIncidents(prev =>
-        prev.map(i => {
-          if (i.id !== incidentId) return i;
-          const myEntry: MemberStatus = {
-            userId: user?.id ?? '',
-            userName: `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim(),
-            avatarUrl: user?.avatarUrl,
-            status: newStatus,
-            updatedAt: 'Just now',
-          };
-          const existing = i.memberStatuses ?? [];
-          const idx = existing.findIndex(ms => ms.userId === (user?.id ?? ''));
-          const updated = idx >= 0
-            ? existing.map((ms, j) => (j === idx ? myEntry : ms))
-            : [...existing, myEntry];
-          return { ...i, responderStatus: newStatus, memberStatuses: updated };
-        }),
-      );
-      const label = STEPPER_LABELS[newStatus];
-      setSnackbar({ text: `${label} · Dispatch notified` });
-      setTimeout(() => setSnackbar(null), 4000);
-      // Delay refresh so server has time to process
-      setTimeout(() => loadIncidents(true), 2000);
-
-      // Navigate to map when starting en route
-      if (newStatus === 'en_route') {
-        const inc = incidents.find(i => i.id === incidentId);
-        if (inc) {
-          router.push({
-            pathname: '/responder/(tabs)/map',
-            params: {
-              destLat: String(inc.latitude),
-              destLng: String(inc.longitude),
-              destTitle: inc.title,
-              incidentId: inc.id,
-            },
-          } as never);
-        }
-      }
-    } catch (err) {
-      console.error('[StatusUpdate] Failed:', err);
-      setSnackbar({ text: 'Failed to update status. Try again.' });
-      setTimeout(() => setSnackbar(null), 4000);
-      setIncidents(prevIncidents);
-    }
-    finally { setUpdatingStatus(null); }
-  }, [token, user, isOnline, incidents]);
-
   /* ── derived — filter to user's team assignments ── */
   const teamIncidents = user?.isLeader
     ? incidents
     : incidents.filter(i =>
-        // Show if incident belongs to user's team
         (user?.teamId && i.teamId === user.teamId) ||
-        // Show if user appears in memberStatuses
         (i.memberStatuses ?? []).some(m => m.userId === user?.id) ||
-        // Show if incident has no team (directly assigned)
         !i.teamId,
       );
 
@@ -460,63 +388,118 @@ export default function HomeTab() {
     return mine ?? PRIORITY_STATUSES.flatMap(s => active.filter(i => i.responderStatus === s)).find(Boolean) ?? null;
   })();
 
-  // Load contact number for the primary assignment
-  useEffect(() => {
-    if (!primaryAssignment || !token) { setPrimaryContact(null); return; }
-    let cancelled = false;
-    getIncidentDetail(primaryAssignment.id, token)
-      .then(d => { if (!cancelled) setPrimaryContact(d.contactNumber || null); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [primaryAssignment?.id, token]);
-
-  // ETA
-  const { eta, distanceKm } = useETA(
-    primaryAssignment?.latitude ?? 0,
-    primaryAssignment?.longitude ?? 0,
-    !!primaryAssignment && primaryAssignment.responderStatus !== 'resolved',
-  );
-
-  // Proximity alerts
-  useProximityAlert(
-    active,
-    useCallback(
-      (incident: Incident) => { handleStatusUpdate(incident.id, 'on_scene'); },
-      [handleStatusUpdate],
-    ),
-  );
-
-  // Next status action
-  const nextAction: { status: ResponderStatus; label: string; icon: keyof typeof Ionicons.glyphMap; color: string } | null =
-    primaryAssignment
-      ? primaryAssignment.responderStatus === 'pending'
-        ? { status: 'en_route', label: "Start — I'm en route", icon: 'navigate', color: colors.brand[500] }
-        : primaryAssignment.responderStatus === 'en_route'
-          ? { status: 'on_scene', label: 'Arrived — mark on scene', icon: 'location', color: '#10B981' }
-          : primaryAssignment.responderStatus === 'on_scene'
-            ? { status: 'resolved', label: 'Mark resolved', icon: 'shield-checkmark', color: '#10B981' }
-            : null
-      : null;
-
-  const isUpdatingPrimary = updatingStatus === primaryAssignment?.id;
   const sevColor = primaryAssignment ? (SEV_COLORS[primaryAssignment.severity] ?? colors.severity.moderate) : '';
 
   const risk = weather ? getFloodRisk(weather.current.rainH) : null;
-
-  const perfData = teamStats ?? stats;
 
   const slideUp = (anim: Animated.Value) => ({
     opacity: anim,
     transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
   });
 
+  /* ── Skeleton shimmer ── */
+  const shimmer = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!loading) return;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(shimmer, { toValue: 0, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [loading]);
+
+  const skeletonOpacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.5] });
+  const skeletonBg = isDark ? colors.dark.elevated : '#DDE3EA';
+
+  const SkeletonBox = ({ width, height, style }: { width: number | string; height: number; style?: any }) => (
+    <Animated.View style={[{ width: width as any, height, borderRadius: 8, backgroundColor: skeletonBg, opacity: skeletonOpacity }, style]} />
+  );
+
   /* ── Loading ── */
   if (loading) {
     return (
       <View style={[$.root, { backgroundColor: bg }]}>
-        <View style={$.loadWrap}>
-          <ActivityIndicator size="large" color={colors.brand[500]} />
-          <Text style={[$.loadText, { color: textSecondary }]}>Loading dashboard…</Text>
+        {/* Skeleton header */}
+        <LinearGradient
+          colors={isDark ? ['#0D1B2A', '#122640', '#0D3B66'] as const : ['#0F4C8A', '#1A65B0', '#1F7FBF'] as const}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[$.header, { paddingTop: insets.top + 16, paddingBottom: 28 }]}
+        >
+          <View style={$.headerTopRow}>
+            <View>
+              <Animated.View style={{ width: 100, height: 14, borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.15)', opacity: skeletonOpacity, marginBottom: 8 }} />
+              <Animated.View style={{ width: 160, height: 26, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)', opacity: skeletonOpacity }} />
+            </View>
+            <Animated.View style={{ width: 80, height: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.12)', opacity: skeletonOpacity }} />
+          </View>
+          <Animated.View style={{ width: 180, height: 26, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.1)', opacity: skeletonOpacity, marginTop: 10 }} />
+        </LinearGradient>
+        <View style={[$.curveWrap, { backgroundColor: bg }]}>
+          <LinearGradient colors={isDark ? ['#0D3B66', '#0D1B2A'] as const : ['#1F7FBF', '#0F4C8A'] as const} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFillObject} />
+          <View style={[$.curveShape, { backgroundColor: bg }]} />
+        </View>
+
+        <View style={{ paddingHorizontal: H_PAD }}>
+          {/* Skeleton flood risk bar */}
+          <SkeletonBox width="100%" height={52} style={{ borderRadius: 14, marginBottom: 16 }} />
+
+          {/* Skeleton mission card */}
+          <View style={[$.missionCard, { backgroundColor: cardBg, borderColor: cardBorder, padding: 20 }]}>
+            <SkeletonBox width={120} height={10} style={{ marginBottom: 14 }} />
+            <SkeletonBox width="85%" height={20} style={{ marginBottom: 10 }} />
+            <SkeletonBox width="60%" height={16} style={{ marginBottom: 10 }} />
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+              <SkeletonBox width={70} height={24} style={{ borderRadius: 10 }} />
+              <SkeletonBox width={50} height={24} style={{ borderRadius: 10 }} />
+            </View>
+            <SkeletonBox width="70%" height={12} style={{ marginBottom: 20 }} />
+            <View style={[{ height: 1, backgroundColor: isDark ? colors.dark.border : colors.slate[100], marginBottom: 16 }]} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 }}>
+              {[1,2,3,4].map(k => <SkeletonBox key={k} width={22} height={22} style={{ borderRadius: 11 }} />)}
+            </View>
+            <SkeletonBox width="100%" height={48} style={{ borderRadius: 14 }} />
+          </View>
+
+          {/* Skeleton status grid */}
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
+            {[1,2].map(k => (
+              <View key={k} style={[$.statusItem, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                <SkeletonBox width={28} height={28} style={{ borderRadius: 9, marginBottom: 6 }} />
+                <SkeletonBox width={24} height={20} style={{ marginBottom: 4 }} />
+                <SkeletonBox width={36} height={9} />
+              </View>
+            ))}
+          </View>
+
+          {/* Skeleton quick actions */}
+          <SkeletonBox width={100} height={15} style={{ marginTop: 18, marginBottom: 10 }} />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {[1,2,3,4].map(k => (
+              <View key={k} style={[$.actionCard, { backgroundColor: cardBg, borderColor: cardBorder, width: '47%' as any }]}>
+                <SkeletonBox width={36} height={36} style={{ borderRadius: 11 }} />
+                <SkeletonBox width={50} height={13} />
+              </View>
+            ))}
+          </View>
+
+          {/* Skeleton team */}
+          <SkeletonBox width={120} height={15} style={{ marginTop: 22, marginBottom: 10 }} />
+          <View style={[$.card, { backgroundColor: cardBg, borderColor: cardBorder, padding: 0 }]}>
+            {[1,2,3].map(k => (
+              <View key={k} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 }}>
+                <SkeletonBox width={38} height={38} style={{ borderRadius: 12 }} />
+                <View style={{ flex: 1, gap: 6 }}>
+                  <SkeletonBox width={100} height={13} />
+                  <SkeletonBox width={140} height={11} />
+                </View>
+                <SkeletonBox width={32} height={32} style={{ borderRadius: 10 }} />
+              </View>
+            ))}
+          </View>
         </View>
       </View>
     );
@@ -541,371 +524,306 @@ export default function HomeTab() {
           {/* ═══ HEADER ═══ */}
           <Animated.View style={slideUp(fadeHeader)}>
             <LinearGradient
-              colors={isDark ? [colors.dark.bg, colors.dark.surface, colors.dark.bg] : ['#F8FAFB', '#F0F3F6', '#F8FAFB']}
+              colors={isDark ? ['#0D1B2A', '#122640', '#0D3B66'] as const : ['#0F4C8A', '#1A65B0', '#1F7FBF'] as const}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={[$.header, { paddingTop: insets.top + 10 }]}
+              style={[$.header, { paddingTop: insets.top + 16, paddingBottom: 28 }]}
             >
-              <View style={$.headerRow}>
-                {/* Avatar */}
-                <Pressable
-                  onPress={() => router.push('/responder/(tabs)/profile' as never)}
-                  style={({ pressed }) => [$.avatarCircle, pressed && { opacity: 0.8 }]}
-                >
-                  {user?.avatarUrl ? (
-                    <Image source={{ uri: user.avatarUrl }} style={$.avatarImg} />
-                  ) : (
-                    <LinearGradient colors={[colors.brand[500], colors.brand[700]]} style={$.avatarImg}>
-                      <Text style={$.avatarText}>
-                        {user ? `${user.firstName[0]}${user.lastName[0]}` : 'R'}
-                      </Text>
-                    </LinearGradient>
-                  )}
-                </Pressable>
+              {/* Subtle decorative elements */}
+              <View style={[$.headerOrb, { width: 220, height: 220, top: -90, right: -70 }]} />
+              <View style={[$.headerOrb, { width: 160, height: 160, bottom: -40, left: -50, opacity: 0.4 }]} />
 
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={[$.greetSub, !isDark && { color: colors.slate[500] }]}>{getGreeting()}</Text>
-                  <Text style={[$.greetName, !isDark && { color: colors.slate[900] }]}>{user?.firstName ?? 'Responder'}</Text>
-                  <View style={$.dutyRow}>
-                    <View style={$.dutyDot} />
-                    <Text style={[$.dutyText, !isDark && { color: colors.slate[500] }]}>
-                      On duty{team ? ` · ${team.name}` : ''} · until 6 PM
-                    </Text>
-                  </View>
+              {/* Greeting + Weather row */}
+              <View style={$.headerTopRow}>
+                <View>
+                  <Text style={$.greetLabel}>{getGreeting()}</Text>
+                  <Text style={$.greetName}>{user?.firstName ?? 'Responder'}</Text>
                 </View>
+                {weather && (
+                  <View style={$.headerWeather}>
+                    <Ionicons name={getWeatherIcon(weather.current.description)} size={32} color="rgba(255,255,255,0.9)" />
+                    <Text style={$.headerWeatherText}>{Math.round(weather.current.temperature)}°C</Text>
+                  </View>
+                )}
+              </View>
 
-                {/* Bell */}
-                <Pressable
-                  onPress={() => router.push('/responder/(tabs)/alerts' as never)}
-                  style={({ pressed }) => [
-                    $.bellBtn,
-                    !isDark && { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.slate[200] },
-                    pressed && { opacity: 0.7 },
-                  ]}
-                >
-                  <Ionicons name="notifications" size={20} color={isDark ? '#fff' : colors.slate[700]} />
-                  {unreadCount > 0 && (
-                    <View style={$.bellBadge}>
-                      <Text style={$.bellBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-                    </View>
-                  )}
-                </Pressable>
+              {/* Duty status */}
+              <View style={$.dutyPill}>
+                <View style={[
+                  $.dutyDot,
+                  schedule?.level === 'red'
+                    ? { backgroundColor: '#EF4444' }
+                    : schedule?.on_duty
+                      ? { backgroundColor: '#34D399' }
+                      : { backgroundColor: '#6B7280' },
+                ]} />
+                <Text style={$.dutyText} numberOfLines={1}>
+                  {schedule?.level === 'red'
+                    ? `RED ALERT${team ? ` · ${team.name}` : ''}`
+                    : schedule?.on_duty
+                    ? `On duty${schedule.team_shift ? ` · Shift ${schedule.team_shift}` : ''}${team ? ` · ${team.name}` : ''}`
+                    : `Off duty${schedule?.team_shift ? ` · Shift ${schedule.team_shift}` : ''}${team ? ` · ${team.name}` : ''}`}
+                </Text>
               </View>
             </LinearGradient>
+
+            {/* Smooth curved transition */}
+            <View style={[$.curveWrap, { backgroundColor: bg }]}>
+              <LinearGradient
+                colors={isDark ? ['#0D3B66', '#0D1B2A'] as const : ['#1F7FBF', '#0F4C8A'] as const}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <View style={[$.curveShape, { backgroundColor: bg }]} />
+            </View>
           </Animated.View>
+
+          {/* ═══ FLOOD RISK BANNER ═══ */}
+          {weather && risk && (
+            <Animated.View style={[{ paddingHorizontal: H_PAD, marginTop: -6 }, slideUp(fadeHeader)]}>
+              <View style={[$.riskBar, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                <View style={[$.riskIconWrap, { backgroundColor: risk.color + '12' }]}>
+                  <Ionicons name={risk.icon} size={16} color={risk.color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[$.riskTitle, { color: textPrimary }]}>Flood Risk</Text>
+                  <Text style={[$.riskDesc, { color: textSecondary }]} numberOfLines={1}>
+                    {weather.current.description} · {weather.current.rainH.toFixed(1)}mm/h
+                  </Text>
+                </View>
+                <View style={[$.riskBadge, { backgroundColor: risk.color + '14' }]}>
+                  <Text style={[$.riskBadgeText, { color: risk.color }]}>{risk.label}</Text>
+                </View>
+              </View>
+            </Animated.View>
+          )}
 
           {/* ═══ OFFLINE BANNER ═══ */}
           {!isOnline && (
-            <View style={[$.offlineBanner, { marginHorizontal: H_PAD }]}>
+            <View style={[$.offlineBanner, { marginHorizontal: H_PAD, marginTop: 10 }]}>
               <Ionicons name="cloud-offline" size={16} color="#F59E0B" />
               <Text style={$.offlineText}>
                 You're offline{pendingSyncCount > 0 ? ` · ${pendingSyncCount} update${pendingSyncCount > 1 ? 's' : ''} pending sync` : ''}
               </Text>
               {pendingSyncCount > 0 && (
                 <View style={$.syncingPill}>
-                  <Text style={$.syncingText}>Syncing…</Text>
+                  <Text style={$.syncingText}>Syncing</Text>
                 </View>
               )}
             </View>
           )}
 
           {/* ═══ ACTIVE ASSIGNMENT ═══ */}
-          <Animated.View style={[{ paddingHorizontal: H_PAD, marginTop: 8 }, slideUp(fadeCards)]}>
+          <Animated.View style={[{ paddingHorizontal: H_PAD, marginTop: 16 }, slideUp(fadeCards)]}>
             {primaryAssignment ? (
-              <View
-                style={[
-                  $.card,
-                  { backgroundColor: cardBg, borderColor: cardBorder },
-                ]}
-              >
-                {/* Card header — tappable to view detail */}
+              <View style={[$.missionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                {/* Top accent bar */}
+                <LinearGradient
+                  colors={[sevColor, sevColor + 'AA'] as const}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={$.missionAccent}
+                />
+
+                {/* Header row */}
                 <Pressable
                   onPress={() => router.push(`/responder/incident/${primaryAssignment.id}` as never)}
                   style={({ pressed }) => [pressed && { opacity: 0.7 }]}
                 >
-                  <View style={$.assignHeader}>
-                    <Text style={$.assignLabel}>ACTIVE ASSIGNMENT</Text>
-                    <Text style={[$.assignRef, { color: textSecondary }]}>#{primaryAssignment.reference}</Text>
+                  <View style={$.missionHeaderRow}>
+                    <View style={$.missionLabelRow}>
+                      <View style={[$.missionPulse, { backgroundColor: sevColor }]} />
+                      <Text style={[$.missionLabel, { color: sevColor }]}>ACTIVE MISSION</Text>
+                    </View>
+                    <Text style={[$.missionRef, { color: textSecondary }]}>#{primaryAssignment.reference}</Text>
                   </View>
 
-                {/* Severity + meta */}
-                <View style={$.assignMetaRow}>
-                  <View style={[$.sevBadge, { backgroundColor: sevColor + '22' }]}>
-                    <Ionicons name="bar-chart" size={10} color={sevColor} />
-                    <Text style={[$.sevBadgeText, { color: sevColor }]}>
-                      {primaryAssignment.severity.charAt(0).toUpperCase() + primaryAssignment.severity.slice(1)}
+                  {/* Title */}
+                  <Text style={[$.missionTitle, { color: textPrimary }]} numberOfLines={2}>
+                    {primaryAssignment.title}
+                  </Text>
+
+                  {/* Severity chip */}
+                  <View style={$.missionChipsRow}>
+                    <View style={[$.missionChip, { backgroundColor: sevColor + '10', borderColor: sevColor + '20' }]}>
+                      <View style={[$.missionChipDot, { backgroundColor: sevColor }]} />
+                      <Text style={[$.missionChipText, { color: sevColor }]}>
+                        {primaryAssignment.severity.charAt(0).toUpperCase() + primaryAssignment.severity.slice(1)}
+                      </Text>
+                    </View>
+                    {primaryAssignment.nearbyCount > 0 && (
+                      <View style={[$.missionChip, { backgroundColor: elevatedBg, borderColor: cardBorder }]}>
+                        <Ionicons name="people" size={11} color={textSecondary} />
+                        <Text style={[$.missionChipText, { color: textSecondary }]}>
+                          {primaryAssignment.nearbyCount}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Location */}
+                  <View style={$.missionLocRow}>
+                    <Ionicons name="location-sharp" size={13} color={textSecondary} style={{ opacity: 0.6 }} />
+                    <Text style={[$.missionLocText, { color: textSecondary }]} numberOfLines={1}>
+                      {primaryAssignment.address}
                     </Text>
                   </View>
-                  <Text style={[$.assignMetaText, { color: textSecondary }]}>
-                    Reported {primaryAssignment.reportedAt}
-                    {primaryAssignment.nearbyCount > 0 ? ` · ${primaryAssignment.nearbyCount} reports` : ''}
-                  </Text>
-                </View>
-
-                {/* Title */}
-                <Text style={[$.assignTitle, { color: textPrimary }]} numberOfLines={2}>
-                  {primaryAssignment.title}
-                </Text>
-
-                {/* Location */}
-                <View style={$.assignLocRow}>
-                  <Ionicons name="location" size={14} color={textSecondary} />
-                  <Text style={[$.assignLocText, { color: textSecondary }]} numberOfLines={1}>
-                    {primaryAssignment.address}
-                  </Text>
-                </View>
                 </Pressable>
 
-                {/* ETA + distance */}
-                {(eta || distanceKm !== null) && (
-                  <View style={$.etaRow}>
-                    <Ionicons name="navigate" size={13} color={textSecondary} />
-                    <Text style={[$.etaText, { color: textSecondary }]}>
-                      {distanceKm !== null ? `${distanceKm} km` : ''}
-                      {distanceKm !== null && eta ? ' · ' : ''}
-                      {eta ?? ''}
-                    </Text>
-                  </View>
-                )}
+                {/* Divider */}
+                <View style={[$.missionDivider, { backgroundColor: dividerColor }]} />
 
-                {/* Status stepper */}
-                <StatusStepper current={primaryAssignment.responderStatus} />
+                {/* Status tracker */}
+                <StatusTracker current={primaryAssignment.responderStatus} />
 
-                {/* Action buttons: Start/Arrived + Call reporter side by side */}
-                <View style={$.actionRow}>
-                  {nextAction && (
-                    <Pressable
-                      onPress={() => !isUpdatingPrimary && handleStatusUpdate(primaryAssignment.id, nextAction.status)}
-                      disabled={isUpdatingPrimary}
-                      style={({ pressed }) => [
-                        $.actionBtn,
-                        { backgroundColor: nextAction.color, flex: 1 },
-                        pressed && { opacity: 0.88 },
-                        isUpdatingPrimary && { opacity: 0.6 },
-                      ]}
-                    >
-                      {isUpdatingPrimary ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <>
-                          <Ionicons name={nextAction.icon} size={14} color="#fff" />
-                          <Text style={$.actionBtnText}>{nextAction.label}</Text>
-                        </>
-                      )}
-                    </Pressable>
-                  )}
-                  <Pressable
-                    onPress={() => {
-                      if (primaryContact) callPhone(primaryContact);
-                    }}
-                    style={({ pressed }) => [
-                      $.callBtn,
-                      { borderColor: cardBorder },
-                      pressed && { opacity: 0.7 },
-                      !primaryContact && { opacity: 0.4 },
-                    ]}
-                    disabled={!primaryContact}
+                {/* Navigate — only for non-resolved */}
+                <Pressable
+                  onPress={() => router.push({
+                    pathname: '/responder/(tabs)/map',
+                    params: {
+                      destLat: String(primaryAssignment.latitude),
+                      destLng: String(primaryAssignment.longitude),
+                      destTitle: primaryAssignment.title,
+                      incidentId: primaryAssignment.id,
+                      sessionLocked: '1',
+                      reportedAt: primaryAssignment.reportedAt,
+                      severity: primaryAssignment.severity,
+                      incidentType: primaryAssignment.type || 'Flood',
+                      address: primaryAssignment.address,
+                    },
+                  } as never)}
+                  style={({ pressed }) => [
+                    $.navBtnWrap,
+                    pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+                  ]}
+                >
+                  <LinearGradient
+                    colors={[colors.brand[500], colors.brand[700]] as const}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={$.navBtnGrad}
                   >
-                    <Ionicons name="call" size={16} color={textPrimary} />
-                  </Pressable>
-                </View>
+                    <Ionicons name="navigate" size={17} color="#fff" />
+                    <Text style={$.navBtnText}>Navigate to Incident</Text>
+                  </LinearGradient>
+                </Pressable>
 
-                {/* Footer */}
-                <View style={$.assignFooter}>
-                  <Ionicons name="radio" size={12} color={textSecondary} />
-                  <Text style={[$.assignFooterText, { color: textSecondary }]}>
-                    {STEPPER_LABELS[primaryAssignment.responderStatus]} since {primaryAssignment.reportedAt} · Dispatch notified
+                {/* Footer timestamp */}
+                <View style={$.missionFooter}>
+                  <Ionicons name="time-outline" size={11} color={textSecondary} style={{ opacity: 0.5 }} />
+                  <Text style={[$.missionFooterText, { color: textSecondary }]}>
+                    {STEPPER_LABELS[primaryAssignment.responderStatus]} · {primaryAssignment.reportedAt}
                   </Text>
                 </View>
               </View>
             ) : (
               /* ── Standing by ── */
-              <View style={[$.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-                {/* Horizontal layout: icon left, text right */}
-                <View style={$.standbyRow}>
-                  <View style={$.standbyIcon}>
-                    <Ionicons name="shield-outline" size={28} color={colors.brand[500]} />
+              <View style={[$.missionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                <LinearGradient
+                  colors={
+                    schedule?.level === 'red'
+                      ? [colors.severity.critical, colors.severity.critical + 'AA'] as const
+                      : [colors.severity.low, colors.severity.low + 'AA'] as const
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={$.missionAccent}
+                />
+                <View style={$.standbyContent}>
+                  <View style={[
+                    $.standbyIconWrap,
+                    schedule?.level === 'red' && { backgroundColor: colors.severity.critical + '0A' },
+                  ]}>
+                    <Ionicons
+                      name={schedule?.level === 'red' ? 'warning' : 'shield-checkmark'}
+                      size={28}
+                      color={schedule?.level === 'red' ? colors.severity.critical : colors.brand[500]}
+                    />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={$.assignLabel}>ACTIVE ASSIGNMENT</Text>
-                    <Text style={[$.standbyTitle, { color: textPrimary }]}>Standing by</Text>
-                    <Text style={[$.standbyText, { color: textSecondary }]}>
-                      No incident assigned. Your phone will ring loudly when Dispatch assigns you.
+                    <Text style={[$.missionLabel, { color: schedule?.level === 'red' ? colors.severity.critical : colors.brand[500], marginBottom: 4 }]}>
+                      {schedule?.level === 'red' ? 'RED ALERT' : 'STANDING BY'}
+                    </Text>
+                    <Text style={[$.standbyTitle, { color: textPrimary }]}>No active mission</Text>
+                    <Text style={[$.standbyDesc, { color: textSecondary }]}>
+                      {schedule?.level === 'red'
+                        ? 'All units on 24-hour duty. Awaiting dispatch assignment.'
+                        : 'Your phone will ring when Dispatch assigns you an incident.'}
                     </Text>
                   </View>
                 </View>
-                <View style={[$.standbyDivider, { backgroundColor: dividerColor }]} />
-                <View style={$.standbyFooter}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <View style={$.dutyDot} />
-                    <Text style={[$.standbyFooterText, { color: textPrimary, fontWeight: '700' }]}>Available to Dispatch</Text>
+                <View style={[$.standbyFooterDivider, { backgroundColor: dividerColor }]} />
+                <View style={$.standbyFooterRow}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                    <View style={[
+                      $.dutyDot,
+                      schedule?.level === 'red'
+                        ? { backgroundColor: '#EF4444' }
+                        : schedule?.on_duty
+                          ? { backgroundColor: '#34D399' }
+                          : { backgroundColor: '#6B7280' },
+                    ]} />
+                    <Text style={[$.standbyFooterText, { color: textPrimary }]} numberOfLines={1}>
+                      {schedule?.level === 'red'
+                        ? 'All units on duty'
+                        : schedule?.on_duty
+                          ? 'Available to Dispatch'
+                          : 'Off duty'}
+                    </Text>
                   </View>
-                  <Text style={[$.standbyFooterText, { color: textSecondary }]}>
-                    Last resolved {teamIncidents.find(i => i.responderStatus === 'resolved')?.reportedAt ?? ''}
-                  </Text>
+                  {teamIncidents.find(i => i.responderStatus === 'resolved') && (
+                    <Text style={[$.standbyFooterMeta, { color: textSecondary }]} numberOfLines={1}>
+                      {teamIncidents.find(i => i.responderStatus === 'resolved')?.reportedAt ?? ''}
+                    </Text>
+                  )}
                 </View>
               </View>
             )}
           </Animated.View>
 
-          {/* ═══ CONDITIONS ═══ */}
-          {weather && (
-            <Animated.View style={[{ paddingHorizontal: H_PAD, marginTop: 14 }, slideUp(fadeCards)]}>
-              <View style={[$.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-                {/* Header */}
-                <View style={$.condHeader}>
-                  <Text style={$.condLabel}>CONDITIONS</Text>
-                  {risk && <RiskBadge label={risk.label} color={risk.color} />}
-                </View>
-
-                {/* Location + time */}
-                <View style={$.condLocRow}>
-                  <Ionicons name="location" size={12} color={textSecondary} />
-                  <Text style={[$.condLocText, { color: textSecondary }]}>
-                    {weather.current.city || 'Local'} · {new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                  </Text>
-                </View>
-
-                {/* Main weather */}
-                <View style={$.wxMain}>
-                  <View style={$.wxIconWrap}>
-                    <Ionicons name={getWeatherIcon(weather.current.description)} size={28} color={textSecondary} />
+          {/* ═══ STATUS OVERVIEW ═══ */}
+          <Animated.View style={[{ paddingHorizontal: H_PAD, marginTop: 14 }, slideUp(fadeLower)]}>
+            <View style={$.statusGrid}>
+              {([
+                { count: pendingCount, label: 'Pending',  color: '#F59E0B', icon: 'time-outline' as keyof typeof Ionicons.glyphMap },
+                { count: resolvedCount, label: 'Resolved', color: colors.accent[500], icon: 'checkmark-circle-outline' as keyof typeof Ionicons.glyphMap },
+              ] as const).map((item, idx) => (
+                <View key={item.label} style={[$.statusItem, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                  <View style={[$.statusItemIcon, { backgroundColor: item.color + '10' }]}>
+                    <Ionicons name={item.icon} size={14} color={item.color} />
                   </View>
-                  <Text style={[$.wxTemp, { color: textPrimary }]}>
-                    {Math.round(weather.current.temperature)}<Text style={$.wxDeg}>°</Text>
-                  </Text>
-                  <View style={{ flex: 1, marginLeft: 8 }}>
-                    <Text style={[$.wxDesc, { color: textPrimary }]}>{weather.current.description}</Text>
-                    <Text style={[$.wxFeels, { color: textSecondary }]}>
-                      Feels like {Math.round(weather.current.temperature + (weather.current.humidity > 70 ? 2 : 0))}°
-                    </Text>
-                  </View>
-                </View>
-
-                {/* 3 stats */}
-                <View style={[$.wxStatsRow, { borderTopColor: dividerColor }]}>
-                  <View style={$.wxStatItem}>
-                    <Ionicons name="rainy" size={14} color={textSecondary} />
-                    <Text style={$.wxStatLabel}>Rain</Text>
-                    <Text style={[$.wxStatVal, { color: textPrimary }]}>
-                      {weather.current.rainH.toFixed(0)} mm/h
-                    </Text>
-                  </View>
-                  <View style={[$.wxStatDivider, { backgroundColor: dividerColor }]} />
-                  <View style={$.wxStatItem}>
-                    <Ionicons name="water" size={14} color={textSecondary} />
-                    <Text style={$.wxStatLabel}>Humidity</Text>
-                    <Text style={[$.wxStatVal, { color: textPrimary }]}>{weather.current.humidity}%</Text>
-                  </View>
-                  <View style={[$.wxStatDivider, { backgroundColor: dividerColor }]} />
-                  <View style={$.wxStatItem}>
-                    <Ionicons name="speedometer" size={14} color={textSecondary} />
-                    <Text style={$.wxStatLabel}>Wind</Text>
-                    <Text style={[$.wxStatVal, { color: textPrimary }]}>
-                      {Math.round(weather.current.windSpeed)} km/h
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Rain forecast bars — based on current rain rate */}
-                <View style={$.forecastSection}>
-                  <View style={$.forecastHeader}>
-                    <Text style={[$.forecastTitle, { color: textSecondary }]}>Rain, next 6 hours</Text>
-                    <Text style={[$.forecastScale, { color: textSecondary }]}>mm/h · scale 0–20</Text>
-                  </View>
-                  <View style={$.forecastBars}>
-                    {[...Array(6)].map((_, i) => {
-                      // Estimate: rain tapers or holds based on current rate
-                      const rainVal = Math.max(0, weather.current.rainH * (1 - i * 0.1));
-                      const barH = Math.max(4, Math.min(50, (rainVal / 20) * 50));
-                      const hour = new Date();
-                      hour.setHours(hour.getHours() + i);
-                      const label = hour.toLocaleTimeString('en-US', { hour: 'numeric' }).replace(' ', '');
-                      return (
-                        <View key={i} style={$.forecastBarCol}>
-                          {rainVal > 3 && (
-                            <Text style={[$.forecastBarValue, { color: textPrimary }]}>{Math.round(rainVal)}</Text>
-                          )}
-                          <View
-                            style={[
-                              $.forecastBar,
-                              {
-                                height: barH,
-                                backgroundColor: rainVal >= 7.5 ? colors.severity.high : colors.brand[500],
-                              },
-                            ]}
-                          />
-                          <Text style={[$.forecastBarLabel, { color: textSecondary }]}>{label}</Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                </View>
-
-                {/* Weather alerts */}
-                {weather.alerts.length > 0 && (
-                  <View style={[$.wxAlertRow, { backgroundColor: elevatedBg }]}>
-                    <Ionicons name="warning" size={14} color="#F59E0B" />
-                    <Text style={[$.wxAlertText, { color: textSecondary }]} numberOfLines={2}>
-                      {weather.alerts[0].message}
-                    </Text>
-                  </View>
-                )}
-                {weather.alerts.length === 0 && risk && risk.color === colors.severity.low && (
-                  <View style={[$.wxAlertRow, { backgroundColor: elevatedBg }]}>
-                    <Ionicons name="checkmark-circle" size={14} color={colors.severity.low} />
-                    <Text style={[$.wxAlertText, { color: textSecondary }]}>
-                      No flood watch for {weather.current.city || 'your area'}. Rivers within normal level.
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </Animated.View>
-          )}
-
-          {/* ═══ TODAY ═══ */}
-          <Animated.View style={[{ paddingHorizontal: H_PAD, marginTop: 20 }, slideUp(fadeLower)]}>
-            <Text style={[$.sectionTitleStandalone, { color: textPrimary }]}>Today</Text>
-            <View style={[$.todayStrip, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-              {[
-                { count: pendingCount, label: 'Pending', dotColor: '#F59E0B' },
-                { count: enRouteCount, label: 'En route', dotColor: colors.brand[500] },
-                { count: onSceneCount, label: 'On scene', dotColor: '#10B981' },
-                { count: resolvedCount, label: 'Resolved', dotColor: textSecondary },
-              ].map((item, idx) => (
-                <View key={item.label} style={[$.todayItem, idx < 3 && { borderRightWidth: 1, borderRightColor: dividerColor }]}>
-                  <Text style={[$.todayCount, { color: textPrimary }]}>{item.count}</Text>
-                  <View style={$.todayLabelRow}>
-                    <View style={[$.todayDot, { backgroundColor: item.dotColor }]} />
-                    <Text style={[$.todayLabel, { color: textSecondary }]}>{item.label}</Text>
-                  </View>
+                  <Text style={[$.statusItemCount, { color: textPrimary }]}>{item.count}</Text>
+                  <Text style={[$.statusItemLabel, { color: textSecondary }]}>{item.label}</Text>
                 </View>
               ))}
             </View>
           </Animated.View>
 
           {/* ═══ QUICK ACTIONS ═══ */}
-          <Animated.View style={[{ paddingHorizontal: H_PAD, marginTop: 18 }, slideUp(fadeLower)]}>
-            <Text style={[$.sectionTitleStandalone, { color: textPrimary }]}>Quick actions</Text>
-            <View style={$.quickActionsRow}>
-              {[
-                { label: 'Open map', icon: 'map' as keyof typeof Ionicons.glyphMap, onPress: () => router.push('/responder/(tabs)/map' as never) },
-                { label: 'Protocols', icon: 'document-text' as keyof typeof Ionicons.glyphMap, onPress: () => router.push('/responder/protocols' as never) },
-                { label: 'Call dispatch', icon: 'radio' as keyof typeof Ionicons.glyphMap, onPress: () => {} },
-              ].map((action) => (
+          <Animated.View style={[{ paddingHorizontal: H_PAD, marginTop: 14 }, slideUp(fadeLower)]}>
+            <Text style={[$.sectionTitle, { color: textPrimary, marginBottom: 10 }]}>Quick Actions</Text>
+            <View style={$.actionsGrid}>
+              {([
+                { label: 'Map',        icon: 'map-outline' as keyof typeof Ionicons.glyphMap,           iconColor: colors.brand[500], onPress: () => router.push('/responder/(tabs)/map' as never) },
+                { label: 'Protocols',  icon: 'document-text-outline' as keyof typeof Ionicons.glyphMap, iconColor: '#F59E0B',         onPress: () => router.push('/responder/protocols' as never) },
+                { label: 'Reports',    icon: 'clipboard-outline' as keyof typeof Ionicons.glyphMap,     iconColor: colors.accent[500], onPress: () => router.push('/responder/(tabs)/assignments' as never) },
+                { label: 'Alerts',     icon: 'notifications-outline' as keyof typeof Ionicons.glyphMap, iconColor: '#8B5CF6',         onPress: () => router.push('/responder/(tabs)/alerts' as never) },
+              ]).map(action => (
                 <Pressable
                   key={action.label}
                   onPress={action.onPress}
                   style={({ pressed }) => [
-                    $.quickActionCard,
+                    $.actionCard,
                     { backgroundColor: cardBg, borderColor: cardBorder },
-                    pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] },
+                    pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
                   ]}
                 >
-                  <View style={$.quickActionIconWrap}>
-                    <Ionicons name={action.icon} size={22} color={colors.brand[500]} />
+                  <View style={[$.actionCardIcon, { backgroundColor: action.iconColor + '0D' }]}>
+                    <Ionicons name={action.icon} size={20} color={action.iconColor} />
                   </View>
-                  <Text style={[$.quickActionLabel, { color: textSecondary }]}>{action.label}</Text>
+                  <Text style={[$.actionCardLabel, { color: textPrimary }]}>{action.label}</Text>
+                  <Ionicons name="chevron-forward" size={14} color={textSecondary} style={{ opacity: 0.35 }} />
                 </Pressable>
               ))}
             </View>
@@ -913,17 +831,15 @@ export default function HomeTab() {
 
           {/* ═══ MY TEAM ═══ */}
           {team && (
-            <Animated.View style={[{ paddingHorizontal: H_PAD, marginTop: 18 }, slideUp(fadeLower)]}>
+            <Animated.View style={[{ paddingHorizontal: H_PAD, marginTop: 20 }, slideUp(fadeLower)]}>
               <View style={$.sectionHeaderRow}>
-                <Text style={[$.sectionTitle, { color: textSecondary }]}>
-                  My team <Text style={{ color: textPrimary, fontWeight: '700' }}>{team.name}</Text>
-                  <Text style={{ color: textSecondary }}> {'·'} {team.members.length}</Text>
-                </Text>
-                <Pressable onPress={() => {}}>
-                  <Text style={$.sectionLink}>View all &gt;</Text>
-                </Pressable>
+                <Text style={[$.sectionTitle, { color: textPrimary }]}>{team.name}</Text>
+                <View style={$.teamPill}>
+                  <Ionicons name="people-outline" size={12} color={textSecondary} />
+                  <Text style={[$.teamPillText, { color: textSecondary }]}>{team.members.length}</Text>
+                </View>
               </View>
-              <View style={[$.card, { backgroundColor: cardBg, borderColor: cardBorder, padding: 0 }]}>
+              <View style={[$.card, { backgroundColor: cardBg, borderColor: cardBorder, padding: 0, overflow: 'hidden' }]}>
                 {team.members.map((member, idx) => {
                   const initials = `${member.firstName[0] ?? ''}${member.lastName[0] ?? ''}`.toUpperCase();
                   const isMe = member.id === user?.id;
@@ -947,8 +863,7 @@ export default function HomeTab() {
 
                   return (
                     <View key={member.id}>
-                      <View style={$.teamRow}>
-                        {/* Avatar with status dot */}
+                      <View style={[$.teamRow, isMe && { backgroundColor: isDark ? 'rgba(31,111,191,0.06)' : 'rgba(31,111,191,0.03)' }]}>
                         <View>
                           {member.avatarUrl ? (
                             <Image source={{ uri: member.avatarUrl }} style={$.teamAvatar} />
@@ -967,6 +882,11 @@ export default function HomeTab() {
                             <Text style={[$.teamName, { color: textPrimary }]}>
                               {member.firstName} {member.lastName}
                             </Text>
+                            {isMe && (
+                              <View style={$.youTag}>
+                                <Text style={$.youTagText}>YOU</Text>
+                              </View>
+                            )}
                             {member.isLeader && (
                               <View style={$.leaderTag}>
                                 <Text style={$.leaderTagText}>LEADER</Text>
@@ -979,9 +899,9 @@ export default function HomeTab() {
                         </View>
                         <Pressable
                           onPress={() => {}}
-                          style={({ pressed }) => [{ opacity: pressed ? 0.5 : 0.6 }]}
+                          style={({ pressed }) => [$.teamCallBtn, { borderColor: dividerColor }, pressed && { opacity: 0.5 }]}
                         >
-                          <Ionicons name="call" size={18} color={textSecondary} />
+                          <Ionicons name="call-outline" size={15} color={textSecondary} />
                         </Pressable>
                       </View>
                       {!isLast && <View style={[$.divider, { backgroundColor: dividerColor }]} />}
@@ -993,20 +913,26 @@ export default function HomeTab() {
           )}
 
           {/* ═══ RECENT INCIDENTS ═══ */}
-          <Animated.View style={[{ paddingHorizontal: H_PAD, marginTop: 18 }, slideUp(fadeLower)]}>
+          <Animated.View style={[{ paddingHorizontal: H_PAD, marginTop: 20 }, slideUp(fadeLower)]}>
             <View style={$.sectionHeaderRow}>
-              <Text style={[$.sectionTitle, { color: textSecondary }]}>Recent incidents</Text>
+              <Text style={[$.sectionTitle, { color: textPrimary }]}>Recent</Text>
               {teamIncidents.length > 0 && (
-                <Pressable onPress={() => router.push('/responder/(tabs)/assignments' as never)}>
-                  <Text style={$.sectionLink}>All &gt;</Text>
+                <Pressable
+                  onPress={() => router.push('/responder/(tabs)/assignments' as never)}
+                  style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+                >
+                  <Text style={$.sectionLink}>View all</Text>
                 </Pressable>
               )}
             </View>
-            <View style={[$.card, { backgroundColor: cardBg, borderColor: cardBorder, padding: 0 }]}>
+            <View style={[$.card, { backgroundColor: cardBg, borderColor: cardBorder, padding: 0, overflow: 'hidden' }]}>
               {teamIncidents.length === 0 ? (
-                <View style={{ padding: 24, alignItems: 'center' }}>
-                  <Ionicons name="checkmark-circle-outline" size={28} color={colors.severity.low} />
-                  <Text style={[$.standbyText, { color: textSecondary, marginTop: 8 }]}>
+                <View style={$.emptyState}>
+                  <View style={$.emptyIconWrap}>
+                    <Ionicons name="checkmark-circle-outline" size={28} color={colors.severity.low} />
+                  </View>
+                  <Text style={[$.emptyTitle, { color: textPrimary }]}>All clear</Text>
+                  <Text style={[$.emptyText, { color: textSecondary }]}>
                     No incidents assigned yet
                   </Text>
                 </View>
@@ -1020,34 +946,34 @@ export default function HomeTab() {
                         onPress={() => router.push(`/responder/incident/${inc.id}` as never)}
                         style={({ pressed }) => [$.recentRow, pressed && { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50] }]}
                       >
+                        <View style={[$.recentSevBar, { backgroundColor: sc }]} />
                         <View style={{ flex: 1 }}>
                           <Text style={[$.recentTitle, { color: textPrimary }]} numberOfLines={1}>
                             {inc.title}
                           </Text>
-                          <View style={$.recentMeta}>
-                            <Text style={[$.recentMetaText, { color: textSecondary }]}>
-                              {inc.address.split(',')[0]} · {inc.reportedAt}
-                            </Text>
-                          </View>
+                          <Text style={[$.recentMeta, { color: textSecondary }]} numberOfLines={1}>
+                            {inc.address.split(',')[0]} · {inc.reportedAt}
+                          </Text>
                           <View style={$.recentBadges}>
-                            <View style={[$.sevBadge, { backgroundColor: sc + '22' }]}>
-                              <Ionicons name="bar-chart" size={9} color={sc} />
-                              <Text style={[$.sevBadgeText, { color: sc, fontSize: 10 }]}>
+                            <View style={[$.recentBadge, { backgroundColor: sc + '10' }]}>
+                              <Text style={[$.recentBadgeText, { color: sc }]}>
                                 {inc.severity.charAt(0).toUpperCase() + inc.severity.slice(1)}
                               </Text>
                             </View>
-                            <View style={[$.statusMini, { backgroundColor: dividerColor }]}>
-                              {inc.responderStatus === 'resolved' && <Ionicons name="checkmark" size={10} color={textSecondary} />}
+                            <View style={[$.recentBadge, { backgroundColor: elevatedBg }]}>
+                              {inc.responderStatus === 'resolved' && <Ionicons name="checkmark" size={10} color="#10B981" />}
                               {inc.responderStatus === 'pending' && <Ionicons name="time" size={10} color="#F59E0B" />}
-                              <Text style={[$.statusMiniText, { color: textSecondary }]}>
+                              {inc.responderStatus === 'en_route' && <Ionicons name="navigate" size={10} color={colors.brand[500]} />}
+                              {inc.responderStatus === 'on_scene' && <Ionicons name="location" size={10} color="#10B981" />}
+                              <Text style={[$.recentBadgeText, { color: textSecondary }]}>
                                 {STEPPER_LABELS[inc.responderStatus]}
                               </Text>
                             </View>
                           </View>
                         </View>
-                        <Ionicons name="chevron-forward" size={16} color={textSecondary} />
+                        <Ionicons name="chevron-forward" size={16} color={textSecondary} style={{ opacity: 0.35 }} />
                       </Pressable>
-                      {!isLast && <View style={[$.divider, { backgroundColor: dividerColor }]} />}
+                      {!isLast && <View style={[$.divider, { backgroundColor: dividerColor, marginLeft: 44 }]} />}
                     </View>
                   );
                 })
@@ -1055,66 +981,8 @@ export default function HomeTab() {
             </View>
           </Animated.View>
 
-          {/* ═══ PERFORMANCE ═══ */}
-          {perfData && (
-            <Animated.View style={[{ paddingHorizontal: H_PAD, marginTop: 18 }, slideUp(fadeLower)]}>
-              <Text style={[$.sectionTitleStandalone, { color: textPrimary }]}>Performance</Text>
-              <View style={[$.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-                {/* 3 stats row */}
-                <View style={$.perfRow}>
-                  <View style={$.perfItem}>
-                    <Text style={[$.perfVal, { color: textPrimary }]}>{perfData.resolvedThisWeek}</Text>
-                    <Text style={[$.perfLabel, { color: textSecondary }]}>This week</Text>
-                  </View>
-                  <View style={$.perfItem}>
-                    <Text style={[$.perfVal, { color: colors.brand[300] }]}>{perfData.resolvedThisMonth}</Text>
-                    <Text style={[$.perfLabel, { color: textSecondary }]}>This month</Text>
-                  </View>
-                  <View style={$.perfItem}>
-                    <Text style={[$.perfVal, { color: '#10B981' }]}>
-                      {(perfData.avgResponseMinutes ?? 0) > 0
-                        ? (perfData.avgResponseMinutes as number) < 60
-                          ? `${Math.round(perfData.avgResponseMinutes as number)}m`
-                          : `${((perfData.avgResponseMinutes as number) / 60).toFixed(1)}h`
-                        : 'N/A'}
-                    </Text>
-                    <Text style={[$.perfLabel, { color: textSecondary }]}>Avg response</Text>
-                  </View>
-                </View>
-
-                {/* Mini chart */}
-                <View style={[$.perfChartSection, { borderTopColor: dividerColor }]}>
-                  <View style={$.perfChartHeader}>
-                    <Text style={[$.perfChartLabel, { color: textSecondary }]}>Resolved, last 7 days</Text>
-                    <Text style={[$.perfChartTotal, { color: textSecondary }]}>{perfData.resolvedTotal} all-time</Text>
-                  </View>
-                  <View style={$.perfChartBars}>
-                    {['F', 'S', 'S', 'M', 'T', 'W', 'Th'].map((day, i) => {
-                      const val = i === 3 ? 2 : i === 2 ? 1 : 0;
-                      return (
-                        <View key={i} style={$.perfChartCol}>
-                          {val > 0 && (
-                            <Text style={[$.perfChartBarVal, { color: textPrimary }]}>{val}</Text>
-                          )}
-                          <View
-                            style={[
-                              $.perfChartBar,
-                              {
-                                height: Math.max(4, val * 16),
-                                backgroundColor: val > 0 ? colors.brand[500] : dividerColor,
-                              },
-                            ]}
-                          />
-                          <Text style={[$.perfChartDay, { color: textSecondary }]}>{day}</Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                </View>
-              </View>
-            </Animated.View>
-          )}
-
+          {/* Bottom spacer */}
+          <View style={{ height: 8 }} />
         </ScrollView>
 
       {/* ═══ SNACKBAR ═══ */}
@@ -1136,7 +1004,7 @@ export default function HomeTab() {
           <View style={[hs.sheet, isDark && { backgroundColor: '#1A1D27' }]}>
             {homeSetupDone ? (
               <LinearGradient
-                colors={['#22c55e', '#16a34a']}
+                colors={[colors.severity.low, '#16a34a']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={hs.successWrap}
@@ -1150,7 +1018,7 @@ export default function HomeTab() {
             ) : (
               <>
                 <LinearGradient
-                  colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+                  colors={colors.gradients.hero}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={hs.header}
@@ -1207,251 +1075,217 @@ export default function HomeTab() {
 const $ = StyleSheet.create({
   root: { flex: 1 },
 
-  /* loading */
-  loadWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  loadText: { fontSize: 13, fontWeight: '600', marginTop: 12 },
-
   /* header */
-  header: { paddingHorizontal: H_PAD, paddingBottom: 8 },
-  headerRow: { flexDirection: 'row', alignItems: 'center' },
-  avatarCircle: { width: 44, height: 44, borderRadius: 14, overflow: 'hidden' },
-  avatarImg: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 16, fontWeight: '800', color: '#fff' },
-  greetSub: { fontSize: 12, color: '#8B8FA3', fontWeight: '500' },
-  greetName: { fontSize: 24, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
-  dutyRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-  dutyDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#22C55E', marginRight: 6 },
-  dutyText: { fontSize: 12, color: '#8B8FA3', fontWeight: '500' },
-  bellBtn: {
-    width: 42, height: 42, borderRadius: 14,
-    backgroundColor: colors.dark.elevated,
-    alignItems: 'center', justifyContent: 'center',
+  header: { paddingHorizontal: H_PAD, overflow: 'hidden' },
+  headerOrb: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.04)' },
+  curveWrap: { height: 20, position: 'relative', marginTop: -1 },
+  curveShape: { position: 'absolute', bottom: 0, left: -12, right: -12, height: 24, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
+
+  headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  greetLabel: { fontSize: 13, color: 'rgba(255,255,255,0.55)', fontWeight: '500', letterSpacing: 0.3, marginBottom: 2 },
+  greetName: { fontSize: 26, fontWeight: '900', color: '#fff', letterSpacing: -0.5 },
+
+  dutyPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
   },
-  bellBadge: {
-    position: 'absolute', top: 4, right: 4,
-    minWidth: 18, height: 18, borderRadius: 9,
-    backgroundColor: '#EF4444',
-    alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 4,
+  dutyDot: { width: 6, height: 6, borderRadius: 3 },
+  dutyText: { fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: '600', maxWidth: 200 },
+  headerWeather: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerWeatherText: { fontSize: 28, color: '#fff', fontWeight: '900', letterSpacing: -0.5 },
+
+  /* flood risk bar */
+  riskBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 14, borderWidth: 1,
+    paddingHorizontal: 14, paddingVertical: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
   },
-  bellBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
+  riskIconWrap: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  riskTitle: { fontSize: 12, fontWeight: '700', marginBottom: 1 },
+  riskDesc: { fontSize: 11, fontWeight: '500' },
+  riskBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  riskBadgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.2 },
 
   /* offline banner */
   offlineBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#F59E0B18', borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 10,
-    marginTop: 8,
+    backgroundColor: '#F59E0B0E', borderRadius: 14, borderWidth: 1, borderColor: '#F59E0B20',
+    paddingHorizontal: 16, paddingVertical: 12,
   },
   offlineText: { flex: 1, fontSize: 12, fontWeight: '600', color: '#F59E0B' },
-  syncingPill: {
-    backgroundColor: '#F59E0B22', borderRadius: 8,
-    paddingHorizontal: 8, paddingVertical: 3,
-  },
+  syncingPill: { backgroundColor: '#F59E0B18', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   syncingText: { fontSize: 10, fontWeight: '700', color: '#F59E0B' },
 
   /* card base */
   card: {
-    borderRadius: CARD_R, borderWidth: 1, padding: 18, overflow: 'hidden',
+    borderRadius: 18, borderWidth: 1, padding: 18, overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.05,
     shadowRadius: 12,
     elevation: 3,
   },
 
-  /* assignment card */
-  assignHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  assignLabel: { fontSize: 11, fontWeight: '800', color: '#8B8FA3', letterSpacing: 1 },
-  assignRef: { fontSize: 12, fontWeight: '600' },
-  assignMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  assignMetaText: { fontSize: 12, fontWeight: '500' },
-  assignTitle: { fontSize: 18, fontWeight: '800', lineHeight: 24, marginBottom: 6, letterSpacing: -0.3 },
-  assignLocRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 14 },
-  assignLocText: { fontSize: 13, fontWeight: '500', flex: 1 },
-
-  /* ETA row */
-  etaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 14 },
-  etaText: { fontSize: 13, fontWeight: '600' },
-
-  /* severity badge */
-  sevBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
+  /* ── mission card (active assignment) ── */
+  missionCard: {
+    borderRadius: 20, borderWidth: 1, padding: 18, overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    elevation: 4,
   },
-  sevBadgeText: { fontSize: 11, fontWeight: '700' },
+  missionAccent: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: 3,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+  },
+  missionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, marginBottom: 10 },
+  missionLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  missionPulse: { width: 6, height: 6, borderRadius: 3 },
+  missionLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
+  missionRef: { fontSize: 11, fontWeight: '600' },
+  missionTitle: { fontSize: 19, fontWeight: '900', lineHeight: 25, marginBottom: 10, letterSpacing: -0.3 },
 
-  /* stepper */
-  stepperWrap: { marginBottom: 16, marginTop: 4 },
-  stepperDotsRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 },
-  stepperCircle: {
-    width: 24, height: 24, borderRadius: 12,
+  missionChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
+  missionChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 9, paddingVertical: 4.5, borderRadius: 8,
+    borderWidth: 1,
+  },
+  missionChipDot: { width: 5, height: 5, borderRadius: 3 },
+  missionChipText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.1 },
+
+  missionLocRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 },
+  missionLocText: { fontSize: 12, fontWeight: '500', flex: 1 },
+
+  missionDivider: { height: 1, marginVertical: 14, marginHorizontal: -18, opacity: 0.6 },
+
+  missionFooter: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
+  missionFooterText: { fontSize: 11, fontWeight: '500', opacity: 0.6 },
+
+  /* status tracker */
+  trackerWrap: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16, paddingHorizontal: 2 },
+  trackerDot: {
+    width: 22, height: 22, borderRadius: 11,
     borderWidth: 2, borderColor: '#4B5563',
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'transparent',
   },
-  stepperCircleDone: { borderColor: '#10B981', backgroundColor: '#10B981' },
-  stepperCircleActive: { borderColor: colors.brand[300], backgroundColor: 'transparent', borderWidth: 2.5 },
-  stepperInnerDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.brand[300] },
-  stepperLine: { flex: 1, height: 2, backgroundColor: '#4B5563', marginHorizontal: -1 },
-  stepperLineDone: { backgroundColor: '#10B981' },
-  stepperLabelsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, paddingHorizontal: 0 },
-  stepperLabel: { fontSize: 10, fontWeight: '500', color: '#8B8FA3', textAlign: 'center', width: 60 },
+  trackerDotDone: { borderColor: '#10B981', backgroundColor: '#10B981' },
+  trackerDotActive: { borderColor: colors.brand[500], backgroundColor: 'transparent', borderWidth: 2.5 },
+  trackerInnerDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.brand[500] },
+  trackerLine: { flex: 1, height: 2, backgroundColor: '#4B5563', marginTop: 10, marginHorizontal: 2, borderRadius: 1 },
+  trackerLineDone: { backgroundColor: '#10B981' },
+  trackerLabel: { fontSize: 9, fontWeight: '600', color: '#8B8FA3', textAlign: 'center', marginTop: 5, width: 52 },
 
-  /* action row: start + call side by side */
-  actionRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
-  actionBtn: {
+  /* navigate button */
+  navBtnWrap: { borderRadius: 14, overflow: 'hidden', marginBottom: 10 },
+  navBtnGrad: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 14, borderRadius: 12,
+    paddingVertical: 14, borderRadius: 14,
   },
-  actionBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  callBtn: {
-    width: 48, alignItems: 'center', justifyContent: 'center',
-    borderRadius: 12, borderWidth: 1,
-  },
+  navBtnText: { fontSize: 14, fontWeight: '800', color: '#fff', letterSpacing: 0.2 },
 
-  /* assignment footer */
-  assignFooter: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  assignFooterText: { fontSize: 12, fontWeight: '500' },
 
   /* standing by */
-  standbyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
-  standbyIcon: {
-    width: 52, height: 52, borderRadius: 16,
-    backgroundColor: colors.brand[500] + '15',
+  standbyContent: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, marginTop: 4 },
+  standbyIconWrap: {
+    width: 50, height: 50, borderRadius: 16,
+    backgroundColor: 'rgba(31,111,191,0.06)',
     alignItems: 'center', justifyContent: 'center',
   },
-  standbyTitle: { fontSize: 20, fontWeight: '800', marginBottom: 4 },
-  standbyText: { fontSize: 13, fontWeight: '500', lineHeight: 19 },
-  standbyDivider: { height: StyleSheet.hairlineWidth, marginTop: 16, marginBottom: 12 },
-  standbyFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  standbyFooterText: { fontSize: 12, fontWeight: '600' },
+  standbyTitle: { fontSize: 18, fontWeight: '900', marginBottom: 4, letterSpacing: -0.3 },
+  standbyDesc: { fontSize: 12, fontWeight: '500', lineHeight: 18, opacity: 0.7 },
+  standbyFooterDivider: { height: 1, marginTop: 16, marginBottom: 12, marginHorizontal: -18, opacity: 0.5 },
+  standbyFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  standbyFooterText: { fontSize: 12, fontWeight: '700' },
+  standbyFooterMeta: { fontSize: 11, fontWeight: '500' },
 
-  /* conditions */
-  condHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  condLabel: { fontSize: 11, fontWeight: '800', color: '#8B8FA3', letterSpacing: 1 },
-  condLocRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 12 },
-  condLocText: { fontSize: 12, fontWeight: '500' },
-  riskBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1,
+  /* status grid */
+  statusGrid: { flexDirection: 'row', gap: 8 },
+  statusItem: {
+    flex: 1, alignItems: 'center', paddingVertical: 12,
+    borderRadius: 14, borderWidth: 1,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1,
   },
-  riskBadgeText: { fontSize: 11, fontWeight: '700' },
-  wxMain: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-  wxIconWrap: {
-    width: 44, height: 44, borderRadius: 14,
-    backgroundColor: colors.brand[500] + '12',
-    alignItems: 'center', justifyContent: 'center',
-    marginRight: 10,
-  },
-  wxTemp: { fontSize: 40, fontWeight: '800', letterSpacing: -1 },
-  wxDeg: { fontSize: 20, fontWeight: '400' },
-  wxDesc: { fontSize: 14, fontWeight: '600' },
-  wxFeels: { fontSize: 12, fontWeight: '500', marginTop: 1 },
-
-  /* weather stats */
-  wxStatsRow: { flexDirection: 'row', borderTopWidth: 1, paddingTop: 12, marginBottom: 12 },
-  wxStatItem: { flex: 1, alignItems: 'center', gap: 3 },
-  wxStatLabel: { fontSize: 10, fontWeight: '500', color: '#8B8FA3' },
-  wxStatVal: { fontSize: 13, fontWeight: '700' },
-  wxStatDivider: { width: 1, alignSelf: 'stretch' },
-
-  /* forecast bars */
-  forecastSection: { marginBottom: 6 },
-  forecastHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  forecastTitle: { fontSize: 11, fontWeight: '600' },
-  forecastScale: { fontSize: 10, fontWeight: '500' },
-  forecastBars: { flexDirection: 'row', alignItems: 'flex-end', height: 60, gap: 6 },
-  forecastBarCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
-  forecastBar: { width: '80%', borderRadius: 4, minHeight: 4 },
-  forecastBarLabel: { fontSize: 10, fontWeight: '500', marginTop: 4 },
-  forecastBarValue: { fontSize: 10, fontWeight: '700', marginBottom: 2 },
-
-  /* weather alert */
-  wxAlertRow: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    borderRadius: 10,
-    padding: 12, marginTop: 8,
-  },
-  wxAlertText: { fontSize: 12, fontWeight: '500', flex: 1, lineHeight: 17 },
-
-  /* today strip */
-  todayStrip: { flexDirection: 'row', borderRadius: CARD_R, borderWidth: 1, overflow: 'hidden' },
-  todayItem: { flex: 1, alignItems: 'center', paddingVertical: 14 },
-  todayCount: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
-  todayLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
-  todayDot: { width: 6, height: 6, borderRadius: 3 },
-  todayLabel: { fontSize: 10, fontWeight: '600' },
+  statusItemIcon: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  statusItemCount: { fontSize: 20, fontWeight: '900', letterSpacing: -0.5, marginBottom: 2 },
+  statusItemLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 0.2 },
 
   /* section headers */
-  sectionTitleStandalone: { fontSize: 17, fontWeight: '800', marginBottom: 12, letterSpacing: -0.3 },
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  sectionTitle: { fontSize: 14, fontWeight: '600' },
-  sectionLink: { fontSize: 13, fontWeight: '600', color: colors.brand[300] },
+  sectionTitle: { fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
+  sectionLink: { fontSize: 12, fontWeight: '700', color: colors.brand[500] },
 
-  /* quick actions */
-  quickActionsRow: { flexDirection: 'row', gap: 10 },
-  quickActionCard: {
-    flex: 1, alignItems: 'center', paddingVertical: 18,
-    borderRadius: CARD_R, borderWidth: 1,
+  /* quick actions grid */
+  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  actionCard: {
+    width: '48%' as any,
+    flexGrow: 1,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 13,
+    borderRadius: 14, borderWidth: 1,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1,
   },
-  quickActionIconWrap: {
-    width: 48, height: 48, borderRadius: 14,
-    backgroundColor: colors.brand[500] + '12',
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 10,
-  },
-  quickActionLabel: { fontSize: 12, fontWeight: '600' },
-
-  /* recent incidents */
-  recentRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
-  recentTitle: { fontSize: 14, fontWeight: '700', marginBottom: 4 },
-  recentMeta: { marginBottom: 6 },
-  recentMetaText: { fontSize: 12, fontWeight: '500' },
-  recentBadges: { flexDirection: 'row', gap: 6 },
-  statusMini: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
-  statusMiniText: { fontSize: 10, fontWeight: '600' },
-
-  /* divider */
-  divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
+  actionCardIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  actionCardLabel: { flex: 1, fontSize: 13, fontWeight: '700' },
 
   /* team */
+  teamPill: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  teamPillText: { fontSize: 12, fontWeight: '600' },
   teamRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13 },
-  teamAvatar: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  teamAvatarText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  teamAvatar: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  teamAvatarText: { fontSize: 12, fontWeight: '800', color: '#fff' },
   teamStatusDot: {
     position: 'absolute', bottom: -1, right: -1,
     width: 12, height: 12, borderRadius: 6,
-    borderWidth: 2,
+    borderWidth: 2.5,
   },
-  teamName: { fontSize: 14, fontWeight: '700' },
-  leaderTag: { backgroundColor: '#F59E0B22', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
+  teamName: { fontSize: 13, fontWeight: '700' },
+  youTag: { backgroundColor: colors.brand[500] + '14', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
+  youTagText: { fontSize: 8, fontWeight: '800', color: colors.brand[500], letterSpacing: 0.5 },
+  leaderTag: { backgroundColor: '#F59E0B14', paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 6 },
   leaderTagText: { fontSize: 9, fontWeight: '800', color: '#F59E0B', letterSpacing: 0.5 },
+  teamCallBtn: {
+    width: 32, height: 32, borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
 
-  /* performance */
-  perfRow: { flexDirection: 'row', marginBottom: 4 },
-  perfItem: { flex: 1, alignItems: 'center', paddingVertical: 4 },
-  perfVal: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
-  perfLabel: { fontSize: 11, fontWeight: '500', marginTop: 2 },
-  perfChartSection: { borderTopWidth: 1, paddingTop: 12, marginTop: 6 },
-  perfChartHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  perfChartLabel: { fontSize: 11, fontWeight: '500' },
-  perfChartTotal: { fontSize: 11, fontWeight: '500' },
-  perfChartBars: { flexDirection: 'row', alignItems: 'flex-end', height: 44, gap: 4 },
-  perfChartCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
-  perfChartBar: { width: '70%', borderRadius: 3, minHeight: 4 },
-  perfChartBarVal: { fontSize: 10, fontWeight: '700', marginBottom: 2 },
-  perfChartDay: { fontSize: 10, fontWeight: '500', marginTop: 4 },
+  /* recent incidents */
+  recentRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
+  recentSevBar: { width: 3, height: 34, borderRadius: 2, marginRight: 12 },
+  recentTitle: { fontSize: 13, fontWeight: '800', marginBottom: 3, letterSpacing: -0.1 },
+  recentMeta: { fontSize: 11, fontWeight: '500', opacity: 0.55, marginBottom: 6 },
+  recentBadges: { flexDirection: 'row', gap: 6 },
+  recentBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7 },
+  recentBadgeText: { fontSize: 10, fontWeight: '700' },
+
+  /* empty state */
+  emptyState: { padding: 28, alignItems: 'center' },
+  emptyIconWrap: {
+    width: 48, height: 48, borderRadius: 14,
+    backgroundColor: colors.severity.low + '0D',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 10,
+  },
+  emptyTitle: { fontSize: 15, fontWeight: '800', marginBottom: 4 },
+  emptyText: { fontSize: 12, fontWeight: '500' },
+
+  /* divider */
+  divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
 
   /* snackbar */
   snackbar: {
     position: 'absolute', left: H_PAD, right: H_PAD,
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: colors.dark.card, borderRadius: 14, borderWidth: 1, borderColor: colors.dark.border,
+    backgroundColor: '#1A1D27', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
     paddingHorizontal: 16, paddingVertical: 14,
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 8,
   },
-  snackbarText: { fontSize: 13, fontWeight: '600', color: colors.dark.text, flex: 1 },
+  snackbarText: { fontSize: 13, fontWeight: '600', color: '#E2E8F0', flex: 1 },
 });
 
 const hs = StyleSheet.create({

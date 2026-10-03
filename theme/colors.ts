@@ -61,25 +61,25 @@ export const colors = {
 
   // Auth/form colors (login & signup screens)
   auth: {
-    primary:         '#5A6FF5',
+    primary:         '#1F6FBF',
     heading:         '#1A202C',
     muted:           '#A0AEC0',
     tertiary:        '#718096',
     placeholder:     '#CBD5E0',
     inputBg:         '#F7F8FC',
     inputIconBg:     '#EDF0F7',
-    inputIconActive: '#EBF0FF',
+    inputIconActive: '#E8F4FD',
     pageBg:          '#FAFBFE',
     bodyText:        '#2D3748',
   },
 
   // Gradient tuples for LinearGradient
   gradients: {
-    hero:        ['#00D2FF', '#4A6CF7', '#7C3AED'] as const,
-    wave:        ['#6B52F5', '#7C3AED'] as const,
-    cta:         ['#4A6CF7', '#7C3AED'] as const,
-    ctaDisabled: ['#8B9CF7', '#A78BFA'] as const,
-    password:    ['#A855F7', '#6366F1'] as const,
+    hero:        ['#1A5FA6', '#1F6FBF', '#0FA896'] as const,
+    wave:        ['#1F6FBF', '#0FA896'] as const,
+    cta:         ['#1F6FBF', '#0FA896'] as const,
+    ctaDisabled: ['#6AAEE0', '#7DC8BE'] as const,
+    password:    ['#1F6FBF', '#124577'] as const,
   },
 
   // Form feedback colors

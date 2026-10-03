@@ -34,7 +34,7 @@ import MapView, {
   PROVIDER_GOOGLE,
   type Region,
 } from '@/components/MapView';
-import type { Hazard, HazardCategoryType, HazardPayload, Severity } from '@/types';
+import type { Hazard, HazardCategoryType, HazardPayload } from '@/types';
 
 /* ───────────────────── constants ───────────────────── */
 
@@ -72,12 +72,6 @@ const CATEGORY_META: Record<HazardCategoryType, { label: string; icon: keyof typ
   road:  { label: 'Road Hazards',  icon: 'car',    color: colors.roadHazard.closedRoad, gradient: [colors.roadHazard.debris, colors.roadHazard.closedRoad], types: ROAD_TYPES },
 };
 
-const SEVERITIES: { key: Severity; label: string; color: string }[] = [
-  { key: 'low',      label: 'Low',      color: colors.severity.low },
-  { key: 'moderate', label: 'Moderate', color: colors.severity.moderate },
-  { key: 'high',     label: 'High',     color: colors.severity.high },
-  { key: 'critical', label: 'Critical', color: colors.severity.critical },
-];
 
 function findTypeDef(category: HazardCategoryType, type: string): HazardTypeDef | undefined {
   return CATEGORY_META[category].types.find(t => t.key === type);
@@ -293,13 +287,7 @@ export default function HazardManagement() {
                       </View>
                     ) : null}
                   </View>
-                  <View style={$.hazardActions}>
-                    <View style={[$.sevBadge, { backgroundColor: colors.severity[hazard.severity] + '20' }]}>
-                      <Text style={[$.sevBadgeText, { color: colors.severity[hazard.severity] }]}>
-                        {hazard.severity}
-                      </Text>
-                    </View>
-                  </View>
+                  <View style={$.hazardActions} />
                 </View>
 
                 <View style={[$.hazardCardBottom, { borderTopColor: cardBorder }]}>
@@ -379,7 +367,6 @@ function HazardFormModal({
 
   const [category, setCategory]       = useState<HazardCategoryType>('flood');
   const [hazardType, setHazardType]   = useState('');
-  const [severity, setSeverity]       = useState<Severity>('moderate');
   const [title, setTitle]             = useState('');
   const [description, setDescription] = useState('');
   const [address, setAddress]         = useState('');
@@ -401,7 +388,6 @@ function HazardFormModal({
       if (editTarget) {
         setCategory(editTarget.category);
         setHazardType(editTarget.type);
-        setSeverity(editTarget.severity);
         setTitle(editTarget.title);
         setDescription(editTarget.description);
         setAddress(editTarget.address);
@@ -409,7 +395,6 @@ function HazardFormModal({
       } else {
         setCategory('flood');
         setHazardType('');
-        setSeverity('moderate');
         setTitle('');
         setDescription('');
         setAddress('');
@@ -437,7 +422,6 @@ function HazardFormModal({
       await onSave({
         category,
         type: hazardType,
-        severity,
         title: title.trim(),
         description: description.trim(),
         latitude: pickedCoord!.latitude,
@@ -525,27 +509,6 @@ function HazardFormModal({
                     >
                       <Ionicons name={t.icon} size={14} color={active ? t.color : textSecondary} />
                       <Text style={[$.typeLabel, { color: active ? t.color : textPrimary }]}>{t.label}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              {/* Severity */}
-              <Text style={[$.fieldLabel, { color: textPrimary }]}>Severity</Text>
-              <View style={$.sevRow}>
-                {SEVERITIES.map(s => {
-                  const active = severity === s.key;
-                  return (
-                    <Pressable
-                      key={s.key}
-                      onPress={() => setSeverity(s.key)}
-                      style={[
-                        $.sevChip,
-                        { backgroundColor: active ? s.color + '18' : cardBg, borderColor: active ? s.color : cardBorder },
-                      ]}
-                    >
-                      <View style={[$.sevDot, { backgroundColor: s.color }]} />
-                      <Text style={[$.sevChipLabel, { color: active ? s.color : textPrimary }]}>{s.label}</Text>
                     </Pressable>
                   );
                 })}
@@ -812,12 +775,6 @@ const $ = StyleSheet.create({
   hazardAddrRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
   hazardAddr: { fontSize: 10, fontWeight: '500', flex: 1 },
   hazardActions: { alignItems: 'flex-end', gap: 6 },
-  sevBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  sevBadgeText: { fontSize: 9, fontWeight: '800', textTransform: 'capitalize' },
   hazardCardBottom: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -922,21 +879,6 @@ const $ = StyleSheet.create({
     borderWidth: 1,
   },
   typeLabel: { fontSize: 12, fontWeight: '600' },
-
-  /* severity */
-  sevRow: { flexDirection: 'row', gap: 6 },
-  sevChip: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  sevDot: { width: 8, height: 8, borderRadius: 4 },
-  sevChipLabel: { fontSize: 11, fontWeight: '700' },
 
   /* inputs */
   input: {

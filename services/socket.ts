@@ -48,23 +48,45 @@ export function adaptSocketMessage(raw: RawSocketMessage, reportId: string): Inc
   };
 }
 
+type Listener = (...args: unknown[]) => void;
+
+let listenerIdCounter = 0;
+
 class SocketService {
   private socket: Socket | null = null;
   private joinedReports = new Set<string>();
+  /**
+   * Tracked listeners keyed by unique ID so they can be reliably
+   * removed even when the callback reference changes (React re-renders).
+   */
+  private listeners = new Map<number, { event: string; cb: Listener }>();
+
+  private token: string | null = null;
+  private connectionAttempts = 0;
 
   connect(token: string) {
-    if (this.socket?.connected) return;
+    this.token = token;
+
+    // If socket exists and is connected or connecting, don't create another
+    if (this.socket) return;
+
+    this.connectionAttempts = 0;
 
     this.socket = io(SOCKET_URL, {
       auth: { token },
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
+      upgrade: true,
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 2000,
+      reconnectionDelayMax: 10000,
+      timeout: 10000,
     });
 
     this.socket.on('connect', () => {
       console.log('[socket] connected', this.socket?.id);
+      this.connectionAttempts = 0;
+      // Re-join report rooms after reconnect
       this.joinedReports.forEach(reportId => {
         this.socket?.emit('join-report', reportId);
       });
@@ -72,15 +94,45 @@ class SocketService {
 
     this.socket.on('disconnect', (reason) => {
       console.log('[socket] disconnected', reason);
+      // If server disconnected us, force reconnect with fresh socket
+      if (reason === 'io server disconnect' && this.token) {
+        this.socket = null;
+        this.connect(this.token);
+      }
     });
 
     this.socket.on('connect_error', (err) => {
-      console.warn('[socket] connection error:', err.message);
+      this.connectionAttempts++;
+      console.warn(`[socket] connection error (attempt ${this.connectionAttempts}):`, err.message);
+      // After 5 failed attempts, destroy and recreate socket
+      if (this.connectionAttempts >= 5 && this.token) {
+        console.log('[socket] too many failures, recreating socket...');
+        this.socket?.disconnect();
+        this.socket = null;
+        setTimeout(() => {
+          if (this.token) this.connect(this.token);
+        }, 5000);
+      }
     });
+
+    // Register all tracked listeners on this new socket
+    for (const [, { event, cb }] of this.listeners) {
+      this.socket.on(event, cb);
+    }
+  }
+
+  /** Force reconnect — useful when app returns to foreground */
+  reconnect() {
+    if (!this.token) return;
+    if (this.socket?.connected) return;
+    this.socket?.disconnect();
+    this.socket = null;
+    this.connect(this.token);
   }
 
   disconnect() {
     this.joinedReports.clear();
+    this.listeners.clear();
     this.socket?.disconnect();
     this.socket = null;
   }
@@ -103,12 +155,26 @@ class SocketService {
     this.socket?.emit('location-update', { latitude, longitude });
   }
 
-  on<T>(event: string, cb: (data: T) => void) {
-    this.socket?.on(event, cb as (...args: unknown[]) => void);
+  /**
+   * Register a listener. Returns a unique ID that MUST be used with `off()`
+   * to ensure reliable cleanup regardless of callback reference changes.
+   */
+  on<T>(event: string, cb: (data: T) => void): number {
+    const id = ++listenerIdCounter;
+    const wrapped = cb as Listener;
+    this.listeners.set(id, { event, cb: wrapped });
+    this.socket?.on(event, wrapped);
+    return id;
   }
 
-  off<T>(event: string, cb: (data: T) => void) {
-    this.socket?.off(event, cb as (...args: unknown[]) => void);
+  /**
+   * Remove a listener by the ID returned from `on()`.
+   */
+  off(listenerId: number) {
+    const entry = this.listeners.get(listenerId);
+    if (!entry) return;
+    this.socket?.off(entry.event, entry.cb);
+    this.listeners.delete(listenerId);
   }
 
   get isConnected() {

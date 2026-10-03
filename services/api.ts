@@ -224,6 +224,7 @@ function adaptReport(raw: RawReport): Report {
     title:        HAZARD_LABELS[raw.hazard_type] ?? 'Flood report',
     type:         HAZARD_TYPE_DISPLAY[raw.hazard_type] ?? raw.hazard_type,
     severity:     raw.severity,
+    depthFt:      (raw as any).depth_ft ?? null,
     status:       raw.status,
     address:      raw.address ?? '',
     latitude:     raw.latitude,
@@ -617,6 +618,7 @@ export async function submitReport(
   const form = new FormData();
   form.append('hazard_type',  payload.hazardType);
   form.append('severity',     payload.severity);
+  form.append('depth_ft',     String(payload.depthFt));
   form.append('latitude',     String(payload.latitude));
   form.append('longitude',    String(payload.longitude));
   form.append('address',      payload.address);
@@ -677,11 +679,15 @@ function adaptUserNotification(raw: RawUserNotification): AlertItem {
   const isWelcome     = raw.type === 'welcome';
   const isMessage     = raw.type === 'new_message';
   const isAssignment  = raw.type === 'assignment';
+  const isSchedule    = raw.type === 'schedule_change';
+  const isRedAlert    = isSchedule && raw.title?.toLowerCase().includes('red alert');
 
   const kind = isWelcome    ? 'welcome'
     : isRejected             ? 'rejected'
     : isMessage              ? 'new_message'
     : isAssignment           ? 'new_assignment'
+    : isRedAlert             ? 'critical'
+    : isSchedule             ? 'status_update'
     : 'status_update';
 
   return {
@@ -1131,7 +1137,6 @@ interface RawHazard {
   id: number;
   category: 'flood' | 'road';
   type: string;
-  severity: 'low' | 'moderate' | 'high' | 'critical';
   title: string;
   description: string | null;
   latitude: number;
@@ -1147,7 +1152,6 @@ function adaptHazard(raw: RawHazard): Hazard {
     id:          String(raw.id),
     category:    raw.category,
     type:        raw.type,
-    severity:    raw.severity,
     title:       raw.title,
     description: raw.description ?? '',
     latitude:    raw.latitude,
@@ -1219,4 +1223,18 @@ export async function getAppConfig(token: string): Promise<AppConfig> {
     defaultLongitude: data.default_longitude,
     quickChips:       data.quick_chips,
   };
+}
+
+// ── Schedule ──────────────────────────────────────────────
+
+export interface ScheduleInfo {
+  level: 'white' | 'red';
+  current_shift: string;
+  team_shift: string | null;
+  on_duty: boolean;
+  team_name: string | null;
+}
+
+export async function getSchedule(token: string): Promise<ScheduleInfo> {
+  return get<ScheduleInfo>('/schedule', token);
 }

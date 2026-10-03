@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
@@ -41,10 +41,12 @@ import { SeverityChip, type Severity } from '@/components/SeverityChip';
 import { StatusBadge, type ReportStatus } from '@/components/StatusBadge';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
-import { getAllReports, getReportDetail, getEvacuationCenters, getActiveHazards, getWeatherWithFallback, getAppConfig, submitMemberStatus, confirmTeamStatus, getIncidentUnreadCount } from '@/services/api';
+import { getAllReports, getReportDetail, getEvacuationCenters, getActiveHazards, getWeatherWithFallback, getAppConfig, submitMemberStatus, confirmTeamStatus, getIncidentUnreadCount, getAssignedIncidents } from '@/services/api';
 import * as Storage from '@/utils/storage';
-import { SESSION_KEY } from '@/app/responder/incident/[id]';
 import { socketService } from '@/services/socket';
+
+const SESSION_KEY = 'floodtrack_active_session';
+import { onNotificationReceived } from '@/services/notifications';
 import type { WeatherData } from '@/services/api';
 import type { Report as ApiReport, Hazard } from '@/types';
 import { HeatmapZoneSummary } from '@/components/HeatmapZoneSummary';
@@ -332,60 +334,96 @@ function buildAvoidanceWaypoints(
 }
 
 
-function HazardMarker({ report, small }: { report: Report; small?: boolean }) {
-  const meta     = report.hazardType !== 'all' ? HAZARD_META[report.hazardType] : null;
-  const color    = meta?.color ?? colors.brand[500];
-  const iconName = (meta?.icon ?? 'alert-circle') as keyof typeof Ionicons.glyphMap;
-  const isCrit   = report.severity === 'critical';
-  const sz = small ? 18 : 28;
-  const wr = small ? 24 : 36;
-
-  return (
-    <View style={{ width: wr, height: wr, alignItems: 'center', justifyContent: 'center' }}>
-      {isCrit && !small && <View style={[mk.pulse, { borderColor: color }]} />}
-      <View style={[mk.circle, { backgroundColor: color, width: sz, height: sz, borderRadius: sz / 2 }]}>
-        <Ionicons name={iconName} size={small ? 9 : 13} color={colors.white} />
-      </View>
-    </View>
-  );
+/* ── Stable hazard pin — auto-disables tracksViewChanges after bitmap capture ── */
+function useTrackOnce() {
+  const [track, setTrack] = useState(true);
+  useEffect(() => { const t = setTimeout(() => setTrack(false), 500); return () => clearTimeout(t); }, []);
+  return track;
 }
 
-const mk = StyleSheet.create({
-  pulse: {
-    position: 'absolute',
-    width: 36, height: 36, borderRadius: 18,
-    borderWidth: 2, opacity: 0.35,
-  },
-  circle: {
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: colors.white,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.28, shadowRadius: 4, elevation: 5,
-  },
+const HazardMarkerWrap = React.memo(function HazardMarkerWrap({ hz, hzColor, hzIcon, zIndex, onPress }: {
+  hz: { id: string; latitude: number; longitude: number };
+  hzColor: string;
+  hzIcon: keyof typeof Ionicons.glyphMap;
+  zIndex: number;
+  onPress: () => void;
+}) {
+  const track = useTrackOnce();
+  return (
+    <Marker
+      coordinate={{ latitude: hz.latitude, longitude: hz.longitude }}
+      tracksViewChanges={track}
+      anchor={{ x: 0.5, y: 1 }}
+      zIndex={zIndex}
+      onPress={onPress}
+    >
+      <HazardPinView icon={hzIcon} color={hzColor} />
+    </Marker>
+  );
 });
 
-function EvacuationMarker({ small }: { small?: boolean }) {
-  const size = small ? 20 : 30;
-  const iconSize = small ? 9 : 13;
-  const radius = small ? 7 : 10;
-  const border = small ? 1.5 : 2;
+const HazardPinView = React.memo(function HazardPinView({ icon, color }: { icon: keyof typeof Ionicons.glyphMap; color: string }) {
   return (
-    <View style={{ width: size + 6, height: size + 6, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ alignItems: 'center' }}>
       <View style={{
-        width: size, height: size, borderRadius: radius,
-        backgroundColor: EVAC_COLOR,
-        borderWidth: border, borderColor: colors.white,
+        width: 32, height: 32, borderRadius: 16,
+        backgroundColor: color,
+        borderWidth: 2.5, borderColor: '#fff',
         alignItems: 'center', justifyContent: 'center',
-        shadowColor: EVAC_COLOR,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.4, shadowRadius: 4, elevation: 5,
+        shadowOpacity: 0.3, shadowRadius: 4, elevation: 5,
       }}>
-        <Ionicons name="shield-checkmark" size={iconSize} color={colors.white} />
+        <Ionicons name={icon} size={14} color="#fff" />
       </View>
+      <View style={{
+        width: 0, height: 0,
+        borderLeftWidth: 5, borderRightWidth: 5, borderTopWidth: 7,
+        borderLeftColor: 'transparent', borderRightColor: 'transparent',
+        borderTopColor: color, marginTop: -1,
+      }} />
     </View>
   );
-}
+});
+
+const ReportMarkerWrap = React.memo(function ReportMarkerWrap({ report, onPress }: {
+  report: Report;
+  onPress: () => void;
+}) {
+  const track = useTrackOnce();
+  const meta = HAZARD_META[report.hazardType];
+  const sevColor = colors.severity[report.severity];
+  const hzIcon = meta?.icon ?? 'alert-circle';
+  return (
+    <Marker
+      coordinate={{ latitude: report.latitude, longitude: report.longitude }}
+      tracksViewChanges={track}
+      anchor={{ x: 0.5, y: 1 }}
+      zIndex={3}
+      onPress={onPress}
+    >
+      <View style={{ alignItems: 'center' }}>
+        <View style={{
+          width: 34, height: 34, borderRadius: 17,
+          backgroundColor: sevColor,
+          borderWidth: 2.5, borderColor: '#fff',
+          alignItems: 'center', justifyContent: 'center',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.3, shadowRadius: 4, elevation: 5,
+        }}>
+          <Ionicons name={hzIcon} size={15} color="#fff" />
+        </View>
+        <View style={{
+          width: 0, height: 0,
+          borderLeftWidth: 5, borderRightWidth: 5, borderTopWidth: 7,
+          borderLeftColor: 'transparent', borderRightColor: 'transparent',
+          borderTopColor: sevColor, marginTop: -1,
+        }} />
+      </View>
+    </Marker>
+  );
+});
 
 function MapTypeModal({
   visible,
@@ -865,7 +903,8 @@ function EvacSheet({
 function SearchPinSheet({
   pin, onClose, onConfirmClose, onGetDirections, isDark, bottomInset, distanceKm, isRouteLoading, hasRoute,
   onArrived, arrivedLoading, isLeaderMode,
-  reporterName, reportedAt, severity, incidentType,
+  onStart, startLoading, responderStatus,
+  reporterName, reportedAt, severity, incidentType, incidentAddress,
   chatUnread, onChatPress, showIncidentInfo,
 }: {
   pin: { name: string; secondary?: string; latitude: number; longitude: number };
@@ -880,10 +919,14 @@ function SearchPinSheet({
   onArrived?: () => void;
   arrivedLoading?: boolean;
   isLeaderMode?: boolean;
+  onStart?: (status: string) => void;
+  startLoading?: boolean;
+  responderStatus?: string;
   reporterName?: string;
   reportedAt?: string;
   severity?: string;
   incidentType?: string;
+  incidentAddress?: string;
   chatUnread?: number;
   onChatPress?: () => void;
   showIncidentInfo?: boolean;
@@ -925,10 +968,7 @@ function SearchPinSheet({
     return (
       <View style={[spSheet.sheet, { backgroundColor: bg, paddingBottom: Math.max(bottomInset, 12) + (onArrived ? 14 : 8) }]}>
         <View style={spSheet.handle} />
-        <View style={[spSheet.header, { marginBottom: onArrived ? 8 : 6 }]}>
-          <View style={[spSheet.compactIcon, { backgroundColor: '#4A6CF7' + '18' }]}>
-            <Ionicons name="location" size={16} color="#4A6CF7" />
-          </View>
+        <View style={[spSheet.header, { marginBottom: onArrived || onStart ? 8 : 6 }]}>
           <View style={{ flex: 1 }}>
             <Text style={[spSheet.title, { color: textMain, fontSize: 15 }]} numberOfLines={1}>
               {pin.name}
@@ -946,22 +986,8 @@ function SearchPinSheet({
           </Pressable>
         </View>
         {/* Incident info rows in session mode */}
-        {(onArrived || showIncidentInfo) && (reporterName || reportedAt || severity || incidentType) && (
+        {(onArrived || showIncidentInfo || onStart) && (reporterName || reportedAt || severity || incidentType || incidentAddress) && (
           <View style={[spSheet.infoBlock, { borderColor: isDark ? colors.dark.border : colors.slate[100] }]}>
-            {reporterName ? (
-              <View style={spSheet.infoBlockRow}>
-                <Ionicons name="person-outline" size={12} color={isDark ? colors.slate[500] : colors.slate[400]} />
-                <Text style={[spSheet.infoBlockLabel, { color: isDark ? colors.slate[500] : colors.slate[500] }]}>Reporter</Text>
-                <Text style={[spSheet.infoBlockValue, { color: textMain }]} numberOfLines={1}>{reporterName}</Text>
-              </View>
-            ) : null}
-            {reportedAt ? (
-              <View style={spSheet.infoBlockRow}>
-                <Ionicons name="time-outline" size={12} color={isDark ? colors.slate[500] : colors.slate[400]} />
-                <Text style={[spSheet.infoBlockLabel, { color: isDark ? colors.slate[500] : colors.slate[500] }]}>Reported</Text>
-                <Text style={[spSheet.infoBlockValue, { color: textMain }]} numberOfLines={1}>{reportedAt}</Text>
-              </View>
-            ) : null}
             {severity ? (
               <View style={spSheet.infoBlockRow}>
                 <Ionicons name="warning-outline" size={12} color={isDark ? colors.slate[500] : colors.slate[400]} />
@@ -976,8 +1002,30 @@ function SearchPinSheet({
                 <Text style={[spSheet.infoBlockValue, { color: textMain }]}>{incidentType}</Text>
               </View>
             ) : null}
+            {incidentAddress ? (
+              <View style={spSheet.infoBlockRow}>
+                <Ionicons name="location-outline" size={12} color={isDark ? colors.slate[500] : colors.slate[400]} />
+                <Text style={[spSheet.infoBlockLabel, { color: isDark ? colors.slate[500] : colors.slate[500] }]}>Location</Text>
+                <Text style={[spSheet.infoBlockValue, { color: textMain }]} numberOfLines={2}>{incidentAddress}</Text>
+              </View>
+            ) : null}
+            {reporterName ? (
+              <View style={spSheet.infoBlockRow}>
+                <Ionicons name="person-outline" size={12} color={isDark ? colors.slate[500] : colors.slate[400]} />
+                <Text style={[spSheet.infoBlockLabel, { color: isDark ? colors.slate[500] : colors.slate[500] }]}>Reporter</Text>
+                <Text style={[spSheet.infoBlockValue, { color: textMain }]} numberOfLines={1}>{reporterName}</Text>
+              </View>
+            ) : null}
+            {reportedAt ? (
+              <View style={spSheet.infoBlockRow}>
+                <Ionicons name="time-outline" size={12} color={isDark ? colors.slate[500] : colors.slate[400]} />
+                <Text style={[spSheet.infoBlockLabel, { color: isDark ? colors.slate[500] : colors.slate[500] }]}>Reported</Text>
+                <Text style={[spSheet.infoBlockValue, { color: textMain }]} numberOfLines={1}>{reportedAt}</Text>
+              </View>
+            ) : null}
           </View>
         )}
+        {/* Leader: Finish — Resolved */}
         {onArrived && (
           <View style={spSheet.actions}>
             <Pressable
@@ -1029,6 +1077,56 @@ function SearchPinSheet({
             )}
           </View>
         )}
+        {/* Member: Start / On Scene / Resolved + Chat */}
+        {!onArrived && onStart && responderStatus !== 'resolved' && (() => {
+          const cfg = responderStatus === 'pending'
+            ? { next: 'en_route', label: 'Start', icon: 'play-circle' as keyof typeof Ionicons.glyphMap, grad: ['#10B981', '#059669'] as [string, string] }
+            : responderStatus === 'en_route'
+            ? { next: 'on_scene', label: 'On Scene', icon: 'location' as keyof typeof Ionicons.glyphMap, grad: ['#F59E0B', '#D97706'] as [string, string] }
+            : { next: 'resolved', label: 'Resolved', icon: 'shield-checkmark' as keyof typeof Ionicons.glyphMap, grad: ['#10B981', '#059669'] as [string, string] };
+          return (
+            <View style={spSheet.actions}>
+              <Pressable
+                style={({ pressed }) => [spSheet.arrivedBtnWrap, { flex: 1 }, pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] }, startLoading && { opacity: 0.6 }]}
+                onPress={() => onStart(cfg.next)}
+                disabled={startLoading}
+              >
+                <LinearGradient colors={cfg.grad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={spSheet.arrivedBtn}>
+                  {startLoading
+                    ? <ActivityIndicator size="small" color={colors.white} />
+                    : (
+                      <>
+                        <Ionicons name={cfg.icon} size={17} color={colors.white} />
+                        <Text style={spSheet.arrivedBtnText}>{cfg.label}</Text>
+                      </>
+                    )
+                  }
+                </LinearGradient>
+              </Pressable>
+              {onChatPress && (
+                <Pressable
+                  onPress={onChatPress}
+                  style={({ pressed }) => [
+                    spSheet.chatLabeledBtn,
+                    { backgroundColor: isDark ? colors.dark.elevated : colors.slate[50], borderColor: isDark ? colors.dark.border : colors.slate[200] },
+                    pressed && { opacity: 0.8 },
+                  ]}
+                  accessibilityLabel="Open chat"
+                >
+                  <View style={{ position: 'relative' }}>
+                    <Ionicons name="chatbubble-ellipses" size={20} color="#7C3AED" />
+                    {(chatUnread ?? 0) > 0 && (
+                      <View style={spSheet.chatBadge}>
+                        <Text style={spSheet.chatBadgeText}>{(chatUnread ?? 0) > 9 ? '9+' : chatUnread}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={spSheet.chatBtnLabel}>Chat</Text>
+                </Pressable>
+              )}
+            </View>
+          );
+        })()}
       </View>
     );
   }
@@ -1510,7 +1608,7 @@ function HazardSheet({
   bottomInset: number;
 }) {
   const meta      = HAZARD_MARKER_META[hazard.type];
-  const hzColor   = meta?.color ?? colors.severity[hazard.severity];
+  const hzColor   = meta?.color ?? colors.brand[500];
   const bg        = isDark ? colors.slate[900] : colors.white;
   const textMain  = isDark ? colors.white      : colors.slate[900];
   const textSub   = isDark ? colors.slate[400] : colors.slate[500];
@@ -1555,12 +1653,6 @@ function HazardSheet({
       <View style={[hzs.divider, { backgroundColor: sepColor }]} />
 
       <View style={hzs.chips}>
-        <View style={[hzs.chip, { backgroundColor: colors.severity[hazard.severity] + '18' }]}>
-          <View style={[hzs.chipDot, { backgroundColor: colors.severity[hazard.severity] }]} />
-          <Text style={[hzs.chipText, { color: colors.severity[hazard.severity] }]}>
-            {hazard.severity.charAt(0).toUpperCase() + hazard.severity.slice(1)}
-          </Text>
-        </View>
         <View style={[hzs.chip, { backgroundColor: hzColor + '18' }]}>
           <Ionicons name={meta?.icon ?? 'alert'} size={12} color={hzColor} />
           <Text style={[hzs.chipText, { color: hzColor }]}>{typeLabel}</Text>
@@ -1934,11 +2026,11 @@ export default function ResponderMapScreen() {
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
   const { destLat, destLng, destTitle, incidentId, isLeaderParam, sessionLocked,
-          reporterName, reportedAt, severity, incidentType, viewOnly } = useLocalSearchParams<{
+          reporterName, reportedAt, severity, incidentType, viewOnly, address } = useLocalSearchParams<{
     destLat?: string; destLng?: string; destTitle?: string;
     incidentId?: string; isLeaderParam?: string; sessionLocked?: string;
     reporterName?: string; reportedAt?: string; severity?: string; incidentType?: string;
-    viewOnly?: string;
+    viewOnly?: string; address?: string;
   }>();
   const navIncidentId  = incidentId ?? null;
   const navIsLeader    = isLeaderParam === '1';
@@ -1953,6 +2045,7 @@ export default function ResponderMapScreen() {
   const [reports,            setReports]            = useState<Report[]>([]);
   const [adminHazards,       setAdminHazards]       = useState<Hazard[]>([]);
   const [evacCenters,        setEvacCenters]        = useState<EvacCenter[]>([]);
+  const activeHazards = useMemo(() => adminHazards.filter(hz => hz.active), [adminHazards]);
   const filter: HazardType = 'all';
   const [mapTypeKey,         setMapTypeKey]          = useState<MapTypeKey>('standard');
   const [selected,           setSelected]           = useState<Report | null>(null);
@@ -2000,6 +2093,8 @@ export default function ResponderMapScreen() {
   const [finishingSession, setFinishingSession] = useState(false);
   const [sweetAlert, setSweetAlert] = useState<SweetAlertConfig | null>(null);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  const [memberStatus, setMemberStatus] = useState<string>('pending');
+  const [memberStatusLoading, setMemberStatusLoading] = useState(false);
 
   function showSweetAlert(cfg: SweetAlertConfig) { setSweetAlert(cfg); }
   function hideSweetAlert() { setSweetAlert(null); }
@@ -2051,6 +2146,78 @@ export default function ResponderMapScreen() {
         buttons: [{ text: 'OK', style: 'primary' }],
       });
     }
+  }
+
+  // Load initial responder status for this incident
+  useEffect(() => {
+    if (!isSessionLocked || !navIncidentId || !token || navIsLeader) return;
+    getAssignedIncidents(token).then(incidents => {
+      const inc = incidents.find((i: any) => String(i.id) === String(navIncidentId));
+      if (inc) setMemberStatus(inc.responderStatus ?? 'pending');
+    }).catch(() => {});
+  }, [isSessionLocked, navIncidentId, token, navIsLeader]);
+
+  async function doMemberStatusUpdate(newStatus: string) {
+    if (!navIncidentId || !token) return;
+    setMemberStatusLoading(true);
+    try {
+      await submitMemberStatus({ incidentId: navIncidentId, status: newStatus }, token);
+      setMemberStatus(newStatus);
+      if (newStatus === 'resolved') {
+        showSweetAlert({
+          type: 'success',
+          title: 'Incident Resolved!',
+          message: 'Great work! The incident has been marked as resolved.',
+          buttons: [{
+            text: 'Done',
+            style: 'primary',
+            onPress: () => router.replace('/responder/(tabs)' as never),
+          }],
+        });
+      }
+    } catch (e: any) {
+      showSweetAlert({
+        type: 'warning',
+        title: 'Update Failed',
+        message: e?.message ?? 'Failed to update status. Please try again.',
+        buttons: [{ text: 'OK', style: 'primary' }],
+      });
+    } finally {
+      setMemberStatusLoading(false);
+    }
+  }
+
+  function handleMemberStatusUpdate(newStatus: string) {
+    const confirmMap: Record<string, { title: string; message: string; confirm: string }> = {
+      en_route: {
+        title: 'Start Response',
+        message: 'Are you sure you want to start responding? Your status will be set to En Route and dispatch will be notified.',
+        confirm: 'Start',
+      },
+      on_scene: {
+        title: 'Confirm Arrival',
+        message: 'Are you sure you have arrived at the incident location? Your status will be updated to On Scene.',
+        confirm: 'Confirm',
+      },
+      resolved: {
+        title: 'Mark as Resolved',
+        message: 'Are you sure you want to mark this incident as resolved? This action will close the response.',
+        confirm: 'Resolve',
+      },
+    };
+
+    const cfg = confirmMap[newStatus];
+    if (!cfg) { doMemberStatusUpdate(newStatus); return; }
+
+    showSweetAlert({
+      type: 'warning',
+      title: cfg.title,
+      message: cfg.message,
+      buttons: [
+        { text: 'Cancel', style: 'cancel' },
+        { text: cfg.confirm, style: 'primary', onPress: () => doMemberStatusUpdate(newStatus) },
+      ],
+    });
   }
 
   async function fetchRoute(destLat: number, destLng: number) {
@@ -2381,7 +2548,7 @@ export default function ResponderMapScreen() {
             setUserLocation(coords);
             if (!hasPannedToUser.current) {
               hasPannedToUser.current = true;
-              mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 700);
+              mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 800);
             }
           }
           locationSub = await Location.watchPositionAsync(
@@ -2391,7 +2558,7 @@ export default function ResponderMapScreen() {
               setUserLocation(coords);
               if (!hasPannedToUser.current) {
                 hasPannedToUser.current = true;
-                mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 700);
+                mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 800);
               }
             },
           );
@@ -2416,13 +2583,15 @@ export default function ResponderMapScreen() {
       fetchRoute(lat, lng);
     } else {
       // Wait for location then route
-      const unsub = setInterval(() => {
+      const pollInterval = setInterval(() => {
         if (userLocationRef.current) {
           fetchRoute(lat, lng);
-          clearInterval(unsub);
+          clearInterval(pollInterval);
+          clearTimeout(pollTimeout);
         }
       }, 500);
-      setTimeout(() => clearInterval(unsub), 10000);
+      const pollTimeout = setTimeout(() => clearInterval(pollInterval), 10000);
+      return () => { clearInterval(pollInterval); clearTimeout(pollTimeout); };
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destLat, destLng]);
@@ -2440,14 +2609,60 @@ export default function ResponderMapScreen() {
     refreshWeather();
   }, [refreshWeather]);
 
-  // Real-time hazard updates via socket
+  // Real-time updates via socket
   useEffect(() => {
     if (!token) return;
     const handleHazardUpdate = () => {
       getActiveHazards(token).then(setAdminHazards).catch(() => {});
     };
-    socketService.on('hazard-updated', handleHazardUpdate);
-    return () => { socketService.off('hazard-updated', handleHazardUpdate); };
+    const handleReportUpdate = () => {
+      getAllReports(token)
+        .then(data => setReports(
+          data.filter(r => r.status !== 'pending' && r.status !== 'rejected').map(fromApiReport),
+        ))
+        .catch(() => {});
+    };
+    const handleMemberUpdate = (data: any) => {
+      handleReportUpdate();
+      // If this is for our active session, refresh member status
+      if (navIncidentId && token && String(data?.report_id) === String(navIncidentId)) {
+        getAssignedIncidents(token).then(incidents => {
+          const inc = incidents.find((i: any) => String(i.id) === String(navIncidentId));
+          if (inc) {
+            setMemberStatus(inc.responderStatus ?? 'pending');
+            // If someone else resolved it, show alert and go home
+            if (inc.responderStatus === 'resolved') {
+              showSweetAlert({
+                type: 'success',
+                title: 'Incident Resolved',
+                message: 'This incident has been marked as resolved.',
+                buttons: [{
+                  text: 'OK',
+                  style: 'primary',
+                  onPress: () => router.replace('/responder/(tabs)' as never),
+                }],
+              });
+            }
+          }
+        }).catch(() => {});
+      }
+    };
+    const lid1 = socketService.on('hazard-updated', handleHazardUpdate);
+    const lid2 = socketService.on('report-status', handleReportUpdate);
+    const lid3 = socketService.on('new-assignment', handleReportUpdate);
+    const lid4 = socketService.on('new-alert', handleHazardUpdate);
+    const lid5 = socketService.on('member-status-updated', handleMemberUpdate);
+    const lid6 = socketService.on('new-notification', handleReportUpdate);
+    const pushSub = onNotificationReceived(() => { handleReportUpdate(); handleHazardUpdate(); });
+    return () => {
+      socketService.off(lid1);
+      socketService.off(lid2);
+      socketService.off(lid3);
+      socketService.off(lid4);
+      socketService.off(lid5);
+      socketService.off(lid6);
+      pushSub?.remove();
+    };
   }, [token]);
 
   // Track chat unread count during active session
@@ -2462,9 +2677,10 @@ export default function ResponderMapScreen() {
         setChatUnreadCount(c => c + 1);
       }
     };
-    socketService.on('new-message', handleNewMessage);
+    const lid = socketService.on('new-message', handleNewMessage);
     return () => {
-      socketService.off('new-message', handleNewMessage);
+      socketService.leaveReport(navIncidentId);
+      socketService.off(lid);
     };
   }, [isSessionLocked, navIncidentId, token]);
 
@@ -2531,7 +2747,7 @@ export default function ResponderMapScreen() {
         longitude:      coords.longitude,
         latitudeDelta:  0.008,
         longitudeDelta: 0.008,
-      }, 600);
+      }, 800);
     } finally {
       setLocating(false);
     }
@@ -2628,6 +2844,9 @@ export default function ResponderMapScreen() {
         showsMyLocationButton={false}
         showsCompass={false}
         showsScale={false}
+        loadingEnabled={false}
+        moveOnMarkerPress={false}
+        rotateEnabled={false}
         onRegionChangeComplete={(r: any) => { setZoomedOut(r.latitudeDelta > 0.05); setMapZoom(r.latitudeDelta); }}
         onPress={(e: any) => {
           setSelected(null);
@@ -2673,56 +2892,27 @@ export default function ResponderMapScreen() {
           );
         })()}
 
-        {/* Current-location pin */}
-        {showMyPin && userLocation && (
-          <Marker
-            coordinate={userLocation}
-            tracksViewChanges={true}
-            anchor={{ x: 0.5, y: 1 }}
-            zIndex={20}
-            title="My Location"
-            onPress={() => setShowMyPin(false)}
-          >
-            <View style={{ alignItems: 'center', width: 40, height: 48 }}>
-              <View style={{
-                backgroundColor: colors.brand[500],
-                borderRadius: 18,
-                width: 36,
-                height: 36,
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderWidth: 3,
-                borderColor: '#FFFFFF',
-                elevation: 6,
-              }}>
-                <Ionicons name="person" size={18} color="#FFFFFF" />
-              </View>
-              <View style={{
-                width: 0,
-                height: 0,
-                borderLeftWidth: 6,
-                borderRightWidth: 6,
-                borderTopWidth: 8,
-                borderLeftColor: 'transparent',
-                borderRightColor: 'transparent',
-                borderTopColor: colors.brand[500],
-                marginTop: -1,
-              }} />
-            </View>
-          </Marker>
-        )}
+        {/* Report pins with hazard icon */}
+        {!showFloodHeatmap && filtered.map(r => (
+          <ReportMarkerWrap
+            key={`rpt-${r.id}`}
+            report={r}
+            onPress={() => handleMarkerPress(r)}
+          />
+        ))}
 
-        {/* Admin-created hazard markers */}
-        {adminHazards.map(hz => {
+        {/* Admin-created hazard markers (active only) */}
+        {activeHazards.map(hz => {
           const meta = HAZARD_MARKER_META[hz.type];
-          const hzColor = meta?.color ?? colors.severity[hz.severity];
+          const hzColor = meta?.color ?? colors.brand[500];
+          const hzIcon = meta?.icon ?? 'alert';
           const isHzSelected = selectedHazard?.id === hz.id;
           return (
-            <Marker
+            <HazardMarkerWrap
               key={`hz-${hz.id}`}
-              coordinate={{ latitude: hz.latitude, longitude: hz.longitude }}
-              tracksViewChanges={true}
-              anchor={{ x: 0.5, y: 1 }}
+              hz={hz}
+              hzColor={hzColor}
+              hzIcon={hzIcon}
               zIndex={isHzSelected ? 10 : 5}
               onPress={() => {
                 setSelectedHazard(hz);
@@ -2736,42 +2926,32 @@ export default function ResponderMapScreen() {
                   longitudeDelta: 0.03,
                 }, 450);
               }}
-            >
-              <View style={{ alignItems: 'center' }}>
-                <View style={[
-                  s.hazardPin,
-                  { backgroundColor: hzColor },
-                  zoomedOut && { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5 },
-                  isHzSelected && { borderColor: '#fff', borderWidth: 3 },
-                ]}>
-                  <Ionicons name={meta?.icon ?? 'alert'} size={zoomedOut ? 9 : 14} color="#fff" />
-                </View>
-                {!zoomedOut && <View style={[s.hazardPinTail, { borderTopColor: hzColor }]} />}
-              </View>
-            </Marker>
+            />
           );
         })}
 
+        {/* Evacuation center pin — shown when selected via search */}
         {selectedEvac && (
           <Marker
-            key={selectedEvac.id}
+            key={`evac-${selectedEvac.id}`}
             coordinate={{ latitude: selectedEvac.latitude, longitude: selectedEvac.longitude }}
-            tracksViewChanges={true}
-            anchor={{ x: 0.5, y: 0.5 }}
+            tracksViewChanges={false}
+            anchor={{ x: 0.5, y: 1 }}
             zIndex={10}
-          >
-            <EvacuationMarker small={zoomedOut} />
-          </Marker>
+            pinColor={EVAC_COLOR}
+            title={selectedEvac.name}
+          />
         )}
 
         {searchPin && (
           <Marker
-            key={`search-pin-${searchPin.name}`}
+            key={`search-pin-${searchPin.latitude}-${searchPin.longitude}`}
             coordinate={{ latitude: searchPin.latitude, longitude: searchPin.longitude }}
-            tracksViewChanges={true}
+            tracksViewChanges={false}
             anchor={{ x: 0.5, y: 1 }}
             zIndex={12}
-            pinColor="red"
+            title={searchPin.name}
+            description={searchPin.secondary}
           />
         )}
 
@@ -2833,7 +3013,7 @@ export default function ResponderMapScreen() {
         </View>
       )}
 
-      <View
+      {routeCoords.length === 0 && <View
         style={[s.topCard, { paddingTop: insets.top + 8, backgroundColor: cardBg }]}
         onLayout={e => setTopCardHeight(e.nativeEvent.layout.height)}
       >
@@ -2922,6 +3102,18 @@ export default function ResponderMapScreen() {
             )}
           </Animated.View>
 
+          {/* Map type toggle */}
+          <Pressable
+            style={[s.layersBtn, isDark && { backgroundColor: colors.dark.card, borderColor: colors.slate[700] }]}
+            onPress={() => setLayersVisible(true)}
+            accessibilityLabel="Map layers"
+          >
+            <Ionicons
+              name="layers-outline"
+              size={20}
+              color={mapTypeKey !== 'standard' ? colors.brand[500] : (isDark ? colors.slate[300] : colors.slate[700])}
+            />
+          </Pressable>
         </View>
 
         {!searchFocused && (
@@ -2933,7 +3125,7 @@ export default function ResponderMapScreen() {
             onExpand={() => setLegendVisible(false)}
           />
         )}
-      </View>
+      </View>}
 
       {/* ── Flood mode overlay: unified card (rendered after topCard for correct z-order) ── */}
       {showFloodHeatmap && (
@@ -3243,12 +3435,12 @@ export default function ResponderMapScreen() {
         </Animated.View>
       )}
 
-      {!selected && !selectedEvac && (
+      {!selected && !selectedEvac && !selectedHazard && (
         <>
           <Pressable
             style={({ pressed }) => [
               s.ctrlBtn,
-              { bottom: tabClear + 122, right: 12, backgroundColor: ctrlBg },
+              { bottom: tabClear + 68, right: 12, backgroundColor: ctrlBg },
               pressed && { opacity: 0.8 },
             ]}
             onPress={() => setLegendVisible(v => !v)}
@@ -3258,22 +3450,6 @@ export default function ResponderMapScreen() {
               name="list"
               size={20}
               color={legendVisible ? colors.brand[500] : (isDark ? colors.slate[300] : colors.slate[700])}
-            />
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              s.ctrlBtn,
-              { bottom: tabClear + 68, right: 12, backgroundColor: ctrlBg },
-              pressed && { opacity: 0.8 },
-            ]}
-            onPress={() => setLayersVisible(true)}
-            accessibilityLabel="Map layers"
-          >
-            <Ionicons
-              name="layers-outline"
-              size={22}
-              color={mapTypeKey !== 'standard' ? colors.brand[500] : (isDark ? colors.slate[300] : colors.slate[700])}
             />
           </Pressable>
 
@@ -3358,10 +3534,14 @@ export default function ResponderMapScreen() {
           onArrived={(isSessionLocked && navIsLeader) ? handleFinish : undefined}
           arrivedLoading={finishingSession}
           isLeaderMode={navIsLeader}
+          onStart={(isSessionLocked && !navIsLeader) ? handleMemberStatusUpdate : undefined}
+          startLoading={memberStatusLoading}
+          responderStatus={memberStatus}
           reporterName={reporterName}
           reportedAt={reportedAt}
           severity={severity}
           incidentType={incidentType}
+          incidentAddress={address}
           showIncidentInfo={isViewOnly}
           chatUnread={isSessionLocked ? chatUnreadCount : undefined}
           onChatPress={isSessionLocked && navIncidentId ? () => {
@@ -3391,7 +3571,16 @@ export default function ResponderMapScreen() {
         />
       )}
 
-      {legendVisible && !selected && !selectedEvac && (
+      {selectedHazard && (
+        <HazardSheet
+          hazard={selectedHazard}
+          onClose={() => setSelectedHazard(null)}
+          isDark={isDark}
+          bottomInset={insets.bottom}
+        />
+      )}
+
+      {legendVisible && !selected && !selectedEvac && !selectedHazard && (
         <HazardLegend
           isDark={isDark}
           onClose={() => setLegendVisible(false)}
@@ -3427,8 +3616,18 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   searchRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 12, paddingBottom: 10,
+  },
+  layersBtn: {
+    width: 42, height: 42,
+    borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.slate[50],
+    borderWidth: 1, borderColor: colors.slate[200],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
   },
   searchBar: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -3566,30 +3765,6 @@ const s = StyleSheet.create({
   },
   advisoryText: { flex: 1, fontSize: 12, fontWeight: '600', color: '#fff' },
 
-  hazardPin: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2.5,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  hazardPinTail: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderTopWidth: 7,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    marginTop: -1,
-  },
   routeBanner: {
     position: 'absolute',
     left: 16, right: 16,

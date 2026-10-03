@@ -12,18 +12,22 @@ import { AlertBadgeProvider } from '@/context/AlertBadgeContext';
 import { EmergencyAlertProvider } from '@/context/EmergencyAlertContext';
 import { initNotifications, onNotificationResponse } from '@/services/notifications';
 import * as Storage from '@/utils/storage';
-import { SESSION_KEY } from '@/app/responder/incident/[id]';
+
+const SESSION_KEY = 'floodtrack_active_session';
 
 function AuthGuard() {
   const { user, isLoading } = useAuth();
   const segments = useSegments();
   const router   = useRouter();
   const listenerRef = useRef<ReturnType<typeof onNotificationResponse> | null>(null);
+  const sessionRestoredRef = useRef(false);
 
   useEffect(() => {
     if (isLoading) return;
 
     const inAuthScreen =
+      segments.length === 0 ||
+      segments[0] === 'index' ||
       segments[0] === 'login' ||
       segments[0] === 'signup' ||
       segments[0] === 'forgot-password' ||
@@ -37,34 +41,41 @@ function AuthGuard() {
       } else {
         router.replace('/resident');
       }
-    } else if (user && user.role === 'Responder' && user.isLeader) {
-      // Resume any active session that survived an app close
-      Storage.getItem(SESSION_KEY).then(raw => {
-        if (!raw) return;
-        try {
-          const session = JSON.parse(raw) as {
-            incidentId: string; destLat: string; destLng: string; destTitle: string;
-            reporterName?: string; reportedAt?: string; severity?: string; incidentType?: string;
-          };
-          router.replace({
-            pathname: '/responder/(tabs)/map',
-            params: {
-              destLat:       session.destLat,
-              destLng:       session.destLng,
-              destTitle:     session.destTitle,
-              incidentId:    session.incidentId,
-              isLeaderParam: '1',
-              sessionLocked: '1',
-              reporterName:  session.reporterName ?? '',
-              reportedAt:    session.reportedAt  ?? '',
-              severity:      session.severity    ?? '',
-              incidentType:  session.incidentType ?? '',
-            },
-          } as never);
-        } catch {}
-      });
     }
   }, [user, isLoading, segments]);
+
+  // Restore active responder session once after login (not on every navigation)
+  useEffect(() => {
+    if (isLoading || !user) return;
+    if (user.role !== 'Responder' || !user.isLeader) return;
+    if (sessionRestoredRef.current) return;
+    sessionRestoredRef.current = true;
+
+    Storage.getItem(SESSION_KEY).then(raw => {
+      if (!raw) return;
+      try {
+        const session = JSON.parse(raw) as {
+          incidentId: string; destLat: string; destLng: string; destTitle: string;
+          reporterName?: string; reportedAt?: string; severity?: string; incidentType?: string;
+        };
+        router.replace({
+          pathname: '/responder/(tabs)/map',
+          params: {
+            destLat:       session.destLat,
+            destLng:       session.destLng,
+            destTitle:     session.destTitle,
+            incidentId:    session.incidentId,
+            isLeaderParam: '1',
+            sessionLocked: '1',
+            reporterName:  session.reporterName ?? '',
+            reportedAt:    session.reportedAt  ?? '',
+            severity:      session.severity    ?? '',
+            incidentType:  session.incidentType ?? '',
+          },
+        } as never);
+      } catch {}
+    });
+  }, [user, isLoading]);
 
   useEffect(() => {
     if (listenerRef.current) return;
@@ -113,7 +124,7 @@ function RootLayoutInner() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AuthGuard />
       <Stack>
-        <Stack.Screen name="index"     options={{ headerShown: false }} />
+        <Stack.Screen name="index"            options={{ headerShown: false }} />
         <Stack.Screen name="login"            options={{ headerShown: false }} />
         <Stack.Screen name="signup"           options={{ headerShown: false }} />
         <Stack.Screen name="forgot-password"  options={{ headerShown: false }} />

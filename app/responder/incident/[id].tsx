@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
@@ -18,6 +18,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 
 import { colors } from '@/theme/colors';
@@ -38,6 +39,7 @@ import {
   getIncidentUnreadCount,
 } from '@/services/api';
 import { socketService } from '@/services/socket';
+import { onNotificationReceived } from '@/services/notifications';
 import type { IncidentDetail, MemberStatus, ResponderStatus, Severity, Team, TeamMember } from '@/types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -121,6 +123,117 @@ const RESPONDER_STATUS_BADGE: Record<ResponderStatus, { bg: string; text: string
   resolved: { bg: '#DCFCE7', text: '#166534' },
 };
 
+// ─── SectionCard + SectionLabel (matches resident) ──────────────────────────
+
+function SectionCard({ children, isDark, style }: { children: React.ReactNode; isDark: boolean; style?: any }) {
+  return (
+    <View style={[s.sCard, { backgroundColor: isDark ? colors.dark.card : colors.white }, isDark && { borderColor: colors.dark.border }, style]}>
+      {children}
+    </View>
+  );
+}
+
+function SectionLabel({ text, icon, iconColor, isDark }: { text: string; icon?: keyof typeof Ionicons.glyphMap; iconColor?: string; isDark: boolean }) {
+  return (
+    <View style={s.sLabelRow}>
+      {icon && (
+        <View style={[s.sLabelIcon, { backgroundColor: (iconColor ?? colors.brand[500]) + '15' }]}>
+          <Ionicons name={icon} size={14} color={iconColor ?? colors.brand[500]} />
+        </View>
+      )}
+      <Text style={[s.sLabelText, isDark && { color: colors.white }]}>{text}</Text>
+    </View>
+  );
+}
+
+// ─── MetaRow (matches resident) ─────────────────────────────────────────────
+
+function MetaRow({ icon, label, value, isDark }: { icon: string; label: string; value: string; isDark: boolean }) {
+  return (
+    <View style={s.metaRow}>
+      <View style={[s.metaIconWrap, isDark && { backgroundColor: colors.dark.elevated }]}>
+        <Ionicons name={icon as any} size={16} color={colors.brand[500]} />
+      </View>
+      <View style={{ flex: 1, gap: 1 }}>
+        <Text style={[s.metaLabel, isDark && { color: colors.slate[500] }]}>{label}</Text>
+        <Text style={[s.metaValue, isDark && { color: colors.white }]} numberOfLines={2}>{value || 'Not specified'}</Text>
+      </View>
+    </View>
+  );
+}
+
+// ─── Photo Gallery (matches resident) ───────────────────────────────────────
+
+function PhotoGallery({ urls, isDark, onTap }: { urls: string[]; isDark: boolean; onTap: (idx: number) => void }) {
+  const [active, setActive] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
+  const { width: screenW } = useWindowDimensions();
+  const galleryW = screenW - 48;
+
+  if (urls.length === 0) {
+    return (
+      <View style={[s.galEmpty, isDark && { backgroundColor: colors.dark.elevated }]}>
+        <View style={[s.galEmptyIcon, isDark && { backgroundColor: colors.dark.border }]}>
+          <Ionicons name="image-outline" size={28} color={colors.slate[400]} />
+        </View>
+        <Text style={[s.galEmptyText, isDark && { color: colors.slate[500] }]}>No evidence attached</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ gap: 12 }}>
+      <View style={s.galSlideWrap}>
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+            const idx = Math.round(e.nativeEvent.contentOffset.x / galleryW);
+            if (idx !== active) setActive(idx);
+          }}
+          style={{ width: galleryW }}
+        >
+          {urls.map((url, i) => {
+            const isVideo = isVideoUrl(url);
+            return isVideo ? (
+              <View key={url} style={[s.galSlide, { width: galleryW }]}>
+                <ExpoVideo
+                  source={{ uri: url }}
+                  style={{ width: galleryW, height: 240 }}
+                  resizeMode={ResizeMode.CONTAIN}
+                  useNativeControls
+                  isLooping={false}
+                />
+              </View>
+            ) : (
+              <Pressable key={url} onPress={() => onTap(i)}>
+                <Image source={{ uri: url }} style={[s.galSlide, { width: galleryW }]} resizeMode="cover" />
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+        <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.4)']} style={s.galGradient} pointerEvents="none" />
+        <View style={s.galBadge}>
+          <Ionicons name={isVideoUrl(urls[active]) ? 'videocam' : 'camera'} size={12} color="#fff" />
+          <Text style={s.galBadgeText}>{active + 1} / {urls.length}</Text>
+        </View>
+      </View>
+      {urls.length > 1 && (
+        <View style={s.galDotsRow}>
+          {urls.map((_, i) => (
+            <Pressable key={i} onPress={() => { setActive(i); scrollRef.current?.scrollTo({ x: i * galleryW, animated: true }); }} hitSlop={6}>
+              <View style={[s.galDot, i === active && s.galDotActive]} />
+            </Pressable>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ─── Sweet Alert ─────────────────────────────────────────────────────────────
 type SweetAlertState = {
   type: 'success' | 'warning' | 'error' | 'info';
@@ -201,6 +314,9 @@ function UpdateModal({
   const [notes, setNotes]       = useState('');
   const [media, setMedia]       = useState<string[]>([]);
   const [loading, setLoading]   = useState(false);
+
+  // Re-sync selected when the external status changes (e.g. via socket)
+  useEffect(() => { setSelected(current); }, [current]);
 
   const currentIdx = STATUS_ORDER.indexOf(current);
 
@@ -568,63 +684,58 @@ const lbStyles = StyleSheet.create({
   counter: { color: colors.white, fontSize: 14, fontWeight: '600' },
 });
 
-// ─── StatusStepper (horizontal) ──────────────────────────────────────────────
+// ─── StatusStepper (horizontal — matches resident HorizontalStepper) ────────
+
+const STEP_DOT = 30;
+
 function StatusStepper({ current, isDark }: { current: ResponderStatus; isDark: boolean }) {
   const currentIdx = STATUS_ORDER.indexOf(current);
-  const steps = STATUS_ORDER;
-
   return (
-    <View style={stepperStyles.root}>
-      {steps.map((status, idx) => {
-        const isDone    = idx < currentIdx;
-        const isCurrent = idx === currentIdx;
-        const isLast    = idx === steps.length - 1;
-        const color     = isDone ? colors.severity.low : isCurrent ? STATUS_COLORS[status] : (isDark ? colors.dark.border : colors.slate[200]);
+    <View style={{ gap: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        {STATUS_ORDER.map((status, idx) => {
+          const isDone = idx < currentIdx;
+          const isCurrent = idx === currentIdx;
+          const isLast = idx === STATUS_ORDER.length - 1;
+          const dotBg = isDone ? '#00C48C' : isCurrent ? STATUS_COLORS[status] : 'transparent';
+          const borderClr = isDone ? '#00C48C' : isCurrent ? STATUS_COLORS[status] : (isDark ? colors.dark.border : colors.slate[200]);
+          const lineBg = isDone ? '#00C48C' : (isDark ? colors.dark.border : colors.slate[200]);
 
-        return (
-          <View key={status} style={stepperStyles.stepWrap}>
-            <View style={stepperStyles.stepRow}>
-              {/* Circle */}
-              <View style={[
-                stepperStyles.circle,
-                { backgroundColor: isDone ? colors.severity.low : isCurrent ? STATUS_COLORS[status] : 'transparent' },
-                { borderWidth: 2, borderColor: color },
-              ]}>
-                {isDone && <Ionicons name="checkmark" size={10} color={colors.white} />}
-                {isCurrent && <View style={[stepperStyles.innerDot, { backgroundColor: colors.white }]} />}
+          return (
+            <View key={status} style={{ flexDirection: 'row', alignItems: 'center', flex: isLast ? 0 : 1 }}>
+              <View style={{
+                width: STEP_DOT, height: STEP_DOT, borderRadius: STEP_DOT / 2,
+                backgroundColor: dotBg, borderWidth: 2, borderColor: borderClr,
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                {isDone && <Ionicons name="checkmark" size={14} color="#fff" />}
+                {isCurrent && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff' }} />}
+                {!isDone && !isCurrent && (
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? colors.slate[600] : colors.slate[400] }}>{idx + 1}</Text>
+                )}
               </View>
-              {/* Connecting line */}
               {!isLast && (
-                <View style={[
-                  stepperStyles.line,
-                  { backgroundColor: isDone ? colors.severity.low : (isDark ? colors.dark.border : colors.slate[200]) },
-                ]} />
+                <View style={{ flex: 1, height: 2, backgroundColor: lineBg, borderRadius: 1 }} />
               )}
             </View>
-            <Text style={[
-              stepperStyles.label,
-              isDone && { color: colors.severity.low },
-              isCurrent && { color: STATUS_COLORS[status], fontWeight: '700' },
-              !isDone && !isCurrent && { color: isDark ? colors.slate[600] : colors.slate[400] },
-            ]} numberOfLines={1}>
-              {STATUS_LABELS[status]}
+          );
+        })}
+      </View>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 2 }}>
+        {STATUS_ORDER.map((status, idx) => {
+          const isDone = idx < currentIdx;
+          const isCurrent = idx === currentIdx;
+          const color = isDone ? '#00C48C' : isCurrent ? STATUS_COLORS[status] : (isDark ? colors.slate[600] : colors.slate[400]);
+          return (
+            <Text key={status} style={{ fontSize: 9, fontWeight: '700', letterSpacing: 0.5, color, textAlign: 'center' }}>
+              {STATUS_LABELS[status].toUpperCase()}
             </Text>
-          </View>
-        );
-      })}
+          );
+        })}
+      </View>
     </View>
   );
 }
-
-const stepperStyles = StyleSheet.create({
-  root:     { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 4 },
-  stepWrap: { flex: 1, alignItems: 'center', gap: 6 },
-  stepRow:  { flexDirection: 'row', alignItems: 'center', width: '100%', justifyContent: 'center' },
-  circle:   { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  innerDot: { width: 6, height: 6, borderRadius: 3 },
-  line:     { flex: 1, height: 2 },
-  label:    { fontSize: 10, fontWeight: '500', textAlign: 'center' },
-});
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 export default function IncidentDetailScreen() {
@@ -635,7 +746,6 @@ export default function IncidentDetailScreen() {
   const isDark    = scheme === 'dark';
   const { token, user } = useAuth();
   const { width: screenW } = useWindowDimensions();
-  const thumbSize = Math.floor((screenW - 32 - 36 - 28) / 4);
 
   const [incident, setIncident]           = useState<IncidentDetail | null>(null);
   const [loading, setLoading]             = useState(true);
@@ -649,9 +759,9 @@ export default function IncidentDetailScreen() {
   const [unreadCount, setUnreadCount]     = useState(0);
 
   // Theme tokens
-  const bg            = isDark ? colors.dark.bg : '#F8FAFB';
+  const bg            = isDark ? colors.dark.bg : colors.slate[50];
   const cardBg        = isDark ? colors.dark.card : colors.white;
-  const cardBorder    = isDark ? colors.dark.border : 'rgba(0,0,0,0.06)';
+  const cardBorder    = isDark ? colors.dark.border : colors.slate[100];
   const textPrimary   = isDark ? colors.dark.text : colors.slate[900];
   const textSecondary = isDark ? colors.dark.subtext : colors.slate[500];
   const dividerColor  = isDark ? colors.dark.border : colors.slate[100];
@@ -688,7 +798,6 @@ export default function IncidentDetailScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Real-time socket
   useEffect(() => {
     if (!token) return;
     socketService.connect(token);
@@ -700,24 +809,34 @@ export default function IncidentDetailScreen() {
       }
     };
 
-    const handleStatusChange = (data: { reportId?: string }) => {
-      if (String(data?.reportId) === String(id) && token) {
-        getMemberStatuses(id, token)
-          .then(setMemberStatuses)
-          .catch(() => {});
+    const handleStatusChange = (data: any) => {
+      const rid = data?.reportId ?? data?.report_id;
+      if (String(rid) === String(id) && token) {
+        getMemberStatuses(id, token).then(setMemberStatuses).catch(() => {});
         getIncidentDetail(id, token)
           .then(detail => setIncident(prev => prev ? { ...prev, responderStatus: detail.responderStatus } : prev))
           .catch(() => {});
       }
     };
 
-    socketService.on('new-message', handleNewMessage);
-    socketService.on('report-status', handleStatusChange);
+    const lid1 = socketService.on('new-message', handleNewMessage);
+    const lid2 = socketService.on('report-status', handleStatusChange);
+    const lid3 = socketService.on('new-assignment', handleStatusChange);
+    const lid4 = socketService.on('member-status-updated', handleStatusChange);
+    const lid5 = socketService.on('new-notification', handleStatusChange);
+    const pushSub = onNotificationReceived((notification: any) => {
+      const data = notification?.request?.content?.data;
+      if (String(data?.reportId) === String(id)) handleStatusChange(data);
+    });
 
     return () => {
       socketService.leaveReport(id);
-      socketService.off('new-message', handleNewMessage);
-      socketService.off('report-status', handleStatusChange);
+      socketService.off(lid1);
+      socketService.off(lid2);
+      socketService.off(lid3);
+      socketService.off(lid4);
+      socketService.off(lid5);
+      pushSub?.remove();
     };
   }, [id, token]);
 
@@ -782,63 +901,60 @@ export default function IncidentDetailScreen() {
           incidentType: incident.type || 'Flood',
         }));
       }
-    } catch {}
-    finally { setStartingResponse(false); }
-    router.push({
-      pathname: '/responder/(tabs)/map',
-      params: {
-        destLat:       String(incident.latitude),
-        destLng:       String(incident.longitude),
-        destTitle:     incident.title,
-        incidentId:    incident.id,
-        isLeaderParam: isLeader ? '1' : '0',
-        sessionLocked: '1',
-        reporterName:  incident.reportedBy,
-        reportedAt:    incident.reportedAt,
-        severity:      incident.severity,
-        incidentType:  incident.type || 'Flood',
-      },
-    } as never);
+      router.push({
+        pathname: '/responder/(tabs)/map',
+        params: {
+          destLat:       String(incident.latitude),
+          destLng:       String(incident.longitude),
+          destTitle:     incident.title,
+          incidentId:    incident.id,
+          isLeaderParam: isLeader ? '1' : '0',
+          sessionLocked: '1',
+          reporterName:  incident.reportedBy,
+          reportedAt:    incident.reportedAt,
+          severity:      incident.severity,
+          incidentType:  incident.type || 'Flood',
+        },
+      } as never);
+    } catch (e: any) {
+      setSweetAlert({
+        type: 'error',
+        title: 'Failed to Start',
+        message: e?.message ?? 'Could not start the response. Please try again.',
+      });
+    } finally {
+      setStartingResponse(false);
+    }
   }
 
-  // ── Derived state ────────────────────────────────────────────────────────
+  // ── Derived state
   const isResolved  = incident?.responderStatus === 'resolved';
   const isLeader = !!team && team.leaderId === user?.id;
   const myMemberStatus = memberStatuses.find(ms => ms.userId === user?.id);
   const teamStatusIdx  = STATUS_ORDER.indexOf(incident?.responderStatus ?? 'pending');
   const myStatusIdx    = myMemberStatus ? STATUS_ORDER.indexOf(myMemberStatus.status) : -1;
   const waitingForTeam = myStatusIdx > teamStatusIdx;
+  const responderCount = team?.members?.length ?? memberStatuses.length;
+  const reporterInitials = incident
+    ? incident.reportedBy.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+    : '';
+  const sevColor = incident ? colors.severity[incident.severity] : colors.severity.moderate;
 
   const nextConfirmableStatus: ResponderStatus | null = (() => {
     if (!isLeader || !team || team.members.length === 0) return null;
     const candidates: ResponderStatus[] = ['en_route', 'on_scene', 'resolved'];
-    for (const s of candidates) {
-      const sIdx = STATUS_ORDER.indexOf(s);
+    for (const st of candidates) {
+      const sIdx = STATUS_ORDER.indexOf(st);
       if (sIdx <= teamStatusIdx) continue;
       const allReady = team.members.every(m => {
         const ms = memberStatuses.find(x => x.userId === m.id);
         return ms && STATUS_ORDER.indexOf(ms.status) >= sIdx;
       });
-      if (allReady) return s;
+      if (allReady) return st;
     }
     return null;
   })();
 
-  // Description-derived info chips
-  const desc = incident?.description ?? '';
-  const waterLevel  = extractWaterLevel(desc);
-  const peopleCount = extractPeopleCount(desc);
-  const needs       = extractNeeds(desc);
-
-  // Reporter initials
-  const reporterInitials = incident
-    ? incident.reportedBy.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-    : '';
-
-  // Responder count
-  const responderCount = team?.members?.length ?? memberStatuses.length;
-
-  // Primary action config
   const primaryAction = (() => {
     if (!incident || isResolved) return null;
     const status = incident.responderStatus;
@@ -857,25 +973,48 @@ export default function IncidentDetailScreen() {
 
     if (status === 'pending') {
       return {
-        label: "Start — I'm en route",
+        label: 'Navigate to incident',
         color: colors.brand[500],
-        icon: 'play' as const,
-        onPress: handleStart,
+        icon: 'navigate' as const,
+        onPress: () => {
+          setSweetAlert({
+            type: 'info',
+            title: 'Start Response',
+            message: 'Are you sure you want to start responding? Your status will be set to En Route and dispatch will be notified.',
+            buttons: [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Start', style: 'primary', onPress: handleStart },
+            ],
+          });
+        },
         loading: startingResponse,
       };
     }
 
     if (status === 'en_route') {
       return {
-        label: 'Arrived — mark on scene',
+        label: 'I have arrived',
         color: '#0D9488',
         icon: 'location' as const,
         onPress: () => {
-          if (isLeader) {
-            handleConfirmTeamStatus('on_scene');
-          } else {
-            submitMemberStatus({ incidentId: incident.id, status: 'on_scene' }, token!).catch(() => {});
-          }
+          setSweetAlert({
+            type: 'info',
+            title: 'Confirm Arrival',
+            message: 'Are you sure you have arrived at the incident location? Your status will be updated to On Scene.',
+            buttons: [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Confirm', style: 'primary',
+                onPress: () => {
+                  if (isLeader) {
+                    handleConfirmTeamStatus('on_scene');
+                  } else {
+                    submitMemberStatus({ incidentId: incident.id, status: 'on_scene' }, token!).catch(() => {});
+                  }
+                },
+              },
+            ],
+          });
         },
         loading: confirmingStatus,
       };
@@ -883,15 +1022,28 @@ export default function IncidentDetailScreen() {
 
     if (status === 'on_scene') {
       return {
-        label: 'Mark resolved',
+        label: 'Mark as resolved',
         color: colors.severity.low,
         icon: 'checkmark-circle' as const,
         onPress: () => {
-          if (isLeader) {
-            handleConfirmTeamStatus('resolved');
-          } else {
-            submitMemberStatus({ incidentId: incident.id, status: 'resolved' }, token!).catch(() => {});
-          }
+          setSweetAlert({
+            type: 'warning',
+            title: 'Mark as Resolved',
+            message: 'Are you sure you want to mark this incident as resolved? This action will close the response.',
+            buttons: [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Resolve', style: 'primary',
+                onPress: () => {
+                  if (isLeader) {
+                    handleConfirmTeamStatus('resolved');
+                  } else {
+                    submitMemberStatus({ incidentId: incident.id, status: 'resolved' }, token!).catch(() => {});
+                  }
+                },
+              },
+            ],
+          });
         },
         loading: confirmingStatus,
       };
@@ -904,49 +1056,63 @@ export default function IncidentDetailScreen() {
   return (
     <View style={[s.root, { backgroundColor: bg }]}>
 
-      {/* ── Header (flat dark) ── */}
-      <View style={[s.header, { paddingTop: insets.top + 8, backgroundColor: isDark ? colors.dark.surface : colors.slate[900] }]}>
-        <View style={s.headerRow}>
-          <Pressable
-            onPress={() => router.back()}
-            style={s.headerBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            hitSlop={8}
-          >
-            <Ionicons name="arrow-back" size={20} color={colors.white} />
+      {/* ── Hero Header (gradient — matches resident) ── */}
+      <LinearGradient
+        colors={isDark ? ['#0D1B2A', '#1B2838', '#0D3B66'] as const : colors.gradients.hero}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[s.header, { paddingTop: insets.top + 16 }]}
+      >
+        <View style={[s.orb, { width: 180, height: 180, top: -70, right: -50 }]} />
+        <View style={[s.orb, { width: 110, height: 110, bottom: 0, left: -30, backgroundColor: 'rgba(255,255,255,0.04)' }]} />
+
+        {/* Top row */}
+        <View style={s.headerTopRow}>
+          <Pressable onPress={() => router.back()} style={s.headerIconBtn} hitSlop={8}>
+            <Ionicons name="chevron-back" size={20} color="#fff" />
           </Pressable>
-
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={s.headerTitle}>Incident</Text>
-            {incident && (
-              <Text style={s.headerRef}>{incident.reference}</Text>
+          <Text style={s.headerInlineTitle} numberOfLines={1}>
+            {incident?.title ?? 'Incident detail'}
+          </Text>
+          <Pressable
+            onPress={() => { setUnreadCount(0); router.push(`/responder/incident/${id}/chat` as never); }}
+            style={s.headerIconBtn}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={18} color="#fff" />
+            {unreadCount > 0 && (
+              <View style={s.chatBadge}>
+                <Text style={s.chatBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+              </View>
             )}
-          </View>
-
-          {/* Online dot + chat */}
-          <View style={s.headerRight}>
-            <View style={s.onlineDot} />
-            <Pressable
-              onPress={() => {
-                setUnreadCount(0);
-                router.push(`/responder/incident/${id}/chat` as never);
-              }}
-              style={s.headerBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Open chat"
-            >
-              <Ionicons name="chatbubble-ellipses-outline" size={20} color={colors.white} />
-              {unreadCount > 0 && (
-                <View style={s.chatBadge}>
-                  <Text style={s.chatBadgeText}>
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </Text>
-                </View>
-              )}
-            </Pressable>
-          </View>
+          </Pressable>
         </View>
+
+        {/* Reference + badges */}
+        {incident && (
+          <View style={s.headerContent}>
+            <View style={s.refPill}>
+              <Text style={s.refPillText}>{incident.reference}</Text>
+            </View>
+            <View style={s.headerChips}>
+              <View style={[s.headerBadge, { backgroundColor: SEVERITY_BADGE[incident.severity].bg }]}>
+                <Text style={[s.headerBadgeText, { color: SEVERITY_BADGE[incident.severity].text }]}>
+                  {incident.severity.charAt(0).toUpperCase() + incident.severity.slice(1)}
+                </Text>
+              </View>
+              <View style={[s.headerBadge, { backgroundColor: RESPONDER_STATUS_BADGE[incident.responderStatus].bg }]}>
+                <Text style={[s.headerBadgeText, { color: RESPONDER_STATUS_BADGE[incident.responderStatus].text }]}>
+                  {STATUS_LABELS[incident.responderStatus]}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+      </LinearGradient>
+
+      {/* Wave transition */}
+      <View style={[s.waveWrap, { backgroundColor: bg }]}>
+        <LinearGradient colors={isDark ? ['#0D3B66', '#0D1B2A'] as const : colors.gradients.wave} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFillObject} />
+        <View style={[s.waveShape, { backgroundColor: bg }]} />
       </View>
 
       {/* Loading */}
@@ -964,9 +1130,9 @@ export default function IncidentDetailScreen() {
           </View>
           <Text style={[s.errorTitle, { color: textPrimary }]}>Connection issue</Text>
           <Text style={[s.errorBody, { color: textSecondary }]}>{error}</Text>
-          <Pressable onPress={load} style={s.retryBtn} accessibilityRole="button">
-            <Ionicons name="refresh" size={15} color={colors.white} />
-            <Text style={s.retryText}>Try again</Text>
+          <Pressable onPress={load} style={s.retryBtn}>
+            <Ionicons name="refresh" size={15} color="#fff" />
+            <Text style={s.retryBtnText}>Try again</Text>
           </Pressable>
         </View>
       )}
@@ -975,142 +1141,63 @@ export default function IncidentDetailScreen() {
       {!loading && !error && incident && (
         <>
           <ScrollView
-            contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 180 }]}
+            contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 140 }]}
             showsVerticalScrollIndicator={false}
           >
-
-            {/* ── Incident Summary Card ── */}
-            <View style={[s.card, { backgroundColor: isDark ? colors.dark.surface : colors.slate[900] }]}>
-              {/* Badges row */}
-              <View style={s.badgeRow}>
-                <View style={[s.badge, { backgroundColor: SEVERITY_BADGE[incident.severity].bg }]}>
-                  <Text style={[s.badgeText, { color: SEVERITY_BADGE[incident.severity].text }]}>
-                    {incident.severity.charAt(0).toUpperCase() + incident.severity.slice(1)}
-                  </Text>
-                </View>
-                <View style={[s.badge, { backgroundColor: RESPONDER_STATUS_BADGE[incident.responderStatus].bg }]}>
-                  <Text style={[s.badgeText, { color: RESPONDER_STATUS_BADGE[incident.responderStatus].text }]}>
-                    {STATUS_LABELS[incident.responderStatus]}
-                  </Text>
-                </View>
+            {/* ── Details Card (MetaRow — matches resident) ── */}
+            <SectionCard isDark={isDark}>
+              <SectionLabel text="Details" icon="information-circle-outline" iconColor={colors.brand[500]} isDark={isDark} />
+              <View style={{ gap: 14 }}>
+                <MetaRow icon="person-outline" label="Reported by" value={incident.reportedBy} isDark={isDark} />
+                <MetaRow icon="speedometer-outline" label="Severity" value={incident.severity.charAt(0).toUpperCase() + incident.severity.slice(1)} isDark={isDark} />
+                {incident.depthFt != null && (
+                  <MetaRow icon="water-outline" label="Flood Depth" value={`${incident.depthFt} ft`} isDark={isDark} />
+                )}
+                <MetaRow icon="location-outline" label="Location" value={incident.address} isDark={isDark} />
+                <MetaRow icon="time-outline" label="Reported at" value={incident.reportedAt} isDark={isDark} />
+                {incident.nearbyCount > 0 && (
+                  <MetaRow icon="copy-outline" label="Nearby reports" value={`${incident.nearbyCount}`} isDark={isDark} />
+                )}
               </View>
+            </SectionCard>
 
-              {/* Reported time + count */}
-              <Text style={s.summaryMeta}>
-                Reported {incident.reportedAt}{incident.nearbyCount > 0 ? ` · ${incident.nearbyCount} reports` : ''}
-              </Text>
-
-              {/* Title */}
-              <Text style={s.summaryTitle} numberOfLines={2}>
-                {incident.title}
-              </Text>
-
-              {/* Location */}
-              <View style={s.summaryLocationRow}>
-                <Ionicons name="location" size={14} color="rgba(255,255,255,0.6)" />
-                <Text style={s.summaryAddress} numberOfLines={2}>
-                  {incident.address}
-                </Text>
-              </View>
-            </View>
-
-            {/* ── Mini Map Placeholder ── */}
-            <View style={[s.card, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1, padding: 0, overflow: 'hidden' }]}>
-              <View style={s.miniMap}>
-                {/* Dark map placeholder with route visualization */}
-                <View style={s.miniMapBg}>
-                  {/* Route line visualization */}
-                  <View style={s.routeLine}>
-                    <View style={[s.routeDot, { backgroundColor: colors.brand[500] }]} />
-                    <View style={s.routeDash} />
-                    <View style={s.routeDash} />
-                    <View style={s.routeDash} />
-                    <Ionicons name="location" size={18} color={colors.severity.high} />
-                  </View>
-                </View>
-
-                {/* Expand button */}
-                <Pressable
-                  onPress={() => router.push({
-                    pathname: '/responder/(tabs)/map',
-                    params: {
-                      destLat:       String(incident.latitude),
-                      destLng:       String(incident.longitude),
-                      destTitle:     incident.title,
-                      incidentId:    incident.id,
-                      isLeaderParam: isLeader ? '1' : '0',
-                      sessionLocked: '1',
-                      reporterName:  incident.reportedBy,
-                      reportedAt:    incident.reportedAt,
-                      severity:      incident.severity,
-                      incidentType:  incident.type || 'Flood',
-                    },
-                  } as never)}
-                  style={s.miniMapExpand}
-                  accessibilityRole="button"
-                  accessibilityLabel="Expand map"
-                >
-                  <Ionicons name="expand-outline" size={16} color={colors.white} />
-                </Pressable>
-              </View>
-
-              {/* ETA strip below map */}
-              <Pressable onPress={openNativeMaps} style={[s.etaStrip, { borderTopColor: dividerColor }]}>
-                <Ionicons name="navigate" size={16} color={colors.brand[500]} />
-                <Text style={[s.etaText, { color: textPrimary }]}>
-                  {distanceKm != null ? `${distanceKm} km` : incident.distance}
-                  {eta ? ` · ${eta}` : ''}
-                </Text>
-                <Ionicons name="chevron-forward" size={14} color={textSecondary} style={{ marginLeft: 'auto' }} />
-              </Pressable>
-            </View>
-
-            {/* ── Info Chips (3 columns) ── */}
-            <View style={s.chipsRow}>
-              <View style={[s.chip, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
-                <Ionicons name="water" size={16} color={colors.brand[500]} />
-                <Text style={[s.chipLabel, { color: textSecondary }]}>Water</Text>
-                <Text style={[s.chipValue, { color: textPrimary }]}>{waterLevel}</Text>
-              </View>
-              <View style={[s.chip, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
-                <Ionicons name="people" size={16} color={colors.severity.high} />
-                <Text style={[s.chipLabel, { color: textSecondary }]}>People</Text>
-                <Text style={[s.chipValue, { color: textPrimary }]}>{peopleCount}</Text>
-              </View>
-              <View style={[s.chip, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
-                <Ionicons name="medkit" size={16} color={colors.severity.moderate} />
-                <Text style={[s.chipLabel, { color: textSecondary }]}>Needs</Text>
-                <Text style={[s.chipValue, { color: textPrimary }]}>{needs}</Text>
-              </View>
-            </View>
-
-            {/* ── Reporter Description (quote block) ── */}
+            {/* ── Reporter description (quote block) ── */}
             {!!incident.description && (
-              <View style={[s.card, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
-                <View style={[s.quoteBar, { backgroundColor: colors.brand[500] }]} />
+              <SectionCard isDark={isDark}>
+                <View style={s.quoteBar} />
                 <View style={s.quoteContent}>
                   <Text style={[s.quoteText, { color: textPrimary }]}>
                     "{incident.description}"
                   </Text>
-                  <Text style={[s.quoteAttribution, { color: textSecondary }]}>
+                  <Text style={[s.quoteAttr, { color: textSecondary }]}>
                     {incident.reportedBy} · first report · {incident.reportedAt}
                   </Text>
                 </View>
-              </View>
+              </SectionCard>
             )}
 
+            {/* ── Evidence (gallery — matches resident) ── */}
+            <SectionCard isDark={isDark}>
+              <View style={s.sLabelTitleRow}>
+                <SectionLabel text="Evidence" icon="camera-outline" iconColor="#0EA5E9" isDark={isDark} />
+                {incident.mediaUrls.length > 0 && (
+                  <View style={s.countPill}>
+                    <Text style={s.countPillText}>{incident.mediaUrls.length}</Text>
+                  </View>
+                )}
+              </View>
+              <PhotoGallery urls={incident.mediaUrls} isDark={isDark} onTap={(i) => setLightboxIdx(i)} />
+            </SectionCard>
+
             {/* ── Reporter Card ── */}
-            <View style={[s.card, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
+            <SectionCard isDark={isDark}>
+              <SectionLabel text="Reporter" icon="person-outline" iconColor="#8B5CF6" isDark={isDark} />
               <View style={s.reporterRow}>
                 <View style={[s.reporterAvatar, { backgroundColor: isDark ? colors.dark.elevated : colors.brand[100] }]}>
-                  <Text style={[s.reporterInitials, { color: isDark ? colors.brand[300] : colors.brand[700] }]}>
-                    {reporterInitials}
-                  </Text>
+                  <Text style={[s.reporterInitials, { color: isDark ? colors.brand[300] : colors.brand[700] }]}>{reporterInitials}</Text>
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={[s.reporterName, { color: textPrimary }]}>
-                    {incident.reportedBy}
-                  </Text>
+                  <Text style={[s.reporterName, { color: textPrimary }]}>{incident.reportedBy}</Text>
                   <Text style={[s.reporterSub, { color: textSecondary }]}>
                     Reporter{incident.contactNumber ? ` · ${incident.contactNumber}` : ''}
                   </Text>
@@ -1118,50 +1205,18 @@ export default function IncidentDetailScreen() {
                 <Pressable
                   onPress={callReporter}
                   style={[s.phoneBtn, { backgroundColor: isDark ? colors.dark.elevated : colors.brand[100] }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Call ${incident.reportedBy}`}
                 >
                   <Ionicons name="call" size={18} color={colors.brand[500]} />
                 </Pressable>
               </View>
-            </View>
-
-            {/* ── Photos Section ── */}
-            {incident.mediaUrls.length > 0 ? (
-              <Pressable
-                onPress={() => setLightboxIdx(0)}
-                style={[s.card, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }]}
-              >
-                <View style={[s.photoIcon, { backgroundColor: isDark ? colors.dark.elevated : colors.brand[100] }]}>
-                  <Ionicons name="images" size={18} color={colors.brand[500]} />
-                </View>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={[s.photoTitle, { color: textPrimary }]}>
-                    {incident.evidenceCount} photos from the scene
-                  </Text>
-                  <Text style={[s.photoSub, { color: textSecondary }]}>
-                    Last added {incident.reportedAt} · AI-verified
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={textSecondary} />
-              </Pressable>
-            ) : (
-              <View style={[s.card, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
-                <View style={[s.emptyMedia, { backgroundColor: elevatedBg }]}>
-                  <Ionicons name="images-outline" size={28} color={colors.slate[400]} />
-                  <Text style={[s.emptyMediaText, { color: textSecondary }]}>
-                    No evidence attached
-                  </Text>
-                </View>
-              </View>
-            )}
+            </SectionCard>
 
             {/* ── Team Section ── */}
             {(team || memberStatuses.length > 0) && (
-              <View style={[s.card, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
-                <View style={s.sectionHeader}>
-                  <Text style={[s.sectionTitle, { color: textPrimary }]}>On this incident</Text>
-                  <Text style={[s.sectionCount, { color: textSecondary }]}>
+              <SectionCard isDark={isDark}>
+                <View style={s.sLabelTitleRow}>
+                  <SectionLabel text="On this incident" icon="people-outline" iconColor="#10B981" isDark={isDark} />
+                  <Text style={[s.teamCount, { color: textSecondary }]}>
                     {responderCount} responder{responderCount !== 1 ? 's' : ''}
                   </Text>
                 </View>
@@ -1177,42 +1232,24 @@ export default function IncidentDetailScreen() {
                   return (
                     <View key={member.id}>
                       <View style={s.teamRow}>
-                        {/* Avatar with status dot */}
-                        <View style={s.teamAvatarWrap}>
-                          <View style={[
-                            s.teamAvatar,
-                            { backgroundColor: isMe ? colors.brand[100] : (isDark ? colors.dark.elevated : colors.slate[100]) },
-                          ]}>
-                            <Text style={[s.teamInitials, { color: isMe ? colors.brand[700] : (isDark ? colors.slate[400] : colors.slate[500]) }]}>
-                              {initials}
-                            </Text>
+                        <View style={{ position: 'relative' }}>
+                          <View style={[s.teamAvatar, { backgroundColor: isMe ? colors.brand[100] : (isDark ? colors.dark.elevated : colors.slate[100]) }]}>
+                            <Text style={[s.teamInitials, { color: isMe ? colors.brand[700] : (isDark ? colors.slate[400] : colors.slate[500]) }]}>{initials}</Text>
                           </View>
                           <View style={[s.statusDot, { backgroundColor: statusColor, borderColor: cardBg }]} />
                         </View>
-
-                        {/* Name + role */}
                         <View style={{ flex: 1, gap: 2 }}>
-                          <View style={s.teamNameRow}>
-                            <Text style={[s.teamName, { color: textPrimary }]}>
-                              {member.firstName} {member.lastName}
-                            </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={[s.teamMemberName, { color: textPrimary }]}>{member.firstName} {member.lastName}</Text>
                             {member.isLeader && (
                               <View style={[s.leaderBadge, { backgroundColor: colors.brand[500] }]}>
                                 <Text style={s.leaderBadgeText}>LEADER</Text>
                               </View>
                             )}
                           </View>
-                          <Text style={[s.teamRole, { color: textSecondary }]}>
-                            {member.isLeader ? 'Team Leader' : 'Responder'} · {STATUS_LABELS[status]}
-                          </Text>
+                          <Text style={[s.teamRole, { color: statusColor }]}>{STATUS_LABELS[status]}</Text>
                         </View>
-
-                        {/* Phone icon */}
-                        <Pressable
-                          style={[s.teamPhoneBtn, { backgroundColor: elevatedBg }]}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Call ${member.firstName}`}
-                        >
+                        <Pressable style={[s.teamPhoneBtn, { backgroundColor: elevatedBg }]}>
                           <Ionicons name="call-outline" size={15} color={textSecondary} />
                         </Pressable>
                       </View>
@@ -1221,7 +1258,6 @@ export default function IncidentDetailScreen() {
                   );
                 })}
 
-                {/* Member statuses without team (fallback) */}
                 {!team && memberStatuses.map((ms, idx) => {
                   const statusColor = STATUS_COLORS[ms.status];
                   const initials = ms.userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
@@ -1231,36 +1267,63 @@ export default function IncidentDetailScreen() {
                   return (
                     <View key={ms.userId}>
                       <View style={s.teamRow}>
-                        <View style={s.teamAvatarWrap}>
-                          <View style={[
-                            s.teamAvatar,
-                            { backgroundColor: isMe ? colors.brand[100] : (isDark ? colors.dark.elevated : colors.slate[100]) },
-                          ]}>
-                            <Text style={[s.teamInitials, { color: isMe ? colors.brand[700] : textSecondary }]}>
-                              {initials}
-                            </Text>
+                        <View style={{ position: 'relative' }}>
+                          <View style={[s.teamAvatar, { backgroundColor: isMe ? colors.brand[100] : (isDark ? colors.dark.elevated : colors.slate[100]) }]}>
+                            <Text style={[s.teamInitials, { color: isMe ? colors.brand[700] : textSecondary }]}>{initials}</Text>
                           </View>
                           <View style={[s.statusDot, { backgroundColor: statusColor, borderColor: cardBg }]} />
                         </View>
                         <View style={{ flex: 1, gap: 2 }}>
-                          <Text style={[s.teamName, { color: textPrimary }]}>{ms.userName}</Text>
-                          <Text style={[s.teamRole, { color: textSecondary }]}>
-                            Responder · {STATUS_LABELS[ms.status]}
-                          </Text>
+                          <Text style={[s.teamMemberName, { color: textPrimary }]}>{ms.userName}</Text>
+                          <Text style={[s.teamRole, { color: textSecondary }]}>Responder · {STATUS_LABELS[ms.status]}</Text>
                         </View>
                       </View>
                       {!isLast && <View style={[s.divider, { backgroundColor: dividerColor }]} />}
                     </View>
                   );
                 })}
-              </View>
+              </SectionCard>
             )}
 
-            {/* ── Status Stepper ── */}
-            <View style={[s.card, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
+            {/* ── Status Timeline ── */}
+            <SectionCard isDark={isDark}>
+              <SectionLabel text="Status Timeline" icon="git-commit-outline" iconColor="#8B5CF6" isDark={isDark} />
               <StatusStepper current={incident.responderStatus} isDark={isDark} />
-            </View>
+            </SectionCard>
 
+            {/* ── Message Reporter CTA ── */}
+            <Pressable
+              onPress={() => { setUnreadCount(0); router.push(`/responder/incident/${id}/chat` as never); }}
+              style={({ pressed }) => [
+                s.messageCta,
+                { backgroundColor: cardBg, borderColor: colors.brand[500] + '20' },
+                isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border },
+                pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+              ]}
+            >
+              <View>
+                <LinearGradient
+                  colors={[colors.brand[500] + '18', colors.accent[500] + '10']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={s.messageCtaIcon}
+                >
+                  <Ionicons name="chatbubbles" size={20} color={colors.brand[500]} />
+                </LinearGradient>
+                {unreadCount > 0 && (
+                  <View style={s.messageCtaBadge}>
+                    <Text style={s.messageCtaBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                  </View>
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.messageCtaTitle, { color: textPrimary }]}>Message Reporter</Text>
+                <Text style={[s.messageCtaSub, { color: textSecondary }]}>
+                  {unreadCount > 0 ? `${unreadCount} new message${unreadCount > 1 ? 's' : ''}` : 'Chat with the reporter'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={textSecondary} />
+            </Pressable>
           </ScrollView>
 
           {/* ── Bottom Fixed Area ── */}
@@ -1275,42 +1338,47 @@ export default function IncidentDetailScreen() {
             {isResolved ? (
               <View style={s.resolvedBanner}>
                 <View style={[s.resolvedIcon, { backgroundColor: colors.severity.low }]}>
-                  <Ionicons name="checkmark-circle" size={18} color={colors.white} />
+                  <Ionicons name="checkmark-circle" size={18} color="#fff" />
                 </View>
                 <Text style={[s.resolvedText, { color: colors.severity.low }]}>Incident resolved</Text>
               </View>
             ) : (
               <>
-                {/* Primary action button */}
                 {primaryAction && (
                   <Pressable
                     onPress={primaryAction.onPress}
                     disabled={primaryAction.loading}
                     style={({ pressed }) => [
                       s.primaryBtn,
-                      { backgroundColor: primaryAction.color },
                       pressed && { opacity: 0.88 },
                       primaryAction.loading && { opacity: 0.6 },
                     ]}
-                    accessibilityRole="button"
                   >
-                    {primaryAction.loading ? (
-                      <ActivityIndicator size="small" color={colors.white} />
-                    ) : (
-                      <>
-                        <Ionicons name={primaryAction.icon} size={18} color={colors.white} />
-                        <Text style={s.primaryBtnText}>{primaryAction.label}</Text>
-                      </>
-                    )}
+                    <LinearGradient
+                      colors={primaryAction.color === colors.brand[500]
+                        ? [colors.brand[500], colors.brand[700]]
+                        : [primaryAction.color, primaryAction.color]
+                      }
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={s.primaryBtnGrad}
+                    >
+                      {primaryAction.loading ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <>
+                          <Ionicons name={primaryAction.icon} size={18} color="#fff" />
+                          <Text style={s.primaryBtnText}>{primaryAction.label}</Text>
+                        </>
+                      )}
+                    </LinearGradient>
                   </Pressable>
                 )}
 
-                {/* Secondary row: Navigate + Call reporter */}
                 <View style={s.secondaryRow}>
                   <Pressable
                     onPress={openNativeMaps}
                     style={[s.secondaryBtn, { borderColor: dividerColor }]}
-                    accessibilityRole="button"
                   >
                     <Ionicons name="navigate-outline" size={16} color={colors.brand[500]} />
                     <Text style={[s.secondaryBtnText, { color: colors.brand[500] }]}>Navigate</Text>
@@ -1318,14 +1386,12 @@ export default function IncidentDetailScreen() {
                   <Pressable
                     onPress={callReporter}
                     style={[s.secondaryBtn, { borderColor: dividerColor }]}
-                    accessibilityRole="button"
                   >
                     <Ionicons name="call-outline" size={16} color={colors.brand[500]} />
                     <Text style={[s.secondaryBtnText, { color: colors.brand[500] }]}>Call reporter</Text>
                   </Pressable>
                 </View>
 
-                {/* Dispatch notified footer */}
                 <View style={s.dispatchRow}>
                   <Ionicons name="radio-outline" size={14} color={textSecondary} />
                   <Text style={[s.dispatchText, { color: textSecondary }]}>
@@ -1359,228 +1425,146 @@ const s = StyleSheet.create({
   root: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 32 },
 
-  // ── Header ──
-  header: {
-    paddingBottom: 12,
-    paddingHorizontal: 16,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerBtn: {
+  // ── Header (gradient — matches resident) ──
+  header: { paddingHorizontal: 20, paddingBottom: 18, overflow: 'hidden' },
+  orb: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.06)' },
+  waveWrap: { height: 16, position: 'relative', marginTop: -1 },
+  waveShape: { position: 'absolute', bottom: 0, left: -12, right: -12, height: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+  headerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  headerIconBtn: {
     width: 38, height: 38, borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.12)',
     alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: {
-    fontSize: 17, fontWeight: '800', color: colors.white,
-  },
-  headerRef: {
-    fontSize: 12, color: 'rgba(255,255,255,0.55)', fontWeight: '600', letterSpacing: 0.3,
-  },
-  headerRight: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-  },
-  onlineDot: {
-    width: 8, height: 8, borderRadius: 4,
-    backgroundColor: colors.iconAccents.online,
-  },
+  headerInlineTitle: { flex: 1, fontSize: 18, fontWeight: '800', color: '#fff', letterSpacing: -0.2, textAlign: 'center', marginHorizontal: 8 },
+  headerContent: { gap: 10 },
+  refPill: { backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 6, alignSelf: 'flex-start' },
+  refPillText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.8)', letterSpacing: 0.5 },
+  headerChips: { flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 2 },
+  headerBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  headerBadgeText: { fontSize: 11, fontWeight: '700' },
   chatBadge: {
     position: 'absolute', top: -5, right: -5,
     minWidth: 18, height: 18, borderRadius: 9,
     backgroundColor: '#EF4444',
     alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 4,
-    borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.15)',
+    paddingHorizontal: 4, borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.15)',
   },
   chatBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
 
   // ── Scroll ──
-  scroll: { paddingHorizontal: 16, paddingTop: 12, gap: 12 },
+  scroll: { padding: 12, paddingTop: 4, gap: 14 },
 
-  // ── Cards ──
-  card: {
-    borderRadius: 16, padding: 16, gap: 10,
+  // ── Section card (matches resident) ──
+  sCard: {
+    borderRadius: 20, padding: 18, gap: 16,
+    borderWidth: 1, borderColor: colors.slate[100],
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
   },
+  sLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sLabelIcon: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  sLabelText: { fontSize: 15, fontWeight: '700', color: colors.slate[900], letterSpacing: -0.2 },
+  sLabelTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  countPill: { backgroundColor: colors.brand[50], paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  countPillText: { fontSize: 11, fontWeight: '700', color: colors.brand[500] },
 
-  // ── Summary card ──
-  badgeRow: { flexDirection: 'row', gap: 8 },
-  badge: {
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6,
-  },
-  badgeText: { fontSize: 12, fontWeight: '700' },
-  summaryMeta: {
-    fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 2,
-  },
-  summaryTitle: {
-    fontSize: 18, fontWeight: '800', color: colors.white, lineHeight: 24,
-  },
-  summaryLocationRow: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 6,
-  },
-  summaryAddress: {
-    fontSize: 13, color: 'rgba(255,255,255,0.65)', flex: 1, lineHeight: 18,
-  },
-
-  // ── Mini map ──
-  miniMap: {
-    height: 140, position: 'relative',
-  },
-  miniMapBg: {
-    flex: 1,
-    backgroundColor: '#1A222B',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  routeLine: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-  },
-  routeDot: {
-    width: 12, height: 12, borderRadius: 6,
-  },
-  routeDash: {
-    width: 20, height: 2, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 1,
-  },
-  miniMapExpand: {
-    position: 'absolute', top: 10, right: 10,
-    width: 32, height: 32, borderRadius: 8,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  etaStrip: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderTopWidth: 1,
-  },
-  etaText: { fontSize: 14, fontWeight: '600' },
-
-  // ── Info chips ──
-  chipsRow: { flexDirection: 'row', gap: 8 },
-  chip: {
-    flex: 1, borderRadius: 12, padding: 12,
-    alignItems: 'center', gap: 4,
-  },
-  chipLabel: { fontSize: 11, fontWeight: '500' },
-  chipValue: { fontSize: 13, fontWeight: '700' },
+  // ── MetaRow (matches resident) ──
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  metaIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: colors.brand[50], alignItems: 'center', justifyContent: 'center' },
+  metaLabel: { fontSize: 11, fontWeight: '500', color: colors.slate[400], textTransform: 'uppercase', letterSpacing: 0.6 },
+  metaValue: { fontSize: 14, fontWeight: '600', color: colors.slate[800] },
 
   // ── Quote block ──
-  quoteBar: {
-    position: 'absolute', left: 0, top: 12, bottom: 12,
-    width: 3, borderRadius: 2,
-  },
+  quoteBar: { position: 'absolute', left: 0, top: 12, bottom: 12, width: 3, borderRadius: 2, backgroundColor: colors.brand[500] },
   quoteContent: { paddingLeft: 8, gap: 8 },
-  quoteText: {
-    fontSize: 14, fontStyle: 'italic', lineHeight: 21,
+  quoteText: { fontSize: 14, fontStyle: 'italic', lineHeight: 21 },
+  quoteAttr: { fontSize: 12 },
+
+  // ── Gallery (matches resident) ──
+  galSlideWrap: { position: 'relative', borderRadius: 16, overflow: 'hidden' },
+  galSlide: { height: 240, backgroundColor: colors.slate[100] },
+  galGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 60 },
+  galBadge: {
+    position: 'absolute', bottom: 12, right: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
   },
-  quoteAttribution: {
-    fontSize: 12,
-  },
+  galBadgeText: { fontSize: 12, color: '#fff', fontWeight: '600' },
+  galDotsRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
+  galDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.slate[200] },
+  galDotActive: { width: 22, backgroundColor: colors.brand[500], borderRadius: 4 },
+  galEmpty: { height: 140, borderRadius: 16, backgroundColor: colors.slate[50], alignItems: 'center', justifyContent: 'center', gap: 10 },
+  galEmptyIcon: { width: 52, height: 52, borderRadius: 14, backgroundColor: colors.slate[100], alignItems: 'center', justifyContent: 'center' },
+  galEmptyText: { fontSize: 13, color: colors.slate[400], fontWeight: '500' },
 
   // ── Reporter card ──
   reporterRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  reporterAvatar: {
-    width: 44, height: 44, borderRadius: 22,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  reporterAvatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   reporterInitials: { fontSize: 16, fontWeight: '800' },
   reporterName: { fontSize: 15, fontWeight: '700' },
   reporterSub: { fontSize: 12 },
-  phoneBtn: {
-    width: 42, height: 42, borderRadius: 21,
-    alignItems: 'center', justifyContent: 'center',
-  },
-
-  // ── Photos ──
-  photoIcon: {
-    width: 40, height: 40, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  photoTitle: { fontSize: 14, fontWeight: '600' },
-  photoSub: { fontSize: 12 },
-  emptyMedia: {
-    height: 80, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center', gap: 6,
-  },
-  emptyMediaText: { fontSize: 13, fontWeight: '500' },
+  phoneBtn: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
 
   // ── Team ──
-  sectionHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  sectionTitle: { fontSize: 15, fontWeight: '700' },
-  sectionCount: { fontSize: 12 },
-  teamRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 10,
-  },
-  teamAvatarWrap: { position: 'relative' },
-  teamAvatar: {
-    width: 38, height: 38, borderRadius: 19,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  teamCount: { fontSize: 12 },
+  teamRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
+  teamAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   teamInitials: { fontSize: 13, fontWeight: '800' },
-  statusDot: {
-    position: 'absolute', bottom: -1, right: -1,
-    width: 12, height: 12, borderRadius: 6,
-    borderWidth: 2,
-  },
-  teamNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  teamName: { fontSize: 14, fontWeight: '600' },
-  leaderBadge: {
-    paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4,
-  },
-  leaderBadgeText: { fontSize: 9, fontWeight: '800', color: colors.white, letterSpacing: 0.3 },
+  statusDot: { position: 'absolute', bottom: -1, right: -1, width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
+  teamMemberName: { fontSize: 14, fontWeight: '600' },
+  leaderBadge: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 },
+  leaderBadgeText: { fontSize: 9, fontWeight: '800', color: '#fff', letterSpacing: 0.3 },
   teamRole: { fontSize: 12 },
-  teamPhoneBtn: {
-    width: 34, height: 34, borderRadius: 17,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  teamPhoneBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   divider: { height: StyleSheet.hairlineWidth },
+
+  // ── Message CTA (matches resident) ──
+  messageCta: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    borderRadius: 20, padding: 16, borderWidth: 1,
+    shadowColor: colors.brand[500], shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 3,
+  },
+  messageCtaIcon: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  messageCtaTitle: { fontSize: 15, fontWeight: '700' },
+  messageCtaSub: { fontSize: 12, marginTop: 1 },
+  messageCtaBadge: {
+    position: 'absolute', top: -4, right: -4,
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: '#EF4444',
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4, borderWidth: 1.5, borderColor: '#fff',
+  },
+  messageCtaBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
 
   // ── Bottom bar ──
   bottomBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     paddingHorizontal: 16, paddingTop: 14,
-    borderTopWidth: 1,
-    gap: 10,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08, shadowRadius: 12, elevation: 10,
+    borderTopWidth: 1, gap: 10,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 10,
   },
-  primaryBtn: {
+  primaryBtn: { borderRadius: 14, overflow: 'hidden' },
+  primaryBtnGrad: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    height: 52, borderRadius: 14, gap: 8,
+    height: 52, gap: 8, borderRadius: 14,
   },
-  primaryBtnText: { fontSize: 15, fontWeight: '800', color: colors.white },
+  primaryBtnText: { fontSize: 15, fontWeight: '800', color: '#fff' },
   secondaryRow: { flexDirection: 'row', gap: 10 },
   secondaryBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    height: 44, borderRadius: 12, gap: 6,
-    borderWidth: 1,
+    height: 44, borderRadius: 12, gap: 6, borderWidth: 1,
   },
   secondaryBtnText: { fontSize: 13, fontWeight: '600' },
-  dispatchRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingTop: 2,
-  },
+  dispatchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingTop: 2 },
   dispatchText: { fontSize: 11, fontWeight: '500' },
 
   // ── Resolved ──
-  resolvedBanner: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 10, paddingVertical: 14,
-  },
-  resolvedIcon: {
-    width: 30, height: 30, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  resolvedBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 14 },
+  resolvedIcon: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   resolvedText: { fontSize: 16, fontWeight: '700' },
 
   // ── Error ──
-  errorIconWrap: {
-    width: 72, height: 72, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  errorIconWrap: { width: 72, height: 72, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   errorTitle: { fontSize: 17, fontWeight: '700' },
   errorBody: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
   retryBtn: {
@@ -1588,5 +1572,5 @@ const s = StyleSheet.create({
     backgroundColor: colors.brand[500],
     paddingHorizontal: 20, paddingVertical: 11, borderRadius: 12, marginTop: 4,
   },
-  retryText: { color: colors.white, fontWeight: '700', fontSize: 14 },
+  retryBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 });

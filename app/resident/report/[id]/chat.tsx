@@ -35,7 +35,7 @@ import {
 } from '@/services/socket';
 import type { IncidentMessage } from '@/types';
 
-const HEADER_GRADIENT = ['#1F6FBF', '#124577', '#0B2F52'] as const;
+const HEADER_GRADIENT = colors.gradients.hero;
 
 // ─── TypingDots ───────────────────────────────────────────────────────────────
 function TypingDots() {
@@ -164,85 +164,9 @@ export default function ResidentChatScreen() {
   }, [keyboardHeight]);
 
   const isChatClosed   = reportStatus === 'resolved';
-  const isChatBlocked  = reportStatus !== null && reportStatus !== 'assigned' && !isChatClosed;
+  const isChatRejected = reportStatus === 'rejected';
+  const isChatBlocked  = reportStatus !== null && reportStatus !== 'assigned' && !isChatClosed && !isChatRejected;
   const screenBg       = isDark ? colors.dark.bg : '#F4F6F9';
-
-  // ── Load report metadata ──
-  useEffect(() => {
-    if (!token) return;
-    getReportDetail(id, token)
-      .then(detail => {
-        setReportStatus(detail.status);
-        setReportRef(detail.reference);
-        setReportTitle(detail.title);
-      })
-      .catch(() => {});
-  }, [id, token]);
-
-  // ── Socket setup ──
-  useEffect(() => {
-    if (!token || !user) return;
-    socketService.connect(token);
-    socketService.joinReport(id);
-
-    const handleStatusChange = (data: { reportId: string }) => {
-      if (data.reportId === id && token) {
-        getReportDetail(id, token)
-          .then(detail => setReportStatus(detail.status))
-          .catch(() => {});
-      }
-    };
-
-    const handleNewMessage = (raw: RawSocketMessage) => {
-      const msg = adaptSocketMessage(raw, id);
-      if (msg.userId === user.id) return;
-      setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
-      markMessagesRead(id, token).catch(() => {});
-      if (isNearBottomRef.current) {
-        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-      }
-    };
-
-    const handleTypingUpdate = (data: TypingUser) => {
-      if (String(data.id) === user.id) return;
-      const key = String(data.id);
-      const old = typingClearTimers.current.get(key);
-      if (old) clearTimeout(old);
-      setTypingUsers(prev => [...prev.filter(u => String(u.id) !== key), data]);
-      const timer = setTimeout(() => {
-        setTypingUsers(prev => prev.filter(u => String(u.id) !== key));
-        typingClearTimers.current.delete(key);
-      }, 4000);
-      typingClearTimers.current.set(key, timer);
-    };
-
-    const handleMessagesRead = (data: { reportId: string }) => {
-      if (data.reportId === id) loadMessages(true);
-    };
-
-    socketService.on<RawSocketMessage>('new-message', handleNewMessage);
-    socketService.on<TypingUser>('typing-update', handleTypingUpdate);
-    socketService.on<{ reportId: string }>('report-status', handleStatusChange);
-    socketService.on<{ reportId: string }>('messages-read', handleMessagesRead);
-
-    return () => {
-      socketService.leaveReport(id);
-      socketService.off<RawSocketMessage>('new-message', handleNewMessage);
-      socketService.off<TypingUser>('typing-update', handleTypingUpdate);
-      socketService.off<{ reportId: string }>('report-status', handleStatusChange);
-      socketService.off<{ reportId: string }>('messages-read', handleMessagesRead);
-      typingClearTimers.current.forEach(t => clearTimeout(t));
-      typingClearTimers.current.clear();
-    };
-  }, [id, token, user]);
-
-  // ── Typing emit ──
-  function handleTextChange(value: string) {
-    setText(value);
-    if (!value.trim() || typingTimerRef.current) return;
-    socketService.emitTyping(id);
-    typingTimerRef.current = setTimeout(() => { typingTimerRef.current = null; }, 2000);
-  }
 
   // ── Load messages ──
   const loadMessages = useCallback(async (silent = false) => {
@@ -260,6 +184,90 @@ export default function ResidentChatScreen() {
   }, [id, token]);
 
   useEffect(() => { loadMessages(); }, [loadMessages]);
+
+  // ── Load report metadata ──
+  useEffect(() => {
+    if (!token) return;
+    getReportDetail(id, token)
+      .then(detail => {
+        setReportStatus(detail.status);
+        setReportRef(detail.reference);
+        setReportTitle(detail.title);
+      })
+      .catch(() => {});
+  }, [id, token]);
+
+  // ── Poll fallback: refresh messages every 5s in case socket misses events ──
+  useEffect(() => {
+    if (!token) return;
+    const iv = setInterval(() => { loadMessages(true); }, 5000);
+    return () => clearInterval(iv);
+  }, [token, loadMessages]);
+
+  // ── Socket setup ──
+  useEffect(() => {
+    if (!token || !user) return;
+    socketService.connect(token);
+    socketService.reconnect();
+    const joinTimer = setTimeout(() => socketService.joinReport(id), 500);
+
+    const userId = String(user.id);
+
+    const id1 = socketService.on<{ reportId: string | number }>('report-status', (data) => {
+      if (String(data.reportId) === String(id) && token) {
+        getReportDetail(id, token)
+          .then(detail => setReportStatus(detail.status))
+          .catch(() => {});
+      }
+    });
+
+    const id2 = socketService.on<RawSocketMessage>('new-message', (raw) => {
+      if (String(raw.report_id) !== String(id)) return;
+      const msg = adaptSocketMessage(raw, id);
+      if (msg.userId === userId) return;
+      setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
+      markMessagesRead(id, token).catch(() => {});
+      if (isNearBottomRef.current) {
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150);
+      }
+    });
+
+    const id3 = socketService.on<TypingUser>('typing-update', (data) => {
+      if (String(data.id) === userId) return;
+      const key = String(data.id);
+      const old = typingClearTimers.current.get(key);
+      if (old) clearTimeout(old);
+      setTypingUsers(prev => [...prev.filter(u => String(u.id) !== key), data]);
+      const timer = setTimeout(() => {
+        setTypingUsers(prev => prev.filter(u => String(u.id) !== key));
+        typingClearTimers.current.delete(key);
+      }, 4000);
+      typingClearTimers.current.set(key, timer);
+    });
+
+    const id4 = socketService.on<{ reportId: string | number }>('messages-read', (data) => {
+      if (String(data.reportId) === String(id)) loadMessages(true);
+    });
+
+    return () => {
+      clearTimeout(joinTimer);
+      socketService.leaveReport(id);
+      socketService.off(id1);
+      socketService.off(id2);
+      socketService.off(id3);
+      socketService.off(id4);
+      typingClearTimers.current.forEach(t => clearTimeout(t));
+      typingClearTimers.current.clear();
+    };
+  }, [id, token, user, loadMessages]);
+
+  // ── Typing emit ──
+  function handleTextChange(value: string) {
+    setText(value);
+    if (!value.trim() || typingTimerRef.current) return;
+    socketService.emitTyping(id);
+    typingTimerRef.current = setTimeout(() => { typingTimerRef.current = null; }, 2000);
+  }
 
   // ── Send ──
   async function handleSend() {
@@ -500,7 +508,7 @@ export default function ResidentChatScreen() {
       )}
 
       {/* ── Input bar / closed banner ── */}
-      {isChatClosed || isChatBlocked ? (
+      {isChatClosed || isChatRejected || isChatBlocked ? (
         <View style={[
           s.closedBanner,
           {
@@ -511,12 +519,14 @@ export default function ResidentChatScreen() {
         ]}>
           <View style={[s.closedInner, isDark && { backgroundColor: colors.dark.elevated }]}>
             <Ionicons
-              name={isChatBlocked ? 'time-outline' : 'checkmark-circle'}
+              name={isChatRejected ? 'close-circle' : isChatBlocked ? 'time-outline' : 'checkmark-circle'}
               size={18}
-              color={isChatBlocked ? colors.slate[400] : colors.severity.low}
+              color={isChatRejected ? colors.severity.critical : isChatBlocked ? colors.slate[400] : colors.severity.low}
             />
             <Text style={[s.closedText, isDark && { color: colors.slate[400] }]}>
-              {isChatBlocked
+              {isChatRejected
+                ? 'Report was rejected — chat is unavailable'
+                : isChatBlocked
                 ? 'Waiting for a responder to be assigned'
                 : 'Report resolved — chat is now closed'}
             </Text>

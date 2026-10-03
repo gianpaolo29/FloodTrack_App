@@ -25,11 +25,12 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { getMyReports } from '@/services/api';
 import { socketService } from '@/services/socket';
+import { onNotificationReceived } from '@/services/notifications';
 import type { Report, ReportStatus } from '@/types';
 
 // Removed static Dimensions — using percentage-based styles instead
 
-const HEADER_GRADIENT: [string, string, string] = ['#00D2FF', '#4A6CF7', '#7C3AED'];
+const HEADER_GRADIENT: [string, string, string] = [colors.gradients.hero[0], colors.gradients.hero[1], colors.gradients.hero[2]];
 
 type FilterTab = 'all' | 'active' | 'resolved';
 
@@ -180,17 +181,6 @@ function EmptyState({
   isDark: boolean;
   children: React.ReactNode;
 }) {
-  const bounce = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(bounce, { toValue: -10, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(bounce, { toValue: 0, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ]),
-    ).start();
-  }, [bounce]);
-
   const title =
     tab === 'active'
       ? 'No Active Reports'
@@ -200,19 +190,17 @@ function EmptyState({
 
   return (
     <View style={styles.emptyState}>
-      <Animated.View style={{ transform: [{ translateY: bounce }] }}>
+      <LinearGradient
+        colors={[colors.brand[500] + '22', colors.accent[500] + '11']}
+        style={styles.emptyIconBadge}
+      >
         <LinearGradient
-          colors={['#4A6CF722', '#7C3AED11']}
-          style={styles.emptyIconBadge}
+          colors={[colors.brand[500] + '33', colors.accent[500] + '22']}
+          style={styles.emptyIconBadgeInner}
         >
-          <LinearGradient
-            colors={['#4A6CF733', '#7C3AED22']}
-            style={styles.emptyIconBadgeInner}
-          >
-            <Ionicons name="document-text-outline" size={44} color="#4A6CF7" />
-          </LinearGradient>
+          <Ionicons name="document-text-outline" size={44} color={colors.brand[500]} />
         </LinearGradient>
-      </Animated.View>
+      </LinearGradient>
       <Text style={[styles.emptyTitle, isDark && { color: colors.white }]}>
         {title}
       </Text>
@@ -275,8 +263,16 @@ export default function MyReportsScreen() {
 
   useEffect(() => {
     const refresh = () => load(true);
-    socketService.on('report-status', refresh);
-    return () => socketService.off('report-status', refresh);
+    const lid1 = socketService.on('report-status', refresh);
+    const lid2 = socketService.on('new-notification', refresh);
+    const lid3 = socketService.on('new-message', refresh);
+    const pushSub = onNotificationReceived(() => refresh());
+    return () => {
+      socketService.off(lid1);
+      socketService.off(lid2);
+      socketService.off(lid3);
+      pushSub?.remove();
+    };
   }, [load]);
 
   function handleRefresh() {
@@ -386,7 +382,7 @@ export default function MyReportsScreen() {
 
         <View style={[styles.waveWrap, { backgroundColor: isDark ? colors.dark.bg : colors.slate[50] }]}>
           <LinearGradient
-            colors={['#5E52EF', '#7C3AED']}
+            colors={colors.gradients.wave}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={StyleSheet.absoluteFillObject}
@@ -432,14 +428,14 @@ export default function MyReportsScreen() {
                   styles.tabChip,
                   isActive && styles.tabChipActive,
                   isDark && !isActive && { backgroundColor: colors.dark.elevated, borderColor: colors.dark.border },
-                  isDark && isActive && { backgroundColor: '#1E1B4B', borderColor: '#4A6CF7' },
+                  isDark && isActive && { backgroundColor: colors.brand[900], borderColor: colors.brand[500] },
                 ]}
               >
                 {isActive && <View style={styles.tabAccent} />}
                 <Ionicons
                   name={t.icon}
                   size={14}
-                  color={isActive ? '#4A6CF7' : (isDark ? colors.slate[400] : colors.slate[500])}
+                  color={isActive ? colors.brand[500] : (isDark ? colors.slate[400] : colors.slate[500])}
                 />
                 <Text
                   style={[
@@ -507,7 +503,7 @@ export default function MyReportsScreen() {
       {loading && (
         <View style={styles.centered}>
           <View style={styles.loadingBadge}>
-            <ActivityIndicator size="large" color="#4A6CF7" />
+            <ActivityIndicator size="large" color={colors.brand[500]} />
           </View>
           <Text style={[styles.loadingText, isDark && { color: colors.slate[400] }]}>
             Loading your reports…
@@ -535,7 +531,7 @@ export default function MyReportsScreen() {
             style={({ pressed }) => [pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]}
           >
             <LinearGradient
-              colors={['#4A6CF7', '#7C3AED']}
+              colors={colors.gradients.cta}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.retryBtn}
@@ -561,8 +557,8 @@ export default function MyReportsScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              tintColor="#4A6CF7"
-              colors={['#4A6CF7', '#7C3AED']}
+              tintColor={colors.brand[500]}
+              colors={colors.gradients.cta}
             />
           }
           showsVerticalScrollIndicator={false}
@@ -647,8 +643,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   tabChipActive: {
-    backgroundColor: '#EEF2FF',
-    borderColor: '#C7D2FE',
+    backgroundColor: colors.brand[50],
+    borderColor: colors.brand[200],
   },
   tabAccent: {
     position: 'absolute',
@@ -656,7 +652,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 3,
-    backgroundColor: '#4A6CF7',
+    backgroundColor: colors.brand[500],
     borderTopLeftRadius: 10,
     borderBottomLeftRadius: 10,
   },
@@ -666,7 +662,7 @@ const styles = StyleSheet.create({
     color: colors.slate[500],
   },
   tabLabelActive: {
-    color: '#4A6CF7',
+    color: colors.brand[500],
     fontWeight: '700',
   },
   tabCountBubble: {
@@ -678,7 +674,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tabCountBubbleActive: {
-    backgroundColor: '#C7D2FE',
+    backgroundColor: colors.brand[200],
   },
   tabCountText: {
     fontSize: 11,
@@ -686,7 +682,7 @@ const styles = StyleSheet.create({
     color: colors.slate[500],
   },
   tabCountTextActive: {
-    color: '#4A6CF7',
+    color: colors.brand[500],
   },
 
   /* Search */
@@ -804,9 +800,9 @@ const styles = StyleSheet.create({
 
   loadingBadge: {
     width: 72, height: 72, borderRadius: 22,
-    backgroundColor: '#F0F2FF',
+    backgroundColor: colors.brand[50],
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#4A6CF7',
+    shadowColor: colors.brand[500],
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
     shadowRadius: 12,
@@ -842,7 +838,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 22,
-    shadowColor: '#4A6CF7',
+    shadowColor: colors.brand[500],
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.28,
     shadowRadius: 12,
@@ -881,7 +877,7 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     borderRadius: 24,
     marginTop: 6,
-    shadowColor: '#4A6CF7',
+    shadowColor: colors.brand[500],
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 12,

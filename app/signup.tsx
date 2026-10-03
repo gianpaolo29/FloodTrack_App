@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  Dimensions,
   Easing,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -41,9 +41,6 @@ try {
 } catch {
   // Native module not available
 }
-
-const { width: INIT_W, height: INIT_H } = Dimensions.get('window');
-const HERO_H = INIT_H * 0.28;
 
 
 const EMAIL_RE     = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -88,8 +85,41 @@ export default function SignUpScreen() {
   const insets = useSafeAreaInsets();
   const { login } = useAuth();
   const { width: screenW, height: screenH } = useWindowDimensions();
-  const heroH = Math.min(screenH * 0.28, 260);
+
+  // ── Responsive breakpoints & scale ──
+  const isTiny  = screenH < 620;
   const isSmall = screenH < 700;
+  const vScale = Math.min(screenH / 812, 1.15);
+  const hScale = Math.min(screenW / 375, 1.15);
+  const heroH = isTiny ? screenH * 0.28 : isSmall ? screenH * 0.30 : Math.min(screenH * 0.34, 320);
+
+  const r = {
+    // Hero — SAME sizes as login
+    logoSize:      isTiny ? 44 : isSmall ? 52 : Math.round(64 * hScale),
+    logoBadge:     isTiny ? 64 : isSmall ? 76 : Math.round(100 * hScale),
+    logoBadgeR:    isTiny ? 19 : isSmall ? 23 : Math.round(100 * hScale * 0.3),
+    logoRing:      isTiny ? 86 : isSmall ? 98 : Math.round(122 * hScale),
+    heroTitle:     isTiny ? 16 : isSmall ? 18 : Math.round(24 * hScale),
+    heroTitleLS:   isTiny ? 3 : isSmall ? 4 : 5,
+    heroSub:       isTiny ? 10 : isSmall ? 11 : 12,
+    orbScale:      isTiny ? 0.5 : isSmall ? 0.7 : 1,
+    // Form
+    formPadX:  Math.round(Math.max(20, 28 * hScale)),
+    heading:   isTiny ? 20 : isSmall ? 22 : Math.round(26 * vScale),
+    subText:   isTiny ? 12 : 14,
+    inputH:    isTiny ? 46 : isSmall ? 50 : Math.round(56 * vScale),
+    inputR:    isTiny ? 12 : isSmall ? 14 : 16,
+    inputFont: isTiny ? 13 : isSmall ? 14 : 15,
+    iconWrap:  isTiny ? 32 : isSmall ? 36 : 40,
+    iconR:     isTiny ? 9 : isSmall ? 10 : 12,
+    iconSize:  isTiny ? 15 : isSmall ? 16 : 18,
+    btnH:      isTiny ? 44 : isSmall ? 48 : Math.round(52 * vScale),
+    btnR:      isTiny ? 12 : isSmall ? 14 : 16,
+    btnFont:   isTiny ? 14 : isSmall ? 15 : 16,
+    fieldGap:  isTiny ? 6 : isSmall ? 8 : 10,
+    labelFont: isTiny ? 12 : 13,
+    footerMT:  isTiny ? 10 : isSmall ? 14 : 20,
+  };
 
   // ── Entrance animations ──────────────────────────────────────────────────
   const heroOpacity  = useRef(new Animated.Value(0)).current;
@@ -102,6 +132,11 @@ export default function SignUpScreen() {
   const socialOpacity = useRef(new Animated.Value(0)).current;
   const socialTransY  = useRef(new Animated.Value(15)).current;
   const footerOpacity = useRef(new Animated.Value(0)).current;
+
+  // ── Hero continuous animations ───────────────────────────────────────────
+  const heroPulse = useRef(new Animated.Value(0)).current;
+  const heroFloat = useRef(new Animated.Value(0)).current;
+  const heroTitleShimmer = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.stagger(60, [
@@ -123,7 +158,28 @@ export default function SignUpScreen() {
       ]),
       Animated.timing(footerOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
     ]).start();
+
+    // Continuous hero animations
+    Animated.loop(Animated.sequence([
+      Animated.timing(heroPulse, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(heroPulse, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+    ])).start();
+    Animated.loop(Animated.sequence([
+      Animated.timing(heroFloat, { toValue: 1, duration: 2500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(heroFloat, { toValue: 0, duration: 2500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+    ])).start();
+    Animated.loop(Animated.sequence([
+      Animated.timing(heroTitleShimmer, { toValue: 1, duration: 2500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.delay(2000),
+      Animated.timing(heroTitleShimmer, { toValue: 0, duration: 0, useNativeDriver: true }),
+    ])).start();
   }, []);
+
+  // ── Hero animation interpolations ────────────────────────────────────────
+  const heroPulseScale   = heroPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.15] });
+  const heroPulseOpacity = heroPulse.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0] });
+  const heroFloatY       = heroFloat.interpolate({ inputRange: [0, 1], outputRange: [0, -8] });
+  const heroShimmerX     = heroTitleShimmer.interpolate({ inputRange: [0, 1], outputRange: [-screenW, screenW] });
 
   // ── Form state ───────────────────────────────────────────────────────────
   const role: Role = 'Resident';
@@ -135,7 +191,20 @@ export default function SignUpScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword]   = useState(false);
   const [showConfirm, setShowConfirm]     = useState(false);
+  const firstNameRef = useRef<TextInput>(null);
+  const lastNameRef  = useRef<TextInput>(null);
+  const emailRef     = useRef<TextInput>(null);
+  const contactRef   = useRef<TextInput>(null);
+  const passwordRef  = useRef<TextInput>(null);
+  const confirmRef   = useRef<TextInput>(null);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
 
+  const [kbOpen, setKbOpen] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKbOpen(true));
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKbOpen(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   const [isLoading, setIsLoading]               = useState(false);
   const [isGoogleLoading, setIsGoogleLoading]   = useState(false);
@@ -358,25 +427,36 @@ export default function SignUpScreen() {
             colors={colors.gradients.hero}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[s.hero, { height: heroH, paddingTop: insets.top + 8 }]}
+            style={[s.hero, { height: heroH, paddingTop: insets.top + (isTiny ? 4 : 8), paddingBottom: isTiny ? 12 : isSmall ? 16 : 24 }]}
           >
-            <View style={[s.orb, s.orb1]} />
-            <View style={[s.orb, s.orb2]} />
-            <View style={[s.orb, s.orb3, { left: screenW * 0.55 }]} />
+            <View style={[s.orb, { width: 200 * r.orbScale, height: 200 * r.orbScale, top: -60 * r.orbScale, right: -50 }]} />
+            <View style={[s.orb, { width: 140 * r.orbScale, height: 140 * r.orbScale, bottom: 10, left: -40, backgroundColor: colors.overlay.whiteSubtle }]} />
+            <View style={[s.orb, { width: 80 * r.orbScale, height: 80 * r.orbScale, top: 40, left: screenW * 0.55, backgroundColor: colors.overlay.whiteFaint }]} />
 
             <Particle delay={200}  x={screenW * 0.1}  y={40} size={3} />
             <Particle delay={800}  x={screenW * 0.85} y={60} size={4} />
             <Particle delay={1200} x={screenW * 0.4}  y={30} size={3} />
 
-            <View style={isSmall ? s.logoBadgeSmall : s.logoBadge}>
-              <View style={isSmall ? s.logoBadgeInnerSmall : s.logoBadgeInner}>
-                <Image source={require('@/assets/images/floodtrack-badge-primary.png')} style={{ width: isSmall ? 40 : 56, height: isSmall ? 40 : 56 }} resizeMode="contain" />
+            <Animated.View style={{ transform: [{ translateY: heroFloatY }] }}>
+              <View style={[s.logoBadgeBase, { marginBottom: isTiny ? 4 : isSmall ? 6 : 12 }]}>
+                <View style={[s.logoBadgeInnerBase, { width: r.logoBadge, height: r.logoBadge, borderRadius: r.logoBadgeR }]}>
+                  <Image source={require('@/assets/images/floodtrack-badge-primary.png')} style={{ width: r.logoSize, height: r.logoSize }} resizeMode="contain" />
+                </View>
+                {!isTiny && (
+                  <Animated.View style={[s.logoBadgeRingBase, {
+                    width: r.logoRing, height: r.logoRing, borderRadius: r.logoRing / 2,
+                    opacity: heroPulseOpacity,
+                    transform: [{ scale: heroPulseScale }],
+                  }]} />
+                )}
               </View>
-              {!isSmall && <View style={s.logoBadgeRing} />}
-            </View>
+            </Animated.View>
 
-            <Text style={[s.logoTitle, isSmall && { fontSize: 18, letterSpacing: 3 }]}>FLOODTRACK</Text>
-            <Text style={s.logoSub}>Create your account</Text>
+            <View style={s.heroTitleWrap}>
+              <Text style={[s.logoTitleBase, { fontSize: r.heroTitle, letterSpacing: r.heroTitleLS }]}>FLOODTRACK</Text>
+              <Animated.View style={[s.heroTitleShimmer, { transform: [{ translateX: heroShimmerX }] }]} />
+            </View>
+            <Text style={[s.logoSubBase, { fontSize: r.heroSub }]}>Create your account</Text>
           </LinearGradient>
 
           <View style={s.waveWrap}>
@@ -393,59 +473,68 @@ export default function SignUpScreen() {
         {/* ── Form ─────────────────────────────────────────────────────── */}
         <Animated.View style={[s.formArea, { opacity: formOpacity, transform: [{ translateY: formTransY }] }]}>
           <ScrollView
-            contentContainerStyle={[s.formScroll, { paddingBottom: insets.bottom + 20 }]}
+            contentContainerStyle={[s.formInner, { paddingHorizontal: r.formPadX, paddingBottom: insets.bottom + (isTiny ? 8 : 14) }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            bounces={false}
+            scrollEnabled={kbOpen}
           >
             <View style={s.titleRow}>
-              <Text style={s.titleBold}>Create </Text>
-              <Text style={s.titleLight}>account</Text>
+              <Text style={[s.titleBold, { fontSize: r.heading }]}>Create </Text>
+              <Text style={[s.titleLight, { fontSize: r.heading }]}>account</Text>
             </View>
-            <Text style={s.titleSub}>Fill in the details to get started</Text>
+            <Text style={[s.titleSub, { fontSize: r.subText, marginBottom: isTiny ? 4 : 8 }]}>Fill in the details to get started</Text>
 
             {/* First + Last name */}
-            <View style={s.nameRow}>
+            <View style={[s.nameRow, { gap: r.fieldGap }]}>
               <View style={s.nameHalf}>
-                <View style={s.inputRow}>
-                  <View style={s.inputIconWrap}>
-                    <Ionicons name="person-outline" size={18} color={colors.auth.muted} />
+                <Pressable onPress={() => firstNameRef.current?.focus()} style={[s.inputRow, { height: r.inputH, borderRadius: r.inputR }, focusedField === 'firstName' && s.inputFocused]}>
+                  <View style={[s.inputIconWrap, { width: r.iconWrap, height: r.iconWrap, borderRadius: r.iconR }, focusedField === 'firstName' && s.inputIconActive]}>
+                    <Ionicons name="person-outline" size={r.iconSize} color={focusedField === 'firstName' ? colors.auth.primary : colors.auth.muted} />
                   </View>
                   <TextInput
-                    style={s.input}
+                    ref={firstNameRef}
+                    style={[s.input, { fontSize: r.inputFont }]}
                     placeholder="First name"
                     placeholderTextColor={colors.auth.placeholder}
                     autoCapitalize="words"
                     value={firstName}
                     onChangeText={setFirstName}
+                    onFocus={() => setFocusedField('firstName')}
+                    onBlur={() => setFocusedField(null)}
                   />
-                </View>
+                </Pressable>
               </View>
 
               <View style={s.nameHalf}>
-                <View style={s.inputRow}>
-                  <View style={s.inputIconWrap}>
-                    <Ionicons name="person-outline" size={18} color={colors.auth.muted} />
+                <Pressable onPress={() => lastNameRef.current?.focus()} style={[s.inputRow, { height: r.inputH, borderRadius: r.inputR }, focusedField === 'lastName' && s.inputFocused]}>
+                  <View style={[s.inputIconWrap, { width: r.iconWrap, height: r.iconWrap, borderRadius: r.iconR }, focusedField === 'lastName' && s.inputIconActive]}>
+                    <Ionicons name="person-outline" size={r.iconSize} color={focusedField === 'lastName' ? colors.auth.primary : colors.auth.muted} />
                   </View>
                   <TextInput
-                    style={s.input}
+                    ref={lastNameRef}
+                    style={[s.input, { fontSize: r.inputFont }]}
                     placeholder="Last name"
                     placeholderTextColor={colors.auth.placeholder}
                     autoCapitalize="words"
                     value={lastName}
                     onChangeText={setLastName}
+                    onFocus={() => setFocusedField('lastName')}
+                    onBlur={() => setFocusedField(null)}
                   />
-                </View>
+                </Pressable>
               </View>
             </View>
 
             {/* Email */}
-            <View style={s.fieldWrap}>
-              <View style={s.inputRow}>
-                <View style={s.inputIconWrap}>
-                  <Ionicons name="mail-outline" size={18} color={colors.auth.muted} />
+            <View style={[s.fieldWrap, { marginBottom: r.fieldGap }]}>
+              <Pressable onPress={() => emailRef.current?.focus()} style={[s.inputRow, { height: r.inputH, borderRadius: r.inputR }, focusedField === 'email' && s.inputFocused]}>
+                <View style={[s.inputIconWrap, { width: r.iconWrap, height: r.iconWrap, borderRadius: r.iconR }, focusedField === 'email' && s.inputIconActive]}>
+                  <Ionicons name="mail-outline" size={r.iconSize} color={focusedField === 'email' ? colors.auth.primary : colors.auth.muted} />
                 </View>
                 <TextInput
-                  style={s.input}
+                  ref={emailRef}
+                  style={[s.input, { fontSize: r.inputFont }]}
                   placeholder="Email address"
                   placeholderTextColor={colors.auth.placeholder}
                   autoCapitalize="none"
@@ -453,59 +542,67 @@ export default function SignUpScreen() {
                   keyboardType="email-address"
                   value={email}
                   onChangeText={setEmail}
+                  onFocus={() => setFocusedField('email')}
+                  onBlur={() => setFocusedField(null)}
                 />
                 {email.length > 0 && EMAIL_RE.test(email.trim()) && (
                   <View style={s.checkBadge}>
                     <Ionicons name="checkmark" size={14} color={colors.white} />
                   </View>
                 )}
-              </View>
+              </Pressable>
               {email.length > 0 && !EMAIL_RE.test(email.trim()) && (
                 <Text style={s.fieldHint}>Enter a valid email address</Text>
               )}
             </View>
 
             {/* Mobile */}
-            <View style={s.fieldWrap}>
-              <View style={s.inputRow}>
-                <View style={s.inputIconWrap}>
-                  <Ionicons name="call-outline" size={18} color={colors.auth.muted} />
+            <View style={[s.fieldWrap, { marginBottom: r.fieldGap }]}>
+              <Pressable onPress={() => contactRef.current?.focus()} style={[s.inputRow, { height: r.inputH, borderRadius: r.inputR }, focusedField === 'contact' && s.inputFocused]}>
+                <View style={[s.inputIconWrap, { width: r.iconWrap, height: r.iconWrap, borderRadius: r.iconR }, focusedField === 'contact' && s.inputIconActive]}>
+                  <Ionicons name="call-outline" size={r.iconSize} color={focusedField === 'contact' ? colors.auth.primary : colors.auth.muted} />
                 </View>
-                <Text style={{ fontSize: 15, color: colors.auth.heading, marginLeft: 12 }}>09</Text>
+                <Text style={{ fontSize: r.inputFont, color: colors.auth.heading, marginLeft: 12 }}>09</Text>
                 <TextInput
-                  style={[s.input, { paddingLeft: 2 }]}
+                  ref={contactRef}
+                  style={[s.input, { fontSize: r.inputFont, paddingLeft: 2 }]}
                   placeholder="XX XXX XXXX"
                   placeholderTextColor={colors.auth.placeholder}
                   keyboardType="phone-pad"
                   value={contact}
                   onChangeText={(t) => setContact(t.replace(/[^0-9]/g, '').slice(0, 9))}
                   maxLength={9}
+                  onFocus={() => setFocusedField('contact')}
+                  onBlur={() => setFocusedField(null)}
                 />
-              </View>
+              </Pressable>
               {contact.length > 0 && contact.length < 9 && (
                 <Text style={s.fieldHint}>Enter 9 digits after 09</Text>
               )}
             </View>
 
             {/* Password */}
-            <View style={s.fieldWrap}>
-              <View style={s.inputRow}>
-                <View style={s.inputIconWrap}>
-                  <Ionicons name="lock-closed-outline" size={18} color={colors.auth.muted} />
+            <View style={[s.fieldWrap, { marginBottom: r.fieldGap }]}>
+              <Pressable onPress={() => passwordRef.current?.focus()} style={[s.inputRow, { height: r.inputH, borderRadius: r.inputR }, focusedField === 'password' && s.inputFocused]}>
+                <View style={[s.inputIconWrap, { width: r.iconWrap, height: r.iconWrap, borderRadius: r.iconR }, focusedField === 'password' && s.inputIconActive]}>
+                  <Ionicons name="lock-closed-outline" size={r.iconSize} color={focusedField === 'password' ? colors.auth.primary : colors.auth.muted} />
                 </View>
                 <TextInput
-                  style={s.input}
+                  ref={passwordRef}
+                  style={[s.input, { fontSize: r.inputFont }]}
                   placeholder="Password (8–16 chars)"
                   placeholderTextColor={colors.auth.placeholder}
                   secureTextEntry={!showPassword}
                   maxLength={16}
                   value={password}
                   onChangeText={setPassword}
+                  onFocus={() => setFocusedField('password')}
+                  onBlur={() => setFocusedField(null)}
                 />
                 <Pressable onPress={() => setShowPassword(v => !v)} style={s.eyeBtn} hitSlop={8} accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}>
                   <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.auth.muted} />
                 </Pressable>
-              </View>
+              </Pressable>
 
               {password.length > 0 && (
                 <View style={s.strengthRow}>
@@ -520,24 +617,27 @@ export default function SignUpScreen() {
             </View>
 
             {/* Confirm password */}
-            <View style={s.fieldWrap}>
-              <View style={s.inputRow}>
-                <View style={s.inputIconWrap}>
-                  <Ionicons name="lock-closed-outline" size={18} color={colors.auth.muted} />
+            <View style={[s.fieldWrap, { marginBottom: r.fieldGap }]}>
+              <Pressable onPress={() => confirmRef.current?.focus()} style={[s.inputRow, { height: r.inputH, borderRadius: r.inputR }, focusedField === 'confirm' && s.inputFocused]}>
+                <View style={[s.inputIconWrap, { width: r.iconWrap, height: r.iconWrap, borderRadius: r.iconR }, focusedField === 'confirm' && s.inputIconActive]}>
+                  <Ionicons name="lock-closed-outline" size={r.iconSize} color={focusedField === 'confirm' ? colors.auth.primary : colors.auth.muted} />
                 </View>
                 <TextInput
-                  style={s.input}
+                  ref={confirmRef}
+                  style={[s.input, { fontSize: r.inputFont }]}
                   placeholder="Confirm password"
                   placeholderTextColor={colors.auth.placeholder}
                   secureTextEntry={!showConfirm}
                   maxLength={16}
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
+                  onFocus={() => setFocusedField('confirm')}
+                  onBlur={() => setFocusedField(null)}
                 />
                 <Pressable onPress={() => setShowConfirm(v => !v)} style={s.eyeBtn} hitSlop={8} accessibilityLabel={showConfirm ? 'Hide password' : 'Show password'}>
                   <Ionicons name={showConfirm ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.auth.muted} />
                 </Pressable>
-              </View>
+              </Pressable>
               {confirmPassword.length > 0 && confirmPassword !== password && (
                 <Text style={s.fieldHint}>Passwords don't match</Text>
               )}
@@ -559,13 +659,13 @@ export default function SignUpScreen() {
                   colors={isLoading ? colors.gradients.ctaDisabled : colors.gradients.cta}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
-                  style={s.ctaBtn}
+                  style={[s.ctaBtn, { height: r.btnH, borderRadius: r.btnR }]}
                 >
                   {isLoading ? (
                     <ActivityIndicator size="small" color={colors.white} />
                   ) : (
                     <>
-                      <Text style={s.ctaBtnText}>Create Account</Text>
+                      <Text style={[s.ctaBtnText, { fontSize: r.btnFont }]}>Create Account</Text>
                       <View style={s.ctaBtnArrow}>
                         <Ionicons name="arrow-forward" size={16} color={colors.gradients.cta[0]} />
                       </View>
@@ -576,7 +676,7 @@ export default function SignUpScreen() {
             </Animated.View>
 
             {/* Footer */}
-            <Animated.View style={[s.footer, { opacity: footerOpacity }]}>
+            <Animated.View style={[s.footer, { opacity: footerOpacity, marginTop: r.footerMT }]}>
               <Text style={s.footerText}>Already have an account?</Text>
               <Pressable onPress={() => router.back()} hitSlop={8}>
                 <Text style={s.footerLink}> Log In</Text>
@@ -597,7 +697,7 @@ export default function SignUpScreen() {
           <Animated.View style={[otp.sheet, { transform: [{ translateY: otpSlideAnim }] }]}>
             {/* Accent bar */}
             <LinearGradient
-              colors={[colors.auth.primary, '#7C3AED']}
+              colors={[colors.auth.primary, colors.accent[500]]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={otp.accent}
@@ -607,7 +707,7 @@ export default function SignUpScreen() {
             {/* Icon */}
             <View style={otp.iconWrap}>
               <LinearGradient
-                colors={[colors.auth.primary, '#7C3AED']}
+                colors={[colors.auth.primary, colors.accent[500]]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={otp.iconGrad}
@@ -662,7 +762,7 @@ export default function SignUpScreen() {
               ]}
             >
               <LinearGradient
-                colors={[colors.auth.primary, '#7C3AED']}
+                colors={[colors.auth.primary, colors.accent[500]]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={otp.verifyGrad}
@@ -708,35 +808,29 @@ const s = StyleSheet.create({
   flex: { flex: 1 },
 
   hero: {
-    height: HERO_H,
     alignItems: 'center', justifyContent: 'center',
-    paddingBottom: 16, overflow: 'hidden',
+    overflow: 'hidden',
   },
   orb: { position: 'absolute', borderRadius: 999, backgroundColor: colors.overlay.whiteThin },
-  orb1: { width: 200, height: 200, top: -60, right: -50 },
-  orb2: { width: 140, height: 140, bottom: 10, left: -40, backgroundColor: colors.overlay.whiteSubtle },
-  orb3: { width: 80, height: 80, top: 40, backgroundColor: colors.overlay.whiteFaint },
 
-  logoBadge: { alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  logoBadgeSmall: { alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
-  logoBadgeInner: {
-    width: 100, height: 100, borderRadius: 30,
+  logoBadgeBase: { alignItems: 'center', justifyContent: 'center' },
+  logoBadgeInnerBase: {
     backgroundColor: colors.overlay.whiteRegular,
     borderWidth: 1.5, borderColor: colors.overlay.whiteFirm,
     alignItems: 'center', justifyContent: 'center',
   },
-  logoBadgeInnerSmall: {
-    width: 60, height: 60, borderRadius: 18,
-    backgroundColor: colors.overlay.whiteRegular,
-    borderWidth: 1.5, borderColor: colors.overlay.whiteFirm,
-    alignItems: 'center', justifyContent: 'center',
+  logoBadgeRingBase: {
+    position: 'absolute',
+    borderWidth: 1.5, borderColor: colors.overlay.whiteBright,
   },
-  logoBadgeRing: {
-    position: 'absolute', width: 122, height: 122, borderRadius: 61,
-    borderWidth: 1, borderColor: colors.overlay.whiteLight,
+  logoTitleBase: { fontWeight: '900', color: colors.white },
+  logoSubBase: { color: colors.overlay.whiteSub, marginTop: 4, letterSpacing: 1 },
+  heroTitleWrap: { overflow: 'hidden', borderRadius: 4 },
+  heroTitleShimmer: {
+    position: 'absolute', top: 0, bottom: 0, width: 60,
+    backgroundColor: colors.overlay.whiteGlow,
+    transform: [{ skewX: '-20deg' }],
   },
-  logoTitle: { fontSize: 24, fontWeight: '900', color: colors.white, letterSpacing: 5 },
-  logoSub: { fontSize: 12, color: colors.overlay.whiteSub, marginTop: 6, letterSpacing: 1 },
 
   waveWrap: { height: 20, position: 'relative', marginTop: -1 },
   waveShape: {
@@ -747,20 +841,19 @@ const s = StyleSheet.create({
   },
 
   formArea: { flex: 1, backgroundColor: colors.auth.pageBg, marginTop: -2 },
-  formScroll: { paddingHorizontal: 28, paddingTop: 4 },
+  formInner: { flexGrow: 1, paddingTop: 2, justifyContent: 'center' },
 
   titleRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 },
-  titleBold: { fontSize: 26, fontWeight: '800', color: colors.auth.heading },
-  titleLight: { fontSize: 26, fontWeight: '300', color: colors.auth.heading },
-  titleSub: { fontSize: 14, color: colors.auth.muted, marginBottom: 12 },
+  titleBold: { fontWeight: '800', color: colors.auth.heading },
+  titleLight: { fontWeight: '300', color: colors.auth.heading },
+  titleSub: { color: colors.auth.muted },
 
-  nameRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  nameRow: { flexDirection: 'row', marginBottom: 6 },
   nameHalf: { flex: 1 },
 
-  fieldWrap: { marginBottom: 8 },
+  fieldWrap: {},
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
-    height: 56, borderRadius: 16,
     backgroundColor: colors.auth.inputBg,
     borderWidth: 1.5, borderColor: 'transparent',
     paddingHorizontal: 4,
@@ -768,17 +861,17 @@ const s = StyleSheet.create({
   },
   inputFocused: {
     backgroundColor: colors.white,
+    borderColor: colors.auth.primary,
     shadowColor: colors.auth.primary,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.12, shadowRadius: 12, elevation: 0,
+    shadowOpacity: 0.12, shadowRadius: 12, elevation: 4,
   },
   inputIconWrap: {
-    width: 40, height: 40, borderRadius: 12,
     backgroundColor: colors.auth.inputIconBg,
     alignItems: 'center', justifyContent: 'center', marginLeft: 4,
   },
   inputIconActive: { backgroundColor: colors.auth.inputIconActive },
-  input: { flex: 1, fontSize: 15, color: colors.auth.heading, paddingHorizontal: 12, height: '100%' },
+  input: { flex: 1, color: colors.auth.heading, paddingHorizontal: 12, height: '100%' },
   eyeBtn: { paddingHorizontal: 12 },
   checkBadge: {
     width: 22, height: 22, borderRadius: 11,
@@ -796,21 +889,20 @@ const s = StyleSheet.create({
 
   strengthRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    marginTop: 8, paddingHorizontal: 2,
+    marginTop: 4, paddingHorizontal: 2,
   },
   strengthTrack: { flexDirection: 'row', gap: 4, flex: 1 },
   strengthBar: { flex: 1, height: 4, borderRadius: 2 },
   strengthLabel: { fontSize: 11, fontWeight: '700' },
 
   ctaBtn: {
-    height: 52, borderRadius: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 10, marginTop: 6,
+    gap: 10, marginTop: 4,
     shadowColor: colors.auth.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35, shadowRadius: 18, elevation: 10,
   },
-  ctaBtnText: { fontSize: 16, fontWeight: '800', color: colors.white, letterSpacing: 0.5 },
+  ctaBtnText: { fontWeight: '800', color: colors.white, letterSpacing: 0.5 },
   ctaBtnArrow: {
     width: 28, height: 28, borderRadius: 9,
     backgroundColor: colors.overlay.whiteBright,
@@ -850,7 +942,7 @@ const s = StyleSheet.create({
 
   footer: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    marginTop: 20, marginBottom: 12,
+    marginBottom: 12,
   },
   footerText: { fontSize: 14, color: colors.auth.muted },
   footerLink: { fontSize: 14, fontWeight: '800', color: colors.auth.primary },

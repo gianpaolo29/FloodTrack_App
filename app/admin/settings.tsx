@@ -45,6 +45,7 @@ export default function AdminSettings() {
     await Storage.setItem(ADMIN_AUTO_PROCESS_KEY, value ? '1' : '0');
   }
 
+
   return (
     <View style={[$.root, { backgroundColor: bg, paddingTop: insets.top }]}>
       <ScrollView
@@ -157,6 +158,7 @@ export default function AdminSettings() {
               : 'Auto processing is OFF — all reports require manual review'}
           </Text>
         </View>
+
       </ScrollView>
     </View>
   );
@@ -255,4 +257,5 @@ const $ = StyleSheet.create({
     borderWidth: 1,
   },
   statusText: { flex: 1, fontSize: 12, fontWeight: '600', lineHeight: 17 },
+
 });

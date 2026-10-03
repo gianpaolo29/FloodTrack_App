@@ -26,10 +26,10 @@ interface Props {
 }
 
 const FLOOD_DEPTH_EST: Record<Severity, string> = {
-  low:      '~1 ft',
-  moderate: '~2 ft',
-  high:     '~3 ft',
-  critical: '>4 ft',
+  low:      '~1 ft (ankle)',
+  moderate: '~2 ft (knee)',
+  high:     '~3 ft (waist)',
+  critical: '4+ ft (chest)',
 };
 
 const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'moderate', 'low'];

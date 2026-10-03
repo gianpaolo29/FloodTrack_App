@@ -19,6 +19,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useAlertBadge } from '@/context/AlertBadgeContext';
 import { getAlertsWithReadState, markAlertRead, markAllAlertsRead, markUserNotificationRead, markAllUserNotificationsRead, adaptAlert } from '@/services/api';
 import { socketService } from '@/services/socket';
+import { onNotificationReceived } from '@/services/notifications';
 import { getNotificationPrefs } from '@/services/notifications';
 import type { AlertItem } from '@/types';
 import { useRouter } from 'expo-router';
@@ -60,7 +61,7 @@ const KIND_CONFIG: Record<string, { icon: IoniconsName; color: string; label: st
   status_update: { icon: 'arrow-up-circle',    color: colors.severity.low,      label: 'Update',    pillBg: colors.severity.low + '14' },
   advisory:      { icon: 'information-circle', color: colors.brand[500],        label: 'Advisory',  pillBg: colors.brand[500] + '14' },
   welcome:       { icon: 'heart-circle',       color: colors.brand[500],        label: 'Welcome',   pillBg: colors.brand[500] + '14' },
-  new_message:   { icon: 'chatbubble-ellipses',color: '#7C3AED',               label: 'Message',   pillBg: '#7C3AED14' },
+  new_message:   { icon: 'chatbubble-ellipses',color: colors.accent[500],       label: 'Message',   pillBg: colors.accent[500] + '14' },
 };
 
 // ─── HeaderOrb ───────────────────────────────────────────────────────────────
@@ -179,10 +180,10 @@ function AlertDetail({ alert, isDark, screenBg, bottomInset, onBack, onViewRepor
 
       {onViewReport && (
         <Pressable onPress={onViewReport} style={({ pressed }) => [d.ctaWrap, pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] }]}>
-          <LinearGradient colors={['#00D2FF', '#4A6CF7', '#7C3AED']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={d.ctaBtn}>
+          <LinearGradient colors={colors.gradients.cta} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={d.ctaBtn}>
             <Text style={d.ctaText}>View Report</Text>
             <View style={d.ctaArrow}>
-              <Ionicons name="arrow-forward" size={16} color="#4A6CF7" />
+              <Ionicons name="arrow-forward" size={16} color={colors.brand[500]} />
             </View>
           </LinearGradient>
         </Pressable>
@@ -239,14 +240,15 @@ export default function AlertsScreen() {
       if (!isRefresh) setLoading(true);
       setError(null);
       const data = await getAlertsWithReadState(token);
-      setAlerts(data);
-      queueMicrotask(() => setUnreadCount(data.filter(a => !a.read).length));
+      const filtered = data.filter(a => a.kind !== 'new_message');
+      setAlerts(filtered);
+      queueMicrotask(() => setUnreadCount(filtered.filter(a => !a.read).length));
     } catch {
       setError('Could not load alerts.');
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, setUnreadCount]);
 
   // Fetch fresh data and reset detail view every time the tab is focused
   useFocusEffect(
@@ -286,13 +288,17 @@ export default function AlertsScreen() {
 
     const refresh = () => load(true);
 
-    socketService.on('new-alert', handleNew);
-    socketService.on('alert-updated', handleUpdated);
-    socketService.on('new-notification', refresh);
+    const lid1 = socketService.on('new-alert', handleNew);
+    const lid2 = socketService.on('alert-updated', handleUpdated);
+    const lid3 = socketService.on('new-notification', refresh);
+    const lid4 = socketService.on('report-status', refresh);
+    const pushSub = onNotificationReceived(() => refresh());
     return () => {
-      socketService.off('new-alert', handleNew);
-      socketService.off('alert-updated', handleUpdated);
-      socketService.off('new-notification', refresh);
+      socketService.off(lid1);
+      socketService.off(lid2);
+      socketService.off(lid3);
+      socketService.off(lid4);
+      pushSub?.remove();
     };
   }, [load]);
 
@@ -358,16 +364,11 @@ export default function AlertsScreen() {
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
       {/* Header — always visible */}
-      <LinearGradient colors={GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.headerGradient, { paddingTop: insets.top + 10 }]}>
-        <HeaderOrb style={{ width: 180, height: 180, top: -60, right: -50 }} />
-        <HeaderOrb style={{ width: 100, height: 100, top: 30, left: -30, backgroundColor: colors.overlay.whiteSubtle }} />
+      <LinearGradient colors={GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.headerGradient, { paddingTop: insets.top + 16 }]}>
+        <HeaderOrb style={{ width: 180, height: 180, top: -70, right: -50 }} />
+        <HeaderOrb style={{ width: 110, height: 110, bottom: 0, left: -30, backgroundColor: colors.overlay.whiteSubtle }} />
         <View style={styles.headerTop}>
-          <View style={styles.headerLeft}>
-            <View style={styles.headerIconWrap}>
-              <Ionicons name="notifications" size={22} color="rgba(255,255,255,0.92)" />
-            </View>
-            <Text style={styles.headerTitle}>Alerts</Text>
-          </View>
+          <Text style={styles.headerTitle}>Alerts</Text>
           {unreadCount > 0 && (
             <Pressable onPress={handleMarkAllRead} style={({ pressed }) => [styles.markAllPill, pressed && { opacity: 0.8 }]}>
               <Ionicons name="checkmark-done" size={14} color={colors.white} />
@@ -439,7 +440,7 @@ const styles = StyleSheet.create({
   root:     { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 18, padding: 32 },
 
-  headerGradient: { paddingHorizontal: 22, paddingBottom: 14, overflow: 'hidden' },
+  headerGradient: { paddingHorizontal: 22, paddingBottom: 28, overflow: 'hidden' },
   headerTop:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   headerLeft:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerIconWrap: { width: 42, height: 42, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },

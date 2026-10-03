@@ -76,15 +76,70 @@ export function initNotifications() {
     });
 
     if (Platform.OS === 'android') {
-      Notifications.setNotificationChannelAsync('floodtrack', {
-        name: 'FloodTrack Alerts',
+      // Critical alerts — highest priority, persistent, custom vibration
+      Notifications.setNotificationChannelAsync('floodtrack-critical', {
+        name: 'Emergency Alerts',
+        description: 'Critical flood warnings and emergency notifications',
         importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
+        vibrationPattern: [0, 500, 200, 500, 200, 500],
+        lightColor: '#D32F2F',
+        sound: 'default',
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        bypassDnd: true,
+        enableLights: true,
+        enableVibrate: true,
+      });
+
+      // Advisory alerts — high priority
+      Notifications.setNotificationChannelAsync('floodtrack-advisory', {
+        name: 'Advisories',
+        description: 'Weather advisories and flood warnings',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 300, 150, 300],
+        lightColor: '#EA6A0C',
+        sound: 'default',
+        enableLights: true,
+        enableVibrate: true,
+      });
+
+      // General updates — default priority
+      Notifications.setNotificationChannelAsync('floodtrack-updates', {
+        name: 'Updates',
+        description: 'Report status updates and general notifications',
+        importance: Notifications.AndroidImportance.DEFAULT,
+        vibrationPattern: [0, 200, 100, 200],
         lightColor: '#1F6FBF',
         sound: 'default',
+        enableVibrate: true,
       });
+
+      // Messages — default priority
+      Notifications.setNotificationChannelAsync('floodtrack-messages', {
+        name: 'Messages',
+        description: 'Chat messages from responders',
+        importance: Notifications.AndroidImportance.DEFAULT,
+        vibrationPattern: [0, 150, 100, 150],
+        lightColor: '#0FA896',
+        sound: 'default',
+        enableVibrate: true,
+      });
+
+      // Remove old unified channel
+      Notifications.deleteNotificationChannelAsync('floodtrack').catch(() => {});
     }
-    console.log('[Notifications] handler and channel configured');
+
+    // iOS notification categories with action buttons
+    if (Platform.OS === 'ios') {
+      Notifications.setNotificationCategoryAsync('critical_alert', [
+        { identifier: 'view', buttonTitle: 'View Details', options: { opensAppToForeground: true } },
+        { identifier: 'dismiss', buttonTitle: 'Dismiss', options: { isDestructive: true } },
+      ]);
+      Notifications.setNotificationCategoryAsync('report_update', [
+        { identifier: 'view', buttonTitle: 'View Report', options: { opensAppToForeground: true } },
+      ]);
+    }
+
+    console.log('[Notifications] channels and categories configured');
   } catch (e) {
     console.error('[Notifications] initNotifications failed:', e);
   }

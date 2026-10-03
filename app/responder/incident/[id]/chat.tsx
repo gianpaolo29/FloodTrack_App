@@ -5,13 +5,11 @@ import {
   Animated,
   FlatList,
   Keyboard,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
-  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -46,7 +44,7 @@ const QUICK_REPLIES = [
   'Awaiting instructions',
 ];
 
-const HEADER_GRADIENT = ['#1F6FBF', '#124577', '#0B2F52'] as const;
+const HEADER_GRADIENT = colors.gradients.hero;
 
 // ─── TypingDots ───────────────────────────────────────────────────────────────
 function TypingDots() {
@@ -154,93 +152,33 @@ export default function IncidentChatScreen() {
 
   const typingTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingClearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const isNearBottomRef  = useRef(true);
+  const keyboardHeight   = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const onShow = Keyboard.addListener(showEvent, (e) => {
+      Animated.timing(keyboardHeight, {
+        toValue: e.endCoordinates.height,
+        duration: Platform.OS === 'ios' ? 250 : 150,
+        useNativeDriver: false,
+      }).start();
+    });
+    const onHide = Keyboard.addListener(hideEvent, () => {
+      Animated.timing(keyboardHeight, {
+        toValue: 0,
+        duration: Platform.OS === 'ios' ? 200 : 100,
+        useNativeDriver: false,
+      }).start();
+    });
+    return () => { onShow.remove(); onHide.remove(); };
+  }, [keyboardHeight]);
 
   const isChatClosed  = incidentStatus === 'resolved';
   const isChatBlocked = isAssigned === false;
   const screenBg      = isDark ? colors.dark.bg : '#F4F6F9';
-
-  // ── Load incident metadata ──
-  useEffect(() => {
-    if (!token || !user) return;
-    getIncidentDetail(id, token)
-      .then(detail => {
-        setIncidentStatus(detail.responderStatus);
-        setIncidentTitle(detail.title);
-        setIncidentRef(detail.reference);
-        const members = detail.memberStatuses ?? [];
-        const onAssignedTeam = !!detail.teamId && detail.teamId === user.teamId;
-        setIsAssigned(
-          members.length === 0 ||
-          members.some(m => m.userId === user.id) ||
-          onAssignedTeam ||
-          user.isLeader === true,
-        );
-      })
-      .catch(() => {});
-  }, [id, token, user]);
-
-  // ── Socket setup ──
-  useEffect(() => {
-    if (!token || !user) return;
-    socketService.connect(token);
-    socketService.joinReport(id);
-
-    const handleStatusChange = (data: { reportId: string }) => {
-      if (data.reportId === id && token) {
-        getIncidentDetail(id, token)
-          .then(detail => setIncidentStatus(detail.responderStatus))
-          .catch(() => {});
-      }
-    };
-
-    const handleNewMessage = (raw: RawSocketMessage) => {
-      const msg = adaptSocketMessage(raw, id);
-      if (msg.userId === user.id) return;
-      setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
-      markIncidentMessagesRead(id, token).catch(() => {});
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    };
-
-    const handleTypingUpdate = (data: TypingUser) => {
-      if (String(data.id) === user.id) return;
-      const key = String(data.id);
-      const old = typingClearTimers.current.get(key);
-      if (old) clearTimeout(old);
-      setTypingUsers(prev => [...prev.filter(u => String(u.id) !== key), data]);
-      const timer = setTimeout(() => {
-        setTypingUsers(prev => prev.filter(u => String(u.id) !== key));
-        typingClearTimers.current.delete(key);
-      }, 4000);
-      typingClearTimers.current.set(key, timer);
-    };
-
-    const handleMessagesRead = (data: { reportId: string }) => {
-      if (data.reportId === id) loadMessages(true);
-    };
-
-    socketService.on<RawSocketMessage>('new-message', handleNewMessage);
-    socketService.on<TypingUser>('typing-update', handleTypingUpdate);
-    socketService.on<{ reportId: string }>('report-status', handleStatusChange);
-    socketService.on<{ reportId: string }>('messages-read', handleMessagesRead);
-
-    return () => {
-      socketService.leaveReport(id);
-      socketService.off<RawSocketMessage>('new-message', handleNewMessage);
-      socketService.off<TypingUser>('typing-update', handleTypingUpdate);
-      socketService.off<{ reportId: string }>('report-status', handleStatusChange);
-      socketService.off<{ reportId: string }>('messages-read', handleMessagesRead);
-      typingClearTimers.current.forEach(t => clearTimeout(t));
-      typingClearTimers.current.clear();
-    };
-  }, [id, token, user]);
-
-  // ── Typing emit ──
-  function handleTextChange(value: string) {
-    setText(value);
-    if (!value.trim() || typingTimerRef.current) return;
-    socketService.emitTyping(id);
-    typingTimerRef.current = setTimeout(() => { typingTimerRef.current = null; }, 2000);
-  }
 
   // ── Load messages ──
   const loadMessages = useCallback(async (silent = false) => {
@@ -267,6 +205,99 @@ export default function IncidentChatScreen() {
 
   useEffect(() => { loadMessages(); }, [loadMessages]);
 
+  // ── Load incident metadata ──
+  useEffect(() => {
+    if (!token || !user) return;
+    getIncidentDetail(id, token)
+      .then(detail => {
+        setIncidentStatus(detail.responderStatus);
+        setIncidentTitle(detail.title);
+        setIncidentRef(detail.reference);
+        const members = detail.memberStatuses ?? [];
+        const onAssignedTeam = !!detail.teamId && detail.teamId === user.teamId;
+        setIsAssigned(
+          members.length === 0 ||
+          members.some(m => m.userId === user.id) ||
+          onAssignedTeam ||
+          user.isLeader === true,
+        );
+      })
+      .catch(() => {});
+  }, [id, token, user]);
+
+  // ── Poll fallback: refresh messages every 5s in case socket misses events ──
+  useEffect(() => {
+    if (!token) return;
+    const iv = setInterval(() => { loadMessages(true); }, 5000);
+    return () => clearInterval(iv);
+  }, [token, loadMessages]);
+
+  // ── Socket setup ──
+  useEffect(() => {
+    if (!token || !user) return;
+    socketService.connect(token);
+    socketService.reconnect();
+    // Delay joinReport slightly to ensure socket connection is established
+    const joinTimer = setTimeout(() => socketService.joinReport(id), 500);
+
+    const userId = String(user.id);
+
+    const id1 = socketService.on<{ reportId: string | number }>('report-status', (data) => {
+      if (String(data.reportId) === String(id) && token) {
+        getIncidentDetail(id, token)
+          .then(detail => setIncidentStatus(detail.responderStatus))
+          .catch(() => {});
+      }
+    });
+
+    const id2 = socketService.on<RawSocketMessage>('new-message', (raw) => {
+      if (String(raw.report_id) !== String(id)) return;
+      const msg = adaptSocketMessage(raw, id);
+      if (msg.userId === userId) return;
+      setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
+      markIncidentMessagesRead(id, token).catch(() => {});
+      if (isNearBottomRef.current) {
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150);
+      }
+    });
+
+    const id3 = socketService.on<TypingUser>('typing-update', (data) => {
+      if (String(data.id) === userId) return;
+      const key = String(data.id);
+      const old = typingClearTimers.current.get(key);
+      if (old) clearTimeout(old);
+      setTypingUsers(prev => [...prev.filter(u => String(u.id) !== key), data]);
+      const timer = setTimeout(() => {
+        setTypingUsers(prev => prev.filter(u => String(u.id) !== key));
+        typingClearTimers.current.delete(key);
+      }, 4000);
+      typingClearTimers.current.set(key, timer);
+    });
+
+    const id4 = socketService.on<{ reportId: string | number }>('messages-read', (data) => {
+      if (String(data.reportId) === String(id)) loadMessages(true);
+    });
+
+    return () => {
+      clearTimeout(joinTimer);
+      socketService.leaveReport(id);
+      socketService.off(id1);
+      socketService.off(id2);
+      socketService.off(id3);
+      socketService.off(id4);
+      typingClearTimers.current.forEach(t => clearTimeout(t));
+      typingClearTimers.current.clear();
+    };
+  }, [id, token, user, loadMessages]);
+
+  // ── Typing emit ──
+  function handleTextChange(value: string) {
+    setText(value);
+    if (!value.trim() || typingTimerRef.current) return;
+    socketService.emitTyping(id);
+    typingTimerRef.current = setTimeout(() => { typingTimerRef.current = null; }, 2000);
+  }
+
   // ── Send ──
   async function handleSend(body?: string, quickReply = false) {
     const msg = body ?? text.trim();
@@ -275,6 +306,7 @@ export default function IncidentChatScreen() {
     setText('');
     setShowQuickReplies(false);
     setPendingMessages(prev => [...prev, { id: tempId, body: msg, isQuickReply: quickReply, status: 'sending' }]);
+    isNearBottomRef.current = true;
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     try {
       await sendIncidentMessage(id, msg, quickReply, token!);
@@ -323,11 +355,8 @@ export default function IncidentChatScreen() {
     ?.id ?? null;
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-    <KeyboardAvoidingView
-      style={[s.root, { backgroundColor: screenBg }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+    <Animated.View
+      style={[s.root, { backgroundColor: screenBg, paddingBottom: keyboardHeight }]}
     >
 
       {/* ── Gradient Header ── */}
@@ -451,7 +480,23 @@ export default function IncidentChatScreen() {
           data={allMessages}
           keyExtractor={m => m.id}
           contentContainerStyle={[s.messageList, { paddingBottom: 8 }]}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          keyboardDismissMode="interactive"
+          onContentSizeChange={() => {
+            if (isNearBottomRef.current) {
+              setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+            }
+          }}
+          onLayout={() => {
+            if (isNearBottomRef.current) {
+              setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+            }
+          }}
+          onScroll={(e) => {
+            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+            const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+            isNearBottomRef.current = distanceFromBottom < 150;
+          }}
+          scrollEventThrottle={100}
           ListEmptyComponent={
             <View style={s.emptyState}>
               <View style={[s.emptyIconBg, isDark && { backgroundColor: colors.dark.card }]}>
@@ -637,8 +682,7 @@ export default function IncidentChatScreen() {
           </View>
         </View>
       )}
-    </KeyboardAvoidingView>
-    </TouchableWithoutFeedback>
+    </Animated.View>
   );
 }
 

@@ -81,6 +81,7 @@ export interface Report {
   title: string;
   type: string;
   severity: Severity;
+  depthFt: number | null;
   status: ReportStatus;
   address: string;
   latitude: number;
@@ -154,6 +155,7 @@ export interface ReportSubmission {
   address: string;
   hazardType: string;
   severity: Severity;
+  depthFt: number;
   description: string;
   photos?: string[];
 }
@@ -176,6 +178,7 @@ export interface Incident {
   title: string;
   type: string;
   severity: Severity;
+  depthFt: number | null;
   reportStatus: ReportStatus;
   responderStatus: ResponderStatus;
   address: string;
@@ -308,7 +311,6 @@ export interface Hazard {
   id: string;
   category: HazardCategoryType;
   type: string;
-  severity: Severity;
   title: string;
   description: string;
   latitude: number;
@@ -322,7 +324,6 @@ export interface Hazard {
 export interface HazardPayload {
   category: HazardCategoryType;
   type: string;
-  severity: Severity;
   title: string;
   description: string;
   latitude: number;

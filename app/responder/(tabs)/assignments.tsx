@@ -13,6 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { colors } from '@/theme/colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -21,6 +22,7 @@ import { getAssignedIncidents, submitMemberStatus, getMyTeam } from '@/services/
 import { useETA } from '@/hooks/use-eta';
 import { cacheIncidents, getCachedIncidents } from '@/services/offline';
 import { socketService } from '@/services/socket';
+import { onNotificationReceived } from '@/services/notifications';
 import type { Incident, MemberStatus, ResponderStatus, Severity, Team } from '@/types';
 
 /* ─── Constants ─── */
@@ -90,23 +92,22 @@ function IncidentCard({
   updatingId: string | null;
 }) {
   const sevColor = SEV_COLORS[incident.severity];
+  const statusColor = STATUS_COLORS[incident.responderStatus];
   const isUpdating = updatingId === incident.id;
 
-  // ETA for this card
   const { eta, distanceKm } = useETA(
     incident.latitude,
     incident.longitude,
     incident.responderStatus !== 'resolved',
   );
 
-  // Next action
   const next =
     incident.responderStatus === 'pending'
-      ? { status: 'en_route' as ResponderStatus, label: "Start — I'm en route", icon: 'navigate' as keyof typeof Ionicons.glyphMap, color: colors.brand[500] }
+      ? { status: 'en_route' as ResponderStatus, label: 'Navigate', icon: 'navigate' as keyof typeof Ionicons.glyphMap, color: colors.brand[500] }
       : incident.responderStatus === 'en_route'
-        ? { status: 'on_scene' as ResponderStatus, label: 'Arrived — mark on scene', icon: 'location' as keyof typeof Ionicons.glyphMap, color: '#10B981' }
+        ? { status: 'on_scene' as ResponderStatus, label: 'Arrived', icon: 'location' as keyof typeof Ionicons.glyphMap, color: '#10B981' }
         : incident.responderStatus === 'on_scene'
-          ? { status: 'resolved' as ResponderStatus, label: 'Mark resolved', icon: 'shield-checkmark' as keyof typeof Ionicons.glyphMap, color: '#10B981' }
+          ? { status: 'resolved' as ResponderStatus, label: 'Resolve', icon: 'shield-checkmark' as keyof typeof Ionicons.glyphMap, color: '#10B981' }
           : null;
 
   return (
@@ -115,65 +116,80 @@ function IncidentCard({
       style={({ pressed }) => [
         $.card,
         { backgroundColor: cardBg, borderColor: cardBorder },
-        pressed && { opacity: 0.95 },
+        pressed && { opacity: 0.88, transform: [{ scale: 0.985 }] },
       ]}
     >
-      {/* Severity badge + ref */}
-      <View style={$.cardHeaderRow}>
-        <View style={[$.sevBadge, { backgroundColor: sevColor + '22' }]}>
-          <Ionicons name="bar-chart" size={9} color={sevColor} />
-          <Text style={[$.sevBadgeText, { color: sevColor }]}>{SEV_LABELS[incident.severity]}</Text>
+      {/* Severity left bar */}
+      <View style={[$.severityBar, { backgroundColor: sevColor }]} />
+
+      <View style={$.cardInner}>
+        {/* Top row: title + chevron */}
+        <View style={$.cardTopRow}>
+          <Text style={[$.cardTitle, { color: textPrimary }]} numberOfLines={1}>
+            {incident.title}
+          </Text>
+          <View style={[$.chevronWrap, isDark && { backgroundColor: colors.dark.border }]}>
+            <Ionicons name="chevron-forward" size={13} color={isDark ? colors.slate[400] : colors.slate[500]} />
+          </View>
         </View>
-        <Text style={[$.refText, { color: textSecondary }]}>#{incident.reference}</Text>
-      </View>
 
-      {/* Title */}
-      <Text style={[$.cardTitle, { color: textPrimary }]} numberOfLines={2}>
-        {incident.title}
-      </Text>
+        {/* Location */}
+        <View style={$.metaItem}>
+          <Ionicons name="location-outline" size={12} color={colors.slate[400]} />
+          <Text style={[$.metaText, { color: isDark ? colors.slate[400] : colors.slate[500] }]} numberOfLines={1}>
+            {incident.address}
+          </Text>
+        </View>
 
-      {/* Location */}
-      <View style={$.locRow}>
-        <Ionicons name="location" size={12} color={textSecondary} />
-        <Text style={[$.locText, { color: textSecondary }]} numberOfLines={1}>
-          {incident.address}
-        </Text>
-      </View>
-
-      {/* Status line: status · time · distance · ETA */}
-      <View style={$.statusLine}>
-        <View style={[$.statusDot, { backgroundColor: STATUS_COLORS[incident.responderStatus] }]} />
-        <Text style={[$.statusLineText, { color: textSecondary }]}>
-          {STATUS_LABELS[incident.responderStatus]}
-          {' · Assigned '}
-          {incident.reportedAt}
-          {distanceKm !== null ? ` · ${distanceKm} km` : ''}
-          {eta ? ` · ${eta}` : ''}
-        </Text>
-      </View>
-
-      {/* Action button */}
-      {next && (incident.responderStatus !== 'resolved') && (
-        <Pressable
-          onPress={() => !isUpdating && onAction(incident.id, next.status)}
-          disabled={isUpdating}
-          style={({ pressed }) => [
-            $.cardActionBtn,
-            { backgroundColor: next.color },
-            pressed && { opacity: 0.88 },
-            isUpdating && { opacity: 0.6 },
-          ]}
-        >
-          {isUpdating ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <>
-              <Ionicons name={next.icon} size={14} color="#fff" />
-              <Text style={$.cardActionText}>{next.label}</Text>
-            </>
+        {/* Chips: severity + status + ETA */}
+        <View style={$.cardChips}>
+          <View style={[$.sevChip, { backgroundColor: sevColor + '18' }]}>
+            <View style={[$.sevDot, { backgroundColor: sevColor }]} />
+            <Text style={[$.sevChipText, { color: sevColor }]}>{SEV_LABELS[incident.severity]}</Text>
+          </View>
+          <View style={[$.statusChip, { backgroundColor: statusColor + '18' }]}>
+            <View style={[$.sevDot, { backgroundColor: statusColor }]} />
+            <Text style={[$.sevChipText, { color: statusColor }]}>{STATUS_LABELS[incident.responderStatus]}</Text>
+          </View>
+          {eta && (
+            <View style={[$.etaChip, { backgroundColor: isDark ? colors.dark.elevated : colors.slate[100] }]}>
+              <Ionicons name="time-outline" size={10} color={textSecondary} />
+              <Text style={[$.sevChipText, { color: textSecondary }]}>{eta}</Text>
+            </View>
           )}
-        </Pressable>
-      )}
+        </View>
+
+        {/* Footer: ref + time + action */}
+        <View style={[$.cardFooter, isDark && { borderTopColor: colors.dark.border }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={[$.cardRef, { color: isDark ? colors.slate[500] : colors.slate[400] }]}>
+              #{incident.reference} · {incident.reportedAt}
+              {distanceKm !== null ? ` · ${distanceKm} km` : ''}
+            </Text>
+          </View>
+          {next && incident.responderStatus !== 'resolved' && (
+            <Pressable
+              onPress={() => !isUpdating && onAction(incident.id, next.status)}
+              disabled={isUpdating}
+              style={({ pressed }) => [
+                $.cardActionBtn,
+                { backgroundColor: next.color },
+                pressed && { opacity: 0.88 },
+                isUpdating && { opacity: 0.6 },
+              ]}
+            >
+              {isUpdating ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name={next.icon} size={12} color="#fff" />
+                  <Text style={$.cardActionText}>{next.label}</Text>
+                </>
+              )}
+            </Pressable>
+          )}
+        </View>
+      </View>
     </Pressable>
   );
 }
@@ -194,9 +210,9 @@ export default function AssignmentsTab() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   /* Theme */
-  const bg = isDark ? colors.dark.bg : '#F8FAFB';
+  const bg = isDark ? colors.dark.bg : '#F2F4F7';
   const cardBg = isDark ? colors.dark.card : colors.white;
-  const cardBorder = isDark ? colors.dark.border : 'rgba(0,0,0,0.06)';
+  const cardBorder = isDark ? colors.dark.border : 'rgba(0,0,0,0.05)';
   const textPrimary = isDark ? colors.dark.text : colors.slate[900];
   const textSecondary = isDark ? colors.dark.subtext : colors.slate[500];
 
@@ -238,11 +254,19 @@ export default function AssignmentsTab() {
 
   useEffect(() => {
     const onNew = () => load(true);
-    socketService.on('new-notification', onNew);
-    socketService.on('new-assignment', onNew);
+    const lid1 = socketService.on('new-notification', onNew);
+    const lid2 = socketService.on('new-assignment', onNew);
+    const lid3 = socketService.on('report-status', onNew);
+    const lid4 = socketService.on('new-alert', onNew);
+    const lid5 = socketService.on('member-status-updated', onNew);
+    const pushSub = onNotificationReceived(() => onNew());
     return () => {
-      socketService.off('new-notification', onNew);
-      socketService.off('new-assignment', onNew);
+      socketService.off(lid1);
+      socketService.off(lid2);
+      socketService.off(lid3);
+      socketService.off(lid4);
+      socketService.off(lid5);
+      pushSub?.remove();
     };
   }, [load]);
 
@@ -312,15 +336,19 @@ export default function AssignmentsTab() {
     <View style={[$.root, { backgroundColor: bg }]}>
 
       {/* ── Header ── */}
-      <View style={[$.header, { paddingTop: insets.top + 10 }]}>
-        <View style={$.headerTopRow}>
-          <View>
-            <Text style={[$.headerTitle, { color: textPrimary }]}>Assigned</Text>
-            <Text style={[$.headerSub, { color: textSecondary }]}>
-              {pendingCount} pending{team ? ` · ${team.name}` : ''}
-            </Text>
-          </View>
-        </View>
+      <LinearGradient
+        colors={colors.gradients.hero}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[$.headerGradient, { paddingTop: insets.top + 16 }]}
+      >
+        <View style={[$.orb, { width: 180, height: 180, top: -70, right: -50 }]} />
+        <View style={[$.orb, { width: 110, height: 110, bottom: 0, left: -30, backgroundColor: colors.overlay.whiteSubtle }]} />
+        <Text style={$.headerTitle}>Assigned</Text>
+      </LinearGradient>
+      <View style={[$.waveWrap, { backgroundColor: bg }]}>
+        <LinearGradient colors={colors.gradients.wave} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFillObject} />
+        <View style={[$.waveShape, { backgroundColor: bg }]} />
       </View>
 
       {/* ── Filter tabs ── */}
@@ -436,24 +464,25 @@ const $ = StyleSheet.create({
   root: { flex: 1 },
 
   /* Header */
-  header: { paddingHorizontal: H_PAD, paddingBottom: 10 },
-  headerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  headerTitle: { fontSize: 28, fontWeight: '800', letterSpacing: -0.5 },
-  headerSub: { fontSize: 13, fontWeight: '500', marginTop: 2 },
+  headerGradient: { paddingHorizontal: 22, paddingBottom: 28, overflow: 'hidden' },
+  orb: { position: 'absolute', borderRadius: 999, backgroundColor: colors.overlay.whiteThin },
+  waveWrap: { height: 16, position: 'relative', marginTop: -1 },
+  waveShape: { position: 'absolute', bottom: 0, left: -12, right: -12, height: 20, borderTopLeftRadius: 18, borderTopRightRadius: 18 },
+  headerTitle: { fontSize: 26, fontWeight: '800', color: colors.white, letterSpacing: -0.3 },
 
-  /* Tabs */
-  tabRow: { paddingHorizontal: H_PAD, gap: 8, paddingBottom: 10 },
+  /* Tabs — matches resident */
+  tabRow: { paddingHorizontal: H_PAD, gap: 6, paddingBottom: 10 },
   tab: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 14, paddingVertical: 8,
-    borderRadius: 12, borderWidth: 1, borderColor: 'transparent',
+    paddingHorizontal: 14, paddingVertical: 9,
+    borderRadius: 22, borderWidth: 1, borderColor: 'transparent',
   },
-  tabText: { fontSize: 13, fontWeight: '700' },
+  tabText: { fontSize: 12, fontWeight: '700' },
   tabCount: {
-    minWidth: 20, height: 20, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5,
+    minWidth: 18, height: 18, borderRadius: 9,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
   },
-  tabCountText: { fontSize: 10, fontWeight: '800' },
+  tabCountText: { fontSize: 9, fontWeight: '800' },
 
   /* Banner */
   banner: {
@@ -466,28 +495,49 @@ const $ = StyleSheet.create({
 
   /* Card */
   card: {
-    borderRadius: 16, borderWidth: 1, padding: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    borderRadius: 18, overflow: 'hidden', borderWidth: 1,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.06, shadowRadius: 12, elevation: 3,
   },
-  cardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  sevBadge: {
+  severityBar: {
+    position: 'absolute', left: 0, top: 14, bottom: 14, width: 4,
+    borderTopRightRadius: 4, borderBottomRightRadius: 4,
+  },
+  cardInner: { paddingLeft: 18, paddingRight: 16, paddingVertical: 16 },
+  cardTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  chevronWrap: {
+    width: 26, height: 26, borderRadius: 9,
+    backgroundColor: colors.slate[100],
+    alignItems: 'center', justifyContent: 'center', marginLeft: 8,
+  },
+  cardTitle: { fontSize: 15, fontWeight: '800', flex: 1, letterSpacing: -0.2 },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 10 },
+  metaText: { fontSize: 12, fontWeight: '500', flex: 1 },
+  cardChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  sevChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8,
+  },
+  statusChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8,
+  },
+  etaChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
   },
-  sevBadgeText: { fontSize: 11, fontWeight: '700' },
-  refText: { fontSize: 12, fontWeight: '600' },
-  cardTitle: { fontSize: 16, fontWeight: '800', marginBottom: 6, letterSpacing: -0.2 },
-  locRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
-  locText: { fontSize: 12, fontWeight: '500', flex: 1 },
-  statusLine: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14 },
-  statusDot: { width: 7, height: 7, borderRadius: 4 },
-  statusLineText: { fontSize: 12, fontWeight: '500' },
-  cardActionBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 13, borderRadius: 12,
+  sevDot: { width: 5, height: 5, borderRadius: 3 },
+  sevChipText: { fontSize: 10, fontWeight: '700' },
+  cardFooter: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.slate[100],
   },
-  cardActionText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  cardRef: { fontSize: 11, fontWeight: '500' },
+  cardActionBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+  },
+  cardActionText: { fontSize: 11, fontWeight: '800', color: '#fff' },
 
   /* Empty */
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },

@@ -159,10 +159,10 @@ function LocationBanner({
 
 
 const DEPTH_LEVELS = [
-  { key: 'ankle', label: 'Ankle-deep',    cm: 30,  severity: 'low'      as Severity, desc: '~ 1 ft — passable with caution' },
-  { key: 'knee',  label: 'Knee-deep',     cm: 60,  severity: 'moderate' as Severity, desc: '~ 1.5–2 ft — difficult for vehicles' },
-  { key: 'waist', label: 'Waist-deep',    cm: 100, severity: 'high'     as Severity, desc: '~ 3 ft — unsafe for pedestrians' },
-  { key: 'chest', label: 'Chest & above', cm: 150, severity: 'critical' as Severity, desc: '> 4 ft — life-threatening' },
+  { key: 'ankle', label: 'Ankle-deep',    cm: 30,  severity: 'low'      as Severity, desc: '~ 1 ft — can still walk through' },
+  { key: 'knee',  label: 'Knee-deep',     cm: 60,  severity: 'moderate' as Severity, desc: '~ 2 ft — cars may stall' },
+  { key: 'waist', label: 'Waist-deep',    cm: 100, severity: 'high'     as Severity, desc: '~ 3 ft — too deep to walk safely' },
+  { key: 'chest', label: 'Chest & above', cm: 150, severity: 'critical' as Severity, desc: '4+ ft — extremely dangerous' },
 ] as const;
 
 type DepthKey = typeof DEPTH_LEVELS[number]['key'];
@@ -184,7 +184,7 @@ function FloodDepthPicker({
   screenW,
 }: {
   selected: DepthKey | null;
-  onSelect: (key: DepthKey, severity: Severity) => void;
+  onSelect: (key: DepthKey, severity: Severity, ft: number) => void;
   isDark: boolean;
   pickerH: number;
   screenW: number;
@@ -215,18 +215,23 @@ function FloodDepthPicker({
     return 3;
   }
 
+  function fracToFt(frac: number): number {
+    const cm = interpolate(frac, [0, 1], [0, 161]);
+    return Math.round(cm / 30.48 * 10) / 10;
+  }
+
   function onPickFromFrac(frac: number) {
     const idx = levelFromFrac(frac);
     const l = DEPTH_LEVELS[idx];
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onSelect(l.key, l.severity);
+    onSelect(l.key, l.severity, fracToFt(frac));
   }
 
   function onTapLevel(idx: number) {
     waterFrac.value = withSpring(SNAPS[idx], { damping: 20, stiffness: 200 });
     const l = DEPTH_LEVELS[idx];
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onSelect(l.key, l.severity);
+    onSelect(l.key, l.severity, fracToFt(SNAPS[idx]));
   }
 
   const pan = Gesture.Pan()
@@ -285,16 +290,16 @@ function FloodDepthPicker({
 
   const textColor  = isDark ? colors.white : colors.slate[900];
   const subColor   = isDark ? colors.slate[400] : colors.slate[500];
-  const bg         = isDark ? '#080F1A' : '#E8F0FB';
-  const border     = isDark ? 'rgba(80,140,220,0.18)' : 'rgba(30,100,180,0.15)';
-  const skinColor  = isDark ? '#A0B8CC' : '#D4A574';
-  const skinDark   = isDark ? '#7A96AB' : '#B8895C';
+  const bg         = isDark ? '#0C1522' : '#EAF2FB';
+  const border     = isDark ? 'rgba(80,140,220,0.20)' : 'rgba(30,100,180,0.12)';
+  const skinColor  = isDark ? '#A8C0D4' : '#D4A574';
+  const skinDark   = isDark ? '#8AA4B8' : '#B8895C';
   const hairColor  = isDark ? '#2C3A4C' : '#2C1810';
-  const shirtColor = isDark ? '#3B6B9E' : '#4A8EC9';
-  const shirtDark  = isDark ? '#2E5580' : '#3A7AB5';
-  const pantsColor = isDark ? '#2A3A50' : '#3D5A80';
-  const groundDark = isDark ? '#0E1A28' : '#C4D4E4';
-  const groundMid  = isDark ? '#12202F' : '#B8CAD8';
+  const shirtColor = isDark ? '#3D72A8' : '#4A90CC';
+  const shirtDark  = isDark ? '#305C8A' : '#3C7EB8';
+  const pantsColor = isDark ? '#2C3E55' : '#3D5A80';
+  const groundDark = isDark ? '#0E1A28' : '#C8D6E6';
+  const groundMid  = isDark ? '#142434' : '#B8CAD8';
 
   const glowPulse = useSharedValue(0);
   useEffect(() => {
@@ -331,9 +336,9 @@ function FloodDepthPicker({
         }
       }}
     >
-      <Text style={[fdp.title, { color: textColor }, screenW < 360 && { fontSize: 19 }]}>How deep is the flood?</Text>
+      <Text style={[fdp.title, { color: textColor }, screenW < 360 && { fontSize: 19 }]}>How deep is the water?</Text>
       <Text style={[fdp.subtitle, { color: subColor }, screenW < 360 && { fontSize: 13 }]}>
-        Drag the water level or tap a depth level.
+        Drag the water line or pick a level on the right.
       </Text>
 
       <GestureHandlerRootView style={{ flex: 0 }}>
@@ -507,20 +512,20 @@ function DepthFtText({ depthFt }: { depthFt: SharedValue<number> }) {
 const s = (v: number) => Math.round(v * FIGURE_SCALE);
 
 const fdp = StyleSheet.create({
-  stepBody:  { padding: 24, paddingTop: 14, gap: 14 },
-  title:     { fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
-  subtitle:  { fontSize: 14, lineHeight: 20, letterSpacing: 0.1, marginBottom: 2 },
+  stepBody:  { padding: 24, paddingTop: 14, gap: 10 },
+  title:     { fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
+  subtitle:  { fontSize: 13, lineHeight: 19, letterSpacing: 0.1, marginBottom: 4, opacity: 0.7 },
 
   card: {
     flexDirection: 'row',
-    borderRadius: 24,
-    borderWidth: 1,
+    borderRadius: 28,
+    borderWidth: 1.5,
     overflow: 'hidden',
-    shadowColor: '#1A3A5C',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 10,
   },
 
   skyTop: {
@@ -529,25 +534,25 @@ const fdp = StyleSheet.create({
 
   ground: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    height: '12%', zIndex: 0,
+    height: '10%', zIndex: 0,
   },
   groundTopStripe: {
     position: 'absolute', top: 0, left: 0, right: 0,
-    height: 3, opacity: 0.5,
+    height: 2, opacity: 0.3,
   },
   groundGrass: {
     position: 'absolute', top: 0, left: 0, right: 0,
-    height: 2, opacity: 0.4,
+    height: 1.5, opacity: 0.3,
   },
 
-  scaleCol: { width: s(52), position: 'relative', zIndex: 2 },
+  scaleCol: { width: s(56), position: 'relative', zIndex: 2 },
   tick: {
     position: 'absolute', left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingLeft: 6,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingLeft: 8,
   },
-  tickLine: { width: 14, height: 1.5, borderRadius: 1 },
-  tickLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.2 },
+  tickLine: { width: 16, height: 1.5, borderRadius: 1 },
+  tickLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 0.3, opacity: 0.7 },
 
   centerCol: { flex: 1, position: 'relative', overflow: 'hidden', zIndex: 1 },
 
@@ -556,37 +561,37 @@ const fdp = StyleSheet.create({
     overflow: 'hidden', zIndex: 1,
   },
   waves: {
-    flexDirection: 'row', position: 'absolute', top: -5, left: -6, right: -6,
+    flexDirection: 'row', position: 'absolute', top: -6, left: -8, right: -8,
   },
-  wave: { width: 24, height: 10, borderRadius: 12, marginLeft: -3 },
+  wave: { width: 26, height: 12, borderRadius: 13, marginLeft: -4 },
 
   human: {
     position: 'absolute',
-    bottom: s(10),
+    bottom: s(8),
     alignSelf: 'center',
     left: 0, right: 0,
     alignItems: 'center',
     zIndex: 2,
   },
   hair: {
-    width: s(34), height: s(18), borderTopLeftRadius: s(17), borderTopRightRadius: s(17),
-    marginBottom: s(-4), zIndex: 3,
+    width: s(38), height: s(22), borderTopLeftRadius: s(19), borderTopRightRadius: s(19),
+    marginBottom: s(-8), zIndex: 3,
   },
   head: {
-    width: s(40), height: s(40), borderRadius: s(20),
+    width: s(44), height: s(44), borderRadius: s(22),
     zIndex: 2, alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08, shadowRadius: 2, elevation: 1,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12, shadowRadius: 4, elevation: 2,
   },
   faceRow: {
-    flexDirection: 'row', gap: s(12), marginTop: s(2),
+    flexDirection: 'row', gap: s(10), marginTop: s(1),
   },
-  eye: { width: s(4), height: s(4), borderRadius: s(2) },
-  mouth: { width: s(8), height: s(3), borderRadius: s(1.5), marginTop: s(4) },
-  neck: { width: s(10), height: s(8), zIndex: 1, marginTop: s(-1) },
-  shoulderWrap: { zIndex: 1, marginTop: s(-2) },
+  eye: { width: s(4), height: s(5), borderRadius: s(2) },
+  mouth: { width: s(8), height: s(3), borderRadius: s(1.5), marginTop: s(4), opacity: 0.5 },
+  neck: { width: s(16), height: s(10), zIndex: 1, marginTop: s(-4) },
+  shoulderWrap: { zIndex: 1, marginTop: s(-6) },
   shoulder: {
-    width: s(62), height: s(16), borderTopLeftRadius: s(12), borderTopRightRadius: s(12),
+    width: s(68), height: s(20), borderTopLeftRadius: s(16), borderTopRightRadius: s(16),
     alignItems: 'center', overflow: 'hidden',
   },
   collar: {
@@ -598,108 +603,109 @@ const fdp = StyleSheet.create({
   },
   torsoWrap: {
     flexDirection: 'row', alignItems: 'flex-start',
-    marginTop: s(-2), zIndex: 1,
+    marginTop: s(-4), zIndex: 1,
   },
   torso: {
-    width: s(48), height: s(96), borderRadius: s(8),
+    width: s(52), height: s(85), borderRadius: s(6),
+    borderBottomLeftRadius: s(2), borderBottomRightRadius: s(2),
     overflow: 'hidden',
   },
   shirtLine: {
-    position: 'absolute', top: '38%', left: 0, right: 0,
-    height: 1, opacity: 0.2,
+    position: 'absolute', top: '40%', left: 0, right: 0,
+    height: 1, opacity: 0.1,
   },
   beltLine: {
-    position: 'absolute', bottom: '8%', left: '10%', right: '10%',
-    height: 2, borderRadius: 1, opacity: 0.25,
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    height: s(4), opacity: 0.3,
   },
-  armCol: { alignItems: 'center', marginTop: s(2) },
-  upperArm: { width: s(13), height: s(50), borderRadius: s(6.5) },
-  forearm: { width: s(12), height: s(46), borderRadius: s(6), marginTop: s(-2) },
-  hand: { width: s(12), height: s(16), borderRadius: s(6), marginTop: s(-1) },
+  armCol: { alignItems: 'center', marginTop: s(0) },
+  upperArm: { width: s(15), height: s(46), borderRadius: s(7.5) },
+  forearm: { width: s(14), height: s(42), borderRadius: s(7), marginTop: s(-4) },
+  hand: { width: s(14), height: s(14), borderRadius: s(7), marginTop: s(-3) },
   hips: {
-    width: s(52), height: s(14), borderBottomLeftRadius: s(8), borderBottomRightRadius: s(8),
-    marginTop: s(-3), zIndex: 1,
+    width: s(56), height: s(10), borderBottomLeftRadius: s(4), borderBottomRightRadius: s(4),
+    marginTop: s(-6), zIndex: 1,
   },
-  legsWrap: { flexDirection: 'row', gap: s(8), marginTop: s(-1) },
+  legsWrap: { flexDirection: 'row', gap: s(4), marginTop: s(-2) },
   legCol: { alignItems: 'center' },
-  thigh: { width: s(16), height: s(56), borderRadius: s(8) },
-  shin: { width: s(14), height: s(74), borderRadius: s(7), marginTop: s(-2) },
-  ankle: { width: s(12), height: s(14), borderRadius: s(4), marginTop: s(-1) },
-  feetWrap: { flexDirection: 'row', gap: s(12), marginTop: s(-2) },
+  thigh: { width: s(18), height: s(50), borderRadius: s(9) },
+  shin: { width: s(16), height: s(65), borderRadius: s(8), marginTop: s(-4) },
+  ankle: { width: s(14), height: s(10), borderRadius: s(5), marginTop: s(-3) },
+  feetWrap: { flexDirection: 'row', gap: s(8), marginTop: s(-4) },
   foot: {
-    width: s(28), height: s(16), borderRadius: s(5),
-    borderTopLeftRadius: s(3), borderTopRightRadius: s(3),
+    width: s(28), height: s(12), borderRadius: s(6),
   },
 
   handleRow: {
     position: 'absolute', left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center',
-    marginBottom: -12, zIndex: 10,
+    marginBottom: -14, zIndex: 10,
   },
   handleLine: { flex: 1, height: 2, borderRadius: 1 },
   pill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: colors.brand[500],
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.45, shadowRadius: 12, elevation: 10,
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
+    shadowOpacity: 0.5, shadowRadius: 14, elevation: 12,
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.30)',
   },
-  pillText: { color: '#fff', fontSize: 13, fontWeight: '900', letterSpacing: 0.5 },
+  pillText: { color: '#fff', fontSize: 12, fontWeight: '900', letterSpacing: 0.3 },
 
   dragHint: {
     position: 'absolute', alignSelf: 'center',
-    top: '30%', alignItems: 'center', zIndex: 5,
+    top: '38%', alignItems: 'center', zIndex: 5,
   },
   dragHintBg: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 22,
+    borderWidth: 1, borderColor: 'rgba(59,130,246,0.15)',
   },
-  dragHintText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
+  dragHintText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
 
   labelCol: {
     position: 'relative', zIndex: 3,
   },
   labelItem: {
-    position: 'absolute', right: 6, left: 0,
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    marginBottom: -9,
+    position: 'absolute', right: 4, left: 0,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    marginBottom: -11,
   },
   labelDot: {
-    width: 10, height: 10, borderRadius: 5,
+    width: 12, height: 12, borderRadius: 6,
     borderWidth: 1.5,
   },
   labelDotOuter: {
-    width: 14, height: 14, borderRadius: 7,
-    borderWidth: 1.5,
+    width: 16, height: 16, borderRadius: 8,
+    borderWidth: 2,
     alignItems: 'center', justifyContent: 'center',
   },
   labelDotInner: {
-    width: 7, height: 7, borderRadius: 3.5,
+    width: 8, height: 8, borderRadius: 4,
   },
   labelPill: {
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, borderWidth: 1,
   },
-  labelText: { fontSize: 11, fontWeight: '600' },
-  labelTextActive: { fontWeight: '800', letterSpacing: 0.2 },
+  labelText: { fontSize: 12, fontWeight: '700' },
+  labelTextActive: { fontWeight: '900', letterSpacing: 0.3 },
 
   banner: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    padding: 16, borderRadius: 16, borderWidth: 1,
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    padding: 16, borderRadius: 18, borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06, shadowRadius: 12, elevation: 3,
+    shadowOpacity: 0.08, shadowRadius: 14, elevation: 4,
   },
   bannerIcon: {
-    width: 42, height: 42, borderRadius: 14,
+    width: 44, height: 44, borderRadius: 15,
     alignItems: 'center', justifyContent: 'center',
   },
-  bannerTitle: { fontSize: 15, fontWeight: '800', letterSpacing: -0.1 },
-  bannerDesc:  { fontSize: 12, lineHeight: 17, letterSpacing: 0.1 },
+  bannerTitle: { fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
+  bannerDesc:  { fontSize: 12, lineHeight: 18, letterSpacing: 0.1, opacity: 0.8 },
   bannerBadge: {
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10,
   },
-  bannerBadgeText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
+  bannerBadgeText: { fontSize: 12, fontWeight: '900', letterSpacing: 0.3 },
 });
 
 
@@ -749,10 +755,10 @@ function EvidenceStep({
   return (
     <View style={styles.stepBody}>
       <Text style={[styles.stepTitle, isDark && { color: colors.white }]}>
-        Add photo/video evidence
+        Take a photo or video
       </Text>
       <Text style={[styles.stepSubtitle, isDark && { color: colors.slate[400] }]}>
-        At least 1 photo or video is required. Must be taken live.
+        Show what the flood looks like right now. At least 1 is required.
       </Text>
 
       {photos.length > 0 && (
@@ -781,63 +787,10 @@ function EvidenceStep({
               </Pressable>
             </View>
           ))}
-
-          {remaining > 0 && (
-            <View style={[styles.photoAddCell, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}>
-              <Text style={[styles.photoAddLabel, isDark && { color: colors.slate[400] }]}>
-                {remaining} left
-              </Text>
-              <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
-                <Pressable onPress={() => openCamera('photo')} accessibilityLabel="Take a photo" hitSlop={6}>
-                  <Ionicons name="camera" size={24} color={colors.brand[500]} />
-                </Pressable>
-                <Pressable onPress={() => openCamera('video')} accessibilityLabel="Record a video" hitSlop={6}>
-                  <Ionicons name="videocam" size={24} color={colors.brand[500]} />
-                </Pressable>
-              </View>
-            </View>
-          )}
         </View>
       )}
 
-      {photos.length === 0 && (
-        <View style={styles.evidenceGrid}>
-          <Pressable
-            style={[styles.evidenceAdd, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
-            onPress={() => openCamera('photo')}
-            accessibilityRole="button"
-            accessibilityLabel="Take a photo"
-          >
-            <View style={[styles.evidenceIconCircle, isDark && { backgroundColor: 'rgba(79,142,247,0.15)' }]}>
-              <Ionicons name="camera" size={32} color={colors.brand[500]} />
-            </View>
-            <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[300] }]}>
-              Take Photo
-            </Text>
-            <Text style={[styles.evidenceAddSub, isDark && { color: colors.slate[500] }]}>
-              Capture a live photo
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.evidenceAdd, isDark && { backgroundColor: colors.dark.card, borderColor: colors.dark.border }]}
-            onPress={() => openCamera('video')}
-            accessibilityRole="button"
-            accessibilityLabel="Record a video"
-          >
-            <View style={[styles.evidenceIconCircle, isDark && { backgroundColor: 'rgba(79,142,247,0.15)' }]}>
-              <Ionicons name="videocam" size={32} color={colors.brand[500]} />
-            </View>
-            <Text style={[styles.evidenceAddLabel, isDark && { color: colors.slate[300] }]}>
-              Record Video
-            </Text>
-            <Text style={[styles.evidenceAddSub, isDark && { color: colors.slate[500] }]}>
-              Max 15 seconds
-            </Text>
-          </Pressable>
-        </View>
-      )}
-
-      {photos.length > 0 && remaining > 0 && (
+      {remaining > 0 && (
         <View style={styles.evidenceRowBtns}>
           <Pressable
             style={[styles.evidenceRowBtn, isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[700] }]}
@@ -863,7 +816,7 @@ function EvidenceStep({
         <Text style={[styles.evidenceHintText, isDark && { color: colors.slate[400] }]}>
           {photos.length === 0
             ? 'Take up to 5 photos or videos (max 15s). At least 1 required.'
-            : `${photos.length}/5 file${photos.length > 1 ? 's' : ''} selected.${remaining > 0 ? ` ${remaining} slot${remaining > 1 ? 's' : ''} remaining.` : ' Maximum reached.'}`}
+            : `${photos.length}/5 selected.${remaining > 0 ? ` ${remaining} remaining.` : ''}`}
         </Text>
       </View>
     </View>
@@ -887,31 +840,28 @@ function DescriptionStep({
   }
 
   return (
-    <View style={styles.stepBody}>
-      <Text style={[styles.stepTitle, isDark && { color: colors.white }]}>
-        Additional details
+    <View style={[styles.stepBody, { flex: 1 }]}>
+      <Text style={[styles.stepTitle, isDark && { color: colors.white }, { fontSize: 20 }]}>
+        Anything else to add?
       </Text>
-      <Text style={[styles.stepSubtitle, isDark && { color: colors.slate[400] }]}>
-        Optional. Describe what you see, any vehicles involved, etc.
+      <Text style={[styles.stepSubtitle, isDark && { color: colors.slate[400] }, { fontSize: 12, marginBottom: 0 }]}>
+        Optional — tell responders what's happening.
       </Text>
 
       <View style={[
         styles.textareaWrap,
+        { flex: 1, minHeight: 80 },
         isDark && { backgroundColor: colors.slate[900], borderColor: colors.slate[600] + '88' },
       ]}>
-        <View style={styles.textareaIconRow}>
-          <Ionicons name="create-outline" size={16} color={isDark ? colors.slate[500] : colors.slate[400]} />
-          <Text style={[styles.textareaLabel, isDark && { color: colors.slate[500] }]}>Description</Text>
-        </View>
         <TextInput
           style={[
             styles.textarea,
+            { flex: 1, minHeight: 60 },
             isDark && { color: colors.white },
           ]}
-          placeholder="E.g. Water is about knee-deep, road is impassable for small vehicles..."
+          placeholder="E.g. Lubog na ang kalsada, hindi madaanan ng sasakyan..."
           placeholderTextColor={isDark ? colors.slate[600] : colors.slate[400]}
           multiline
-          numberOfLines={5}
           textAlignVertical="top"
           value={value}
           onChangeText={onChange}
@@ -923,10 +873,19 @@ function DescriptionStep({
         </Text>
       </View>
 
-      {quickChips.length > 0 && <View style={styles.chipsWrap}>
+      <View style={styles.chipsWrap}>
         <Text style={[styles.chipsLabel, isDark && { color: colors.slate[400] }]}>Quick add:</Text>
         <View style={styles.chipsRow}>
-          {quickChips.map(chip => (
+          {(quickChips.length > 0 ? quickChips : [
+            'Lubog na ang kalsada',
+            'Hindi madaanan ng sasakyan',
+            'Mabilis ang agos ng tubig',
+            'May mga taong nangangailangan ng tulong',
+            'Tumaas ang tubig sa loob ng bahay',
+            'Road is impassable',
+            'Water is rising fast',
+            'Needs immediate rescue',
+          ]).map(chip => (
             <Pressable
               key={chip}
               onPress={() => addChip(chip)}
@@ -936,7 +895,7 @@ function DescriptionStep({
             </Pressable>
           ))}
         </View>
-      </View>}
+      </View>
     </View>
   );
 }
@@ -956,6 +915,7 @@ export default function ReportScreen() {
   const [location, setLocation]           = useState<LocationData | null>(null);
   const [locDetecting, setLocDetecting]   = useState(false);
   const [severity, setSeverity]           = useState<Severity | null>(null);
+  const [depthFt, setDepthFt]             = useState<number>(0);
   const [floodDepth, setFloodDepth]       = useState<DepthKey | null>(null);
   const [photos, setPhotos]               = useState<string[]>([]);
   const [description, setDescription]     = useState('');
@@ -1035,7 +995,10 @@ export default function ReportScreen() {
           latitude:  pos.coords.latitude,
           longitude: pos.coords.longitude,
         });
-        const parts = [geo?.name, geo?.street, geo?.subregion, geo?.district, geo?.city, geo?.region].filter(Boolean);
+        const isPlusCode = (s?: string | null) => s && /^[A-Z0-9]{4,}\+[A-Z0-9]+/.test(s);
+        const parts = [geo?.name, geo?.street, geo?.subregion, geo?.district, geo?.city, geo?.region]
+          .filter(Boolean)
+          .filter(p => !isPlusCode(p));
         const unique = parts.filter((p, i) => i === 0 || p !== parts[i - 1]);
         if (unique.length) address = unique.join(', ');
       } catch {
@@ -1062,6 +1025,7 @@ export default function ReportScreen() {
   function resetForm() {
     setLocation(null);
     setSeverity(null);
+    setDepthFt(0);
     setFloodDepth(null);
     setPhotos([]);
     setDescription('');
@@ -1071,7 +1035,7 @@ export default function ReportScreen() {
   const screenBg = isDark ? colors.dark.bg      : colors.slate[50];
   const cardBg   = isDark ? colors.dark.surface  : colors.white;
 
-  const STEP_TITLES = ['Flood depth', 'Evidence', 'Description'];
+  const STEP_TITLES = ['Water level', 'Photo/Video', 'Details'];
 
   function canAdvance() {
     if (step === 0 && !floodDepth)        return false;
@@ -1084,7 +1048,7 @@ export default function ReportScreen() {
     if (!canAdvance()) {
       triggerShake();
       if (step === 1 && photos.length === 0) {
-        showAlert({ type: 'warning', title: 'Evidence Required', message: 'Please take at least 1 photo or video before continuing.' });
+        showAlert({ type: 'warning', title: 'Photo Required', message: 'Please take at least 1 photo or video so responders can see the situation.' });
       }
       return;
     }
@@ -1125,6 +1089,7 @@ export default function ReportScreen() {
           address:    location!.address,
           hazardType: HAZARD_TYPE,
           severity:   severity!,
+          depthFt,
           description,
           photos,
         },
@@ -1134,18 +1099,18 @@ export default function ReportScreen() {
       resetForm();
       showAlert({
         type: 'success',
-        title: 'Report Submitted!',
+        title: 'Report Sent!',
         message: ref
-          ? `Your flood report has been received.\nReference: ${ref}\n\nYou'll be notified when an admin verifies it.`
-          : 'Your flood report has been received. You\'ll be notified when an admin verifies it.',
+          ? `Thanks for reporting! Your reference number is ${ref}.\n\nWe'll notify you once it's been reviewed.`
+          : 'Thanks for reporting! We\'ll notify you once it\'s been reviewed.',
         confirmText: 'OK',
         onConfirm: () => router.replace('/resident'),
       });
     } catch {
       showAlert({
         type: 'error',
-        title: 'Submission Failed',
-        message: 'Could not submit your report. Check your connection and try again.',
+        title: 'Couldn\'t Send Report',
+        message: 'Please check your internet connection and try again.',
         confirmText: 'Try Again',
         onConfirm: handleSubmit,
       });
@@ -1156,7 +1121,7 @@ export default function ReportScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
-      <LinearGradient colors={['#00D2FF', '#4A6CF7', '#7C3AED']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      <LinearGradient colors={colors.gradients.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.header, { paddingTop: insets.top + 8 }]}>
         {/* Orbs */}
         <View style={styles.orb1} pointerEvents="none" />
         <View style={styles.orb2} pointerEvents="none" />
@@ -1195,7 +1160,7 @@ export default function ReportScreen() {
         contentContainerStyle={{ paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        scrollEnabled
+        scrollEnabled={false}
       >
         {step === 0 && (
           <LocationBanner
@@ -1210,9 +1175,10 @@ export default function ReportScreen() {
         {step === 0 && (
           <FloodDepthPicker
             selected={floodDepth}
-            onSelect={(key, sev) => {
+            onSelect={(key, sev, ft) => {
               setFloodDepth(key);
               setSeverity(sev);
+              setDepthFt(ft);
             }}
             isDark={isDark}
             pickerH={pickerH}
@@ -1261,7 +1227,7 @@ export default function ReportScreen() {
             <Pressable onPress={handleNext} disabled={loading || checkingDups} accessibilityRole="button">
               {({ pressed }) => (
                 <LinearGradient
-                  colors={pressed ? ['#00B8E0', '#3A5AF7', '#6B2ED0'] : ['#00D2FF', '#4A6CF7', '#7C3AED']}
+                  colors={pressed ? [colors.brand[700], colors.brand[500], colors.accent[700]] : colors.gradients.hero}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.submitGradient}
@@ -1329,9 +1295,9 @@ const styles = StyleSheet.create({
 
   scroll: { flex: 1 },
 
-  stepBody: { padding: 24, gap: 16 },
-  stepTitle:    { fontSize: 22, fontWeight: '800', color: colors.slate[900], letterSpacing: -0.3 },
-  stepSubtitle: { fontSize: 14, color: colors.slate[500], lineHeight: 21 },
+  stepBody: { padding: 20, gap: 10 },
+  stepTitle:    { fontSize: 20, fontWeight: '800', color: colors.slate[900], letterSpacing: -0.3 },
+  stepSubtitle: { fontSize: 12, color: colors.slate[500], lineHeight: 18 },
 
   locBanner: {
     flexDirection: 'row',
@@ -1339,20 +1305,25 @@ const styles = StyleSheet.create({
     gap: 10,
     marginHorizontal: 24,
     marginTop: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 16,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   locBannerText: { fontSize: 13, fontWeight: '600', color: colors.slate[700] },
   locRefreshBtn: {
-    width: 32, height: 32, borderRadius: 10,
+    width: 34, height: 34, borderRadius: 11,
     alignItems: 'center', justifyContent: 'center',
   },
 
-  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   photoCell: {
-    width: '47%', aspectRatio: 1,
+    width: '31%', aspectRatio: 0.85,
     borderRadius: 12, overflow: 'hidden',
     position: 'relative',
   },
@@ -1363,26 +1334,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.28)',
   },
   photoBadge: {
-    position: 'absolute', bottom: 7, left: 7,
+    position: 'absolute', bottom: 5, left: 5,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    width: 22, height: 22, borderRadius: 11,
+    width: 20, height: 20, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
   },
-  photoBadgeText: { color: colors.white, fontSize: 11, fontWeight: '700' },
-  photoRemove: { position: 'absolute', top: 7, right: 7 },
+  photoBadgeText: { color: colors.white, fontSize: 10, fontWeight: '700' },
+  photoRemove: { position: 'absolute', top: 5, right: 5 },
   photoRemoveInner: {
-    width: 22, height: 22, borderRadius: 11,
+    width: 20, height: 20, borderRadius: 10,
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center', justifyContent: 'center',
   },
   photoAddCell: {
-    width: '47%', aspectRatio: 1,
-    borderRadius: 12, borderWidth: 2,
+    width: '31%', aspectRatio: 0.85,
+    borderRadius: 12, borderWidth: 1.5,
     borderStyle: 'dashed', borderColor: colors.brand[100],
     backgroundColor: colors.brand[50],
     alignItems: 'center', justifyContent: 'center', gap: 4,
   },
-  photoAddLabel: { fontSize: 12, color: colors.brand[500], fontWeight: '600' },
+  photoAddLabel: { fontSize: 11, color: colors.brand[500], fontWeight: '600' },
   evidenceGrid: { flexDirection: 'row', gap: 14 },
   evidenceAdd: {
     flex: 1,
@@ -1417,10 +1388,10 @@ const styles = StyleSheet.create({
   textareaWrap: {
     borderWidth: 1.5,
     borderColor: colors.slate[200],
-    borderRadius: 16,
+    borderRadius: 14,
     backgroundColor: colors.white,
-    padding: 16,
-    gap: 8,
+    padding: 12,
+    gap: 4,
   },
   textareaIconRow: {
     flexDirection: 'row',
@@ -1434,25 +1405,25 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   textarea: {
-    fontSize: 15,
+    fontSize: 14,
     color: colors.slate[900],
-    minHeight: 120,
-    lineHeight: 22,
+    minHeight: 60,
+    lineHeight: 20,
     padding: 0,
   },
   charCount: { fontSize: 11, color: colors.slate[400], alignSelf: 'flex-end' },
-  chipsWrap: { gap: 10 },
-  chipsLabel: { fontSize: 12, fontWeight: '600', color: colors.slate[500] },
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chipsWrap: { gap: 6 },
+  chipsLabel: { fontSize: 11, fontWeight: '600', color: colors.slate[500] },
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.slate[200],
     backgroundColor: colors.slate[50],
   },
-  chipText: { fontSize: 13, fontWeight: '500', color: colors.slate[600] },
+  chipText: { fontSize: 11, fontWeight: '500', color: colors.slate[600] },
 
   actionBar: {
     paddingHorizontal: 20,
@@ -1466,7 +1437,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    shadowColor: '#7C3AED',
+    shadowColor: colors.brand[500],
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
     shadowRadius: 14,

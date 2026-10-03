@@ -125,6 +125,7 @@ export default function AdminReports() {
   }
 
   useEffect(() => {
+    if (!token) return;
     (async () => {
       setLoading(true);
       try {
@@ -137,7 +138,7 @@ export default function AdminReports() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [token]);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -304,7 +305,7 @@ export default function AdminReports() {
                         {report.address}
                       </Text>
                       <Text style={[$.cardMeta, { color: textSecondary }]}>
-                        {report.reportedAt} · {report.reportedByName}
+                        {report.reportedAt} · {report.reportedByName}{report.depthFt != null ? ` · ${report.depthFt} ft` : ''}
                       </Text>
                       {aiBadgeLabel && (
                         <View style={[$.aiBadge, { backgroundColor: (aiBadgeColor ?? colors.slate[400]) + '18' }]}>

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  Dimensions,
   Easing,
   Image,
   KeyboardAvoidingView,
@@ -40,9 +39,6 @@ try {
   // Native module not available — requires a dev build (npx expo run:android)
 }
 
-const { width: INIT_W, height: INIT_H } = Dimensions.get('window');
-// Static fallbacks for StyleSheet — live values come from useWindowDimensions
-const HERO_H = INIT_H * 0.36;
 
 function Particle({ delay, x, y, size = 4 }: { delay: number; x: number; y: number; size?: number }) {
   const translateY = useRef(new Animated.Value(0)).current;
@@ -118,8 +114,65 @@ export default function LoginScreen() {
   const isDark = scheme === 'dark';
   const { login } = useAuth();
   const { width: screenW, height: screenH } = useWindowDimensions();
-  const heroH = Math.min(screenH * 0.36, 320);
 
+  // ── Responsive breakpoints & scale ──
+  const isTiny  = screenH < 620;   // very small phones (SE 1st gen, etc.)
+  const isSmall = screenH < 700;   // small phones
+  const isMid   = screenH < 820;   // average phones
+  // >= 820 = tall phones / tablets
+
+  // Scale factor: 1.0 at 812 (iPhone X baseline), scales proportionally
+  const vScale = Math.min(screenH / 812, 1.15);
+  const hScale = Math.min(screenW / 375, 1.15);
+
+  const heroH = isTiny ? screenH * 0.28 : isSmall ? screenH * 0.30 : Math.min(screenH * 0.34, 320);
+
+  // Responsive sizes
+  const r = {
+    // Hero
+    logoSize:      isTiny ? 44 : isSmall ? 52 : Math.round(64 * hScale),
+    logoBadge:     isTiny ? 64 : isSmall ? 76 : Math.round(100 * hScale),
+    logoBadgeR:    isTiny ? 19 : isSmall ? 23 : Math.round(100 * hScale * 0.3),
+    logoRing:      isTiny ? 86 : isSmall ? 98 : Math.round(122 * hScale),
+    logoRingOuter: isTiny ? 106 : isSmall ? 120 : Math.round(148 * hScale),
+    heroTitle:     isTiny ? 16 : isSmall ? 18 : Math.round(24 * hScale),
+    heroTitleLS:   isTiny ? 3 : isSmall ? 4 : 5,
+    heroSub:       isTiny ? 10 : isSmall ? 11 : 12,
+    orbScale:      isTiny ? 0.5 : isSmall ? 0.7 : 1,
+
+    // Form
+    formPadX:  Math.round(Math.max(20, 28 * hScale)),
+    heading:   isTiny ? 22 : isSmall ? 24 : Math.round(30 * vScale),
+    subText:   isTiny ? 12 : 13,
+    inputH:    isTiny ? 46 : isSmall ? 50 : Math.round(56 * vScale),
+    inputR:    isTiny ? 12 : isSmall ? 14 : 16,
+    inputFont: isTiny ? 13 : isSmall ? 14 : 15,
+    iconWrap:  isTiny ? 32 : isSmall ? 36 : 40,
+    iconR:     isTiny ? 9 : isSmall ? 10 : 12,
+    iconSize:  isTiny ? 15 : isSmall ? 16 : 18,
+    btnH:      isTiny ? 46 : isSmall ? 50 : Math.round(56 * vScale),
+    btnR:      isTiny ? 12 : isSmall ? 14 : 16,
+    btnFont:   isTiny ? 14 : isSmall ? 15 : 16,
+    googleH:   isTiny ? 44 : isSmall ? 48 : 52,
+    googleR:   isTiny ? 11 : isSmall ? 12 : 14,
+    fieldGap:  isTiny ? 8 : isSmall ? 10 : 12,
+    optionsMB: isTiny ? 14 : isSmall ? 18 : 24,
+    checkSize: isTiny ? 17 : isSmall ? 18 : 20,
+    checkR:    isTiny ? 5 : isSmall ? 5 : 6,
+    dividerMV: isTiny ? 10 : isSmall ? 12 : 16,
+    footerMT:  isTiny ? 10 : isSmall ? 14 : 20,
+    labelFont: isTiny ? 12 : 13,
+
+    // Splash
+    splashLogo:  isTiny ? 100 : isSmall ? 120 : 140,
+    splashLogoR: isTiny ? 28 : isSmall ? 32 : 38,
+    splashImg:   isTiny ? 56 : isSmall ? 68 : 80,
+    splashTitle: isTiny ? 22 : isSmall ? 26 : 30,
+    splashSub:   isTiny ? 11 : isSmall ? 12 : 13,
+  };
+
+
+  const SPLASH_LETTERS = 'FLOODTRACK'.split('');
   const [showSplash, setShowSplash] = useState(true);
   const splashLogoScale   = useRef(new Animated.Value(0.3)).current;
   const splashLogoOpacity = useRef(new Animated.Value(0)).current;
@@ -128,6 +181,16 @@ export default function LoginScreen() {
   const splashSubOpacity  = useRef(new Animated.Value(0)).current;
   const splashBgOpacity   = useRef(new Animated.Value(1)).current;
   const splashShimmer     = useRef(new Animated.Value(0)).current;
+  const letterAnims       = useRef(SPLASH_LETTERS.map(() => ({
+    opacity:    new Animated.Value(0),
+    translateY: new Animated.Value(18),
+    scale:      new Animated.Value(0.5),
+  }))).current;
+
+  /* Hero continuous animations */
+  const heroPulse      = useRef(new Animated.Value(0)).current;
+  const heroFloat      = useRef(new Animated.Value(0)).current;
+  const heroTitleShimmer = useRef(new Animated.Value(0)).current;
 
   const heroScale     = useRef(new Animated.Value(1.05)).current;
   const heroOpacity   = useRef(new Animated.Value(0)).current;
@@ -152,6 +215,8 @@ export default function LoginScreen() {
   const [alertConfig, setAlertConfig]   = useState<AlertConfig | null>(null);
   const [emailFocus, setEmailFocus]     = useState(false);
   const [pwdFocus, setPwdFocus]         = useState(false);
+  const [emailError, setEmailError]     = useState('');
+  const [pwdError, setPwdError]         = useState(false);
 
   const emailGlow = useRef(new Animated.Value(0)).current;
   const pwdGlow   = useRef(new Animated.Value(0)).current;
@@ -165,15 +230,40 @@ export default function LoginScreen() {
         Animated.timing(splashLogoOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
       ]),
       Animated.timing(splashShimmer, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.parallel([
-        Animated.timing(splashTextOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
-        Animated.timing(splashTextTransY,  { toValue: 0, duration: 500, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-      ]),
+      Animated.stagger(50, letterAnims.map(la =>
+        Animated.parallel([
+          Animated.timing(la.opacity,    { toValue: 1, duration: 300, useNativeDriver: true }),
+          Animated.spring(la.translateY, { toValue: 0, friction: 6, tension: 100, useNativeDriver: true }),
+          Animated.spring(la.scale,      { toValue: 1, friction: 5, tension: 120, useNativeDriver: true }),
+        ]),
+      )),
       Animated.timing(splashSubOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
       Animated.delay(500),
       Animated.timing(splashBgOpacity, { toValue: 0, duration: 450, useNativeDriver: true }),
     ]).start(() => {
       setShowSplash(false);
+
+      // Continuous hero animations
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(heroPulse, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(heroPulse, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        ]),
+      ).start();
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(heroFloat, { toValue: 1, duration: 2500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(heroFloat, { toValue: 0, duration: 2500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        ]),
+      ).start();
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(heroTitleShimmer, { toValue: 1, duration: 2500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.delay(2000),
+          Animated.timing(heroTitleShimmer, { toValue: 0, duration: 0, useNativeDriver: true }),
+        ]),
+      ).start();
+
       Animated.stagger(90, [
         Animated.parallel([
           Animated.timing(heroOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
@@ -205,15 +295,30 @@ export default function LoginScreen() {
   }, []);
 
   const handleLogin = useCallback(async () => {
-    if (!email.trim() || !password.trim()) {
-      setAlertConfig({
-        type: 'warning',
-        title: 'Missing Fields',
-        message: 'Please enter your email and password.',
-        confirmText: 'OK',
-      });
-      return;
+    const trimmed = email.trim();
+    let hasError = false;
+
+    // Email validation
+    if (!trimmed) {
+      setEmailError('Email is required');
+      hasError = true;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setEmailError('Enter a valid email address');
+      hasError = true;
+    } else {
+      setEmailError('');
     }
+
+    // Password validation (red border only)
+    if (!password.trim()) {
+      setPwdError(true);
+      hasError = true;
+    } else {
+      setPwdError(false);
+    }
+
+    if (hasError) return;
+
     setIsLoading(true);
     try {
       await login({ email: email.trim(), password });
@@ -258,9 +363,12 @@ export default function LoginScreen() {
 
   const emailValid = email.trim().length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const shimmerX = splashShimmer.interpolate({ inputRange: [0, 1], outputRange: [-120, 220] });
+  const heroPulseScale = heroPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.15] });
+  const heroPulseOpacity = heroPulse.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0] });
+  const heroFloatY = heroFloat.interpolate({ inputRange: [0, 1], outputRange: [0, -8] });
+  const heroShimmerX = heroTitleShimmer.interpolate({ inputRange: [0, 1], outputRange: [-screenW, screenW] });
   const emailBorder = emailGlow.interpolate({ inputRange: [0, 1], outputRange: ['rgba(0,0,0,0)', colors.auth.primary] });
   const pwdBorder   = pwdGlow.interpolate({   inputRange: [0, 1], outputRange: ['rgba(0,0,0,0)', colors.auth.primary] });
-  const isSmall = screenH < 700;
 
   return (
     <View style={s.root}>
@@ -290,18 +398,29 @@ export default function LoginScreen() {
             opacity: splashLogoOpacity,
             transform: [{ scale: splashLogoScale }],
           }]}>
-            <View style={s.splashLogoBadge}>
-              <Image source={require('@/assets/images/floodtrack-badge-primary.png')} style={{ width: 80, height: 80 }} resizeMode="contain" />
+            <View style={[s.splashLogoBadge, { width: r.splashLogo, height: r.splashLogo, borderRadius: r.splashLogoR }]}>
+              <Image source={require('@/assets/images/floodtrack-badge-primary.png')} style={{ width: r.splashImg, height: r.splashImg }} resizeMode="contain" />
               <Animated.View style={[s.shimmerBar, { transform: [{ translateX: shimmerX }] }]} />
             </View>
           </Animated.View>
-          <Animated.Text style={[s.splashTitle, {
-            opacity: splashTextOpacity,
-            transform: [{ translateY: splashTextTransY }],
-          }]}>
-            FLOODTRACK
-          </Animated.Text>
-          <Animated.Text style={[s.splashSub, { opacity: splashSubOpacity }]}>
+          <View style={s.splashTitleRow}>
+            {SPLASH_LETTERS.map((letter, i) => (
+              <Animated.Text
+                key={i}
+                style={[s.splashTitleLetter, {
+                  fontSize: r.splashTitle,
+                  opacity: letterAnims[i].opacity,
+                  transform: [
+                    { translateY: letterAnims[i].translateY },
+                    { scale: letterAnims[i].scale },
+                  ],
+                }]}
+              >
+                {letter}
+              </Animated.Text>
+            ))}
+          </View>
+          <Animated.Text style={[s.splashSub, { fontSize: r.splashSub, opacity: splashSubOpacity }]}>
             Real-time flood monitoring & alerts
           </Animated.Text>
           <Animated.View style={[s.splashVersionPill, { opacity: splashSubOpacity }]}>
@@ -311,7 +430,7 @@ export default function LoginScreen() {
       )}
 
       {!showSplash && (
-        <KeyboardAvoidingView
+      <KeyboardAvoidingView
           style={s.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
@@ -320,25 +439,44 @@ export default function LoginScreen() {
               colors={colors.gradients.hero}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={[s.hero, { height: heroH, paddingTop: insets.top + 12 }]}
+              style={[s.hero, { height: heroH, paddingTop: insets.top + (isTiny ? 4 : 12), paddingBottom: isTiny ? 16 : isSmall ? 24 : 36 }]}
             >
-              <View style={[s.orb, s.orb1]} />
-              <View style={[s.orb, s.orb2]} />
-              <View style={[s.orb, s.orb3, { left: screenW * 0.55 }]} />
+              <View style={[s.orb, { width: 200 * r.orbScale, height: 200 * r.orbScale, top: -60 * r.orbScale, right: -50 }]} />
+              <View style={[s.orb, { width: 140 * r.orbScale, height: 140 * r.orbScale, bottom: 10, left: -40, backgroundColor: colors.overlay.whiteSubtle }]} />
+              <View style={[s.orb, { width: 80 * r.orbScale, height: 80 * r.orbScale, top: 40, left: screenW * 0.55, backgroundColor: colors.overlay.whiteFaint }]} />
 
               <Particle delay={200}  x={screenW * 0.1}  y={40} size={3} />
               <Particle delay={800}  x={screenW * 0.85} y={60} size={4} />
               <Particle delay={1200} x={screenW * 0.4}  y={30} size={3} />
 
-              <View style={isSmall ? s.logoBadgeSmall : s.logoBadge}>
-                <View style={isSmall ? s.logoBadgeInnerSmall : s.logoBadgeInner}>
-                  <Image source={require('@/assets/images/floodtrack-badge-primary.png')} style={{ width: isSmall ? 48 : 64, height: isSmall ? 48 : 64 }} resizeMode="contain" />
+              <Animated.View style={{ transform: [{ translateY: heroFloatY }] }}>
+                <View style={[s.logoBadgeBase, { marginBottom: isTiny ? 6 : isSmall ? 8 : 16 }]}>
+                  <View style={[s.logoBadgeInnerBase, { width: r.logoBadge, height: r.logoBadge, borderRadius: r.logoBadgeR }]}>
+                    <Image source={require('@/assets/images/floodtrack-badge-primary.png')} style={{ width: r.logoSize, height: r.logoSize }} resizeMode="contain" />
+                  </View>
+                  {!isTiny && (
+                    <Animated.View style={[s.logoBadgeRingBase, {
+                      width: r.logoRing, height: r.logoRing, borderRadius: r.logoRing / 2,
+                      opacity: heroPulseOpacity,
+                      transform: [{ scale: heroPulseScale }],
+                    }]} />
+                  )}
+                  {!isTiny && !isSmall && (
+                    <Animated.View style={[s.logoBadgeRingBase, {
+                      width: r.logoRingOuter, height: r.logoRingOuter, borderRadius: r.logoRingOuter / 2,
+                      borderColor: colors.overlay.whiteLight,
+                      opacity: heroPulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0.25, 0] }),
+                      transform: [{ scale: heroPulse.interpolate({ inputRange: [0, 1], outputRange: [1.1, 1.35] }) }],
+                    }]} />
+                  )}
                 </View>
-                {!isSmall && <View style={s.logoBadgeRing} />}
-              </View>
+              </Animated.View>
 
-              <Text style={[s.logoTitle, isSmall && { fontSize: 20, letterSpacing: 4 }]}>FLOODTRACK</Text>
-              <Text style={s.logoSub}>Stay informed, stay safe</Text>
+              <View style={s.heroTitleWrap}>
+                <Text style={[s.logoTitleBase, { fontSize: r.heroTitle, letterSpacing: r.heroTitleLS }]}>FLOODTRACK</Text>
+                <Animated.View style={[s.heroTitleShimmer, { transform: [{ translateX: heroShimmerX }] }]} />
+              </View>
+              <Text style={[s.logoSubBase, { fontSize: r.heroSub }]}>Stay informed, stay safe</Text>
             </LinearGradient>
 
             <View style={s.waveWrap}>
@@ -354,24 +492,29 @@ export default function LoginScreen() {
 
           <Animated.View style={[s.formArea, { opacity: formOpacity, transform: [{ translateY: formTransY }] }]}>
             <ScrollView
-              contentContainerStyle={[s.formScroll, { paddingBottom: insets.bottom + 36 }]}
+              contentContainerStyle={[s.formScroll, { paddingHorizontal: r.formPadX, paddingBottom: insets.bottom + (isTiny ? 16 : 36) }]}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
               <View style={s.titleRow}>
-                <Text style={[s.titleBold, isSmall && { fontSize: 24 }]}>Welcome </Text>
-                <Text style={[s.titleLight, isSmall && { fontSize: 24 }]}>back !</Text>
+                <Text style={[s.titleBold, { fontSize: r.heading }]}>Welcome </Text>
+                <Text style={[s.titleLight, { fontSize: r.heading }]}>back !</Text>
               </View>
-              <Text style={[s.titleSub, isSmall && { marginBottom: 10 }]}>Sign in to access your dashboard</Text>
+              <Text style={[s.titleSub, { fontSize: r.subText, marginBottom: isTiny ? 8 : isSmall ? 10 : 14 }]}>Sign in to access your dashboard</Text>
 
 
-              <Animated.View style={[s.fieldWrap, { opacity: f1Opacity, transform: [{ translateX: f1TransX }] }]}>
-                <Animated.View style={[s.inputRow, { borderColor: emailBorder }, emailFocus && s.inputFocused]}>
-                  <View style={[s.inputIconWrap, emailFocus && s.inputIconActive]}>
-                    <Ionicons name="mail-outline" size={18} color={emailFocus ? colors.auth.primary : colors.auth.muted} />
+              <Animated.View style={[{ marginBottom: r.fieldGap }, { opacity: f1Opacity, transform: [{ translateX: f1TransX }] }]}>
+                <Animated.View style={[
+                  s.inputRow,
+                  { height: r.inputH, borderRadius: r.inputR, borderColor: emailError ? colors.feedback.error : emailBorder },
+                  emailFocus && !emailError && s.inputFocused,
+                  emailError ? s.inputError : null,
+                ]}>
+                  <View style={[s.inputIconWrap, { width: r.iconWrap, height: r.iconWrap, borderRadius: r.iconR }, emailFocus && !emailError && s.inputIconActive, emailError ? s.inputIconError : null]}>
+                    <Ionicons name="mail-outline" size={r.iconSize} color={emailError ? colors.feedback.error : emailFocus ? colors.auth.primary : colors.auth.muted} />
                   </View>
                   <TextInput
-                    style={s.input}
+                    style={[s.input, { fontSize: r.inputFont }]}
                     placeholder="Email address"
                     placeholderTextColor={colors.auth.placeholder}
                     autoCapitalize="none"
@@ -379,34 +522,39 @@ export default function LoginScreen() {
                     keyboardType="email-address"
                     textContentType="emailAddress"
                     value={email}
-                    onChangeText={t => { setEmail(t); }}
+                    onChangeText={t => { setEmail(t); if (emailError) setEmailError(''); }}
                     onFocus={() => setEmailFocus(true)}
                     onBlur={() => setEmailFocus(false)}
                   />
-                  {emailValid && (
+                  {emailValid && !emailError && (
                     <View style={s.checkBadge}>
                       <Ionicons name="checkmark" size={14} color={colors.white} />
                     </View>
                   )}
                 </Animated.View>
-                {email.length > 0 && !emailValid && (
-                  <Text style={s.fieldHint}>Enter a valid email address</Text>
-                )}
+                {emailError ? (
+                  <Text style={s.fieldError}>{emailError}</Text>
+                ) : null}
               </Animated.View>
 
-              <Animated.View style={[s.fieldWrap, { opacity: f2Opacity, transform: [{ translateX: f2TransX }] }]}>
-                <Animated.View style={[s.inputRow, { borderColor: pwdBorder }, pwdFocus && s.inputFocused]}>
-                  <View style={[s.inputIconWrap, pwdFocus && s.inputIconActive]}>
-                    <Ionicons name="lock-closed-outline" size={18} color={pwdFocus ? colors.auth.primary : colors.auth.muted} />
+              <Animated.View style={[{ marginBottom: r.fieldGap }, { opacity: f2Opacity, transform: [{ translateX: f2TransX }] }]}>
+                <Animated.View style={[
+                  s.inputRow,
+                  { height: r.inputH, borderRadius: r.inputR, borderColor: pwdError ? colors.feedback.error : pwdBorder },
+                  pwdFocus && !pwdError && s.inputFocused,
+                  pwdError ? s.inputError : null,
+                ]}>
+                  <View style={[s.inputIconWrap, { width: r.iconWrap, height: r.iconWrap, borderRadius: r.iconR }, pwdFocus && !pwdError && s.inputIconActive, pwdError ? s.inputIconError : null]}>
+                    <Ionicons name="lock-closed-outline" size={r.iconSize} color={pwdError ? colors.feedback.error : pwdFocus ? colors.auth.primary : colors.auth.muted} />
                   </View>
                   <TextInput
-                    style={s.input}
+                    style={[s.input, { fontSize: r.inputFont }]}
                     placeholder="Password"
                     placeholderTextColor={colors.auth.placeholder}
                     secureTextEntry={!showPwd}
                     textContentType="password"
                     value={password}
-                    onChangeText={t => { setPassword(t); }}
+                    onChangeText={t => { setPassword(t); if (pwdError) setPwdError(false); }}
                     onFocus={() => setPwdFocus(true)}
                     onBlur={() => setPwdFocus(false)}
                   />
@@ -421,20 +569,20 @@ export default function LoginScreen() {
                 </Animated.View>
               </Animated.View>
 
-              <View style={s.optionsRow}>
+              <View style={[s.optionsRow, { marginBottom: r.optionsMB }]}>
                 <Pressable
                   style={s.rememberRow}
                   onPress={() => setRemember(v => !v)}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: remember }}
                 >
-                  <View style={[s.checkbox, remember && s.checkboxOn]}>
-                    {remember && <Ionicons name="checkmark" size={11} color={colors.white} />}
+                  <View style={[s.checkbox, { width: r.checkSize, height: r.checkSize, borderRadius: r.checkR }, remember && s.checkboxOn]}>
+                    {remember && <Ionicons name="checkmark" size={isTiny ? 9 : 11} color={colors.white} />}
                   </View>
-                  <Text style={s.rememberLabel}>Remember me</Text>
+                  <Text style={[s.rememberLabel, { fontSize: r.labelFont }]}>Remember me</Text>
                 </Pressable>
                 <Pressable hitSlop={6} onPress={() => router.push('/forgot-password')}>
-                  <Text style={s.forgotLink}>Forgot password?</Text>
+                  <Text style={[s.forgotLink, { fontSize: r.labelFont }]}>Forgot password?</Text>
                 </Pressable>
               </View>
 
@@ -450,13 +598,13 @@ export default function LoginScreen() {
                     colors={isLoading ? colors.gradients.ctaDisabled : colors.gradients.cta}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
-                    style={s.loginBtn}
+                    style={[s.loginBtn, { height: r.btnH, borderRadius: r.btnR }]}
                   >
                     {isLoading ? (
                       <ActivityIndicator size="small" color={colors.white} />
                     ) : (
                       <>
-                        <Text style={s.loginBtnText}>Sign In</Text>
+                        <Text style={[s.loginBtnText, { fontSize: r.btnFont }]}>Sign In</Text>
                         <View style={s.loginBtnArrow}>
                           <Ionicons name="arrow-forward" size={16} color={colors.gradients.cta[0]} />
                         </View>
@@ -466,7 +614,7 @@ export default function LoginScreen() {
                 </Pressable>
               </Animated.View>
 
-              <View style={s.dividerRow}>
+              <View style={[s.dividerRow, { marginVertical: r.dividerMV }]}>
                 <View style={s.dividerLine} />
                 <Text style={s.dividerText}>or</Text>
                 <View style={s.dividerLine} />
@@ -475,7 +623,7 @@ export default function LoginScreen() {
               <Pressable
                 onPress={handleGoogleLogin}
                 disabled={isLoading || isGoogleLoading}
-                style={[s.socialBtn, s.googleBtn]}
+                style={[s.socialBtn, s.googleBtn, { height: r.googleH, borderRadius: r.googleR }]}
                 accessibilityRole="button"
                 accessibilityLabel="Sign in with Google"
               >
@@ -491,7 +639,7 @@ export default function LoginScreen() {
                 )}
               </Pressable>
 
-              <Animated.View style={[s.footer, { opacity: footerOpacity }]}>
+              <Animated.View style={[s.footer, { marginTop: r.footerMT, opacity: footerOpacity }]}>
                 <Text style={s.footerText}>Don't have an account?</Text>
                 <Pressable onPress={() => router.push('/signup')} hitSlop={8}>
                   <Text style={s.footerLink}> Sign Up</Text>
@@ -530,7 +678,6 @@ const s = StyleSheet.create({
   },
   splashLogoWrap: { marginBottom: 18, alignItems: 'center' },
   splashLogoBadge: {
-    width: 140, height: 140, borderRadius: 38,
     backgroundColor: colors.overlay.whiteSoft,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: colors.overlay.whiteBright,
@@ -542,12 +689,15 @@ const s = StyleSheet.create({
     backgroundColor: colors.overlay.whiteGlow,
     transform: [{ skewX: '-20deg' }],
   },
-  splashTitle: {
-    fontSize: 30, fontWeight: '900', color: colors.white,
-    letterSpacing: 5, textAlign: 'center',
+  splashTitleRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+  },
+  splashTitleLetter: {
+    fontWeight: '900', color: colors.white,
+    letterSpacing: 5,
   },
   splashSub: {
-    fontSize: 13, color: colors.overlay.whiteMid,
+    color: colors.overlay.whiteMid,
     textAlign: 'center', marginTop: 8,
   },
   splashVersionPill: {
@@ -559,51 +709,42 @@ const s = StyleSheet.create({
 
   heroWrap: {},
   hero: {
-    height: HERO_H,
     alignItems: 'center', justifyContent: 'center',
-    paddingBottom: 36,
     overflow: 'hidden',
   },
   orb: {
     position: 'absolute', borderRadius: 999,
     backgroundColor: colors.overlay.whiteThin,
   },
-  orb1: { width: 200, height: 200, top: -60, right: -50 },
-  orb2: { width: 140, height: 140, bottom: 10, left: -40, backgroundColor: colors.overlay.whiteSubtle },
-  orb3: { width: 80,  height: 80,  top: 40, backgroundColor: colors.overlay.whiteFaint },
 
-  logoBadge: {
+  logoBadgeBase: {
     alignItems: 'center', justifyContent: 'center',
-    marginBottom: 16,
   },
-  logoBadgeSmall: {
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 8,
-  },
-  logoBadgeInner: {
-    width: 100, height: 100, borderRadius: 30,
+  logoBadgeInnerBase: {
     backgroundColor: colors.overlay.whiteRegular,
     borderWidth: 1.5, borderColor: colors.overlay.whiteFirm,
     alignItems: 'center', justifyContent: 'center',
   },
-  logoBadgeInnerSmall: {
-    width: 72, height: 72, borderRadius: 22,
-    backgroundColor: colors.overlay.whiteRegular,
-    borderWidth: 1.5, borderColor: colors.overlay.whiteFirm,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  logoBadgeRing: {
+  logoBadgeRingBase: {
     position: 'absolute',
-    width: 122, height: 122, borderRadius: 61,
-    borderWidth: 1, borderColor: colors.overlay.whiteLight,
+    borderWidth: 1.5, borderColor: colors.overlay.whiteBright,
   },
-  logoTitle: {
-    fontSize: 24, fontWeight: '900', color: colors.white,
-    letterSpacing: 5,
+  heroTitleWrap: {
+    overflow: 'hidden',
+    borderRadius: 4,
   },
-  logoSub: {
-    fontSize: 12, color: colors.overlay.whiteSub,
-    marginTop: 6, letterSpacing: 1,
+  heroTitleShimmer: {
+    position: 'absolute', top: 0, bottom: 0,
+    width: 60,
+    backgroundColor: colors.overlay.whiteGlow,
+    transform: [{ skewX: '-20deg' }],
+  },
+  logoTitleBase: {
+    fontWeight: '900', color: colors.white,
+  },
+  logoSubBase: {
+    color: colors.overlay.whiteSub,
+    marginTop: 4, letterSpacing: 1,
   },
 
   waveWrap: {
@@ -622,21 +763,19 @@ const s = StyleSheet.create({
     flex: 1, backgroundColor: colors.auth.pageBg, marginTop: -2,
   },
   formScroll: {
-    paddingHorizontal: 28, paddingTop: 4,
+    paddingTop: 4,
   },
 
   titleRow: {
     flexDirection: 'row', alignItems: 'baseline',
     marginBottom: 2,
   },
-  titleBold: { fontSize: 30, fontWeight: '800', color: colors.auth.heading },
-  titleLight: { fontSize: 30, fontWeight: '300', color: colors.auth.heading },
-  titleSub: { fontSize: 13, color: colors.auth.muted, marginBottom: 14 },
+  titleBold: { fontWeight: '800', color: colors.auth.heading },
+  titleLight: { fontWeight: '300', color: colors.auth.heading },
+  titleSub: { color: colors.auth.muted },
 
-  fieldWrap: { marginBottom: 12 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
-    height: 56, borderRadius: 16,
     backgroundColor: colors.auth.inputBg,
     borderWidth: 1.5, borderColor: 'transparent',
     paddingHorizontal: 4,
@@ -650,7 +789,6 @@ const s = StyleSheet.create({
     elevation: 4,
   },
   inputIconWrap: {
-    width: 40, height: 40, borderRadius: 12,
     backgroundColor: colors.auth.inputIconBg,
     alignItems: 'center', justifyContent: 'center',
     marginLeft: 4,
@@ -659,7 +797,7 @@ const s = StyleSheet.create({
     backgroundColor: colors.auth.inputIconActive,
   },
   input: {
-    flex: 1, fontSize: 15, color: colors.auth.heading,
+    flex: 1, color: colors.auth.heading,
     paddingHorizontal: 12, height: '100%',
   },
   checkBadge: {
@@ -673,11 +811,10 @@ const s = StyleSheet.create({
   optionsRow: {
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 24, marginTop: 2,
+    marginTop: 2,
   },
   rememberRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   checkbox: {
-    width: 20, height: 20, borderRadius: 6,
     borderWidth: 1.5, borderColor: colors.auth.placeholder,
     alignItems: 'center', justifyContent: 'center',
   },
@@ -688,7 +825,6 @@ const s = StyleSheet.create({
   forgotLink: { fontSize: 13, color: colors.auth.primary, fontWeight: '700' },
 
   loginBtn: {
-    height: 56, borderRadius: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 10,
     shadowColor: colors.auth.primary,
@@ -698,7 +834,7 @@ const s = StyleSheet.create({
     elevation: 10,
   },
   loginBtnText: {
-    fontSize: 16, fontWeight: '800', color: colors.white, letterSpacing: 0.5,
+    fontWeight: '800', color: colors.white, letterSpacing: 0.5,
   },
   loginBtnArrow: {
     width: 28, height: 28, borderRadius: 9,
@@ -706,38 +842,34 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
-  dividerRow: {
-    flexDirection: 'row', alignItems: 'center',
-    marginVertical: 20, gap: 12,
-  },
-  dividerLine: { flex: 1, height: 1, backgroundColor: colors.auth.inputIconBg },
-  dividerPill: {
-    paddingHorizontal: 14, paddingVertical: 5,
-    backgroundColor: colors.auth.inputBg, borderRadius: 20,
-  },
-  dividerText: { fontSize: 12, fontWeight: '600', color: colors.auth.muted },
-
-  socialRow: {
-    flexDirection: 'row', gap: 12,
-    marginBottom: 22,
-  },
-  socialBtn: {
-    flex: 1, height: 52, borderRadius: 14,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 10,
-  },
   fieldHint: {
     fontSize: 11, fontWeight: '600', color: colors.feedback.error,
     marginTop: 4, marginLeft: 4,
   },
+  fieldError: {
+    fontSize: 12, fontWeight: '600', color: colors.feedback.error,
+    marginTop: 6, marginLeft: 8,
+  },
+  inputError: {
+    borderColor: colors.feedback.error,
+    backgroundColor: colors.feedback.errorBg,
+  },
+  inputIconError: {
+    backgroundColor: colors.feedback.errorBg,
+  },
   dividerRow: {
-    flexDirection: 'row', alignItems: 'center', marginVertical: 16, gap: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
   },
   dividerLine: {
     flex: 1, height: 1, backgroundColor: colors.auth.placeholder,
   },
   dividerText: {
     fontSize: 13, fontWeight: '600', color: colors.auth.muted,
+  },
+  socialBtn: {
+    flex: 1,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 10,
   },
   googleBtn: {
     backgroundColor: colors.white,
@@ -759,7 +891,7 @@ const s = StyleSheet.create({
 
   footer: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    marginTop: 20, marginBottom: 12,
+    marginBottom: 12,
   },
   footerText: { fontSize: 14, color: colors.auth.muted },
   footerLink: { fontSize: 14, fontWeight: '800', color: colors.auth.primary },

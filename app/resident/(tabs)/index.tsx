@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -38,6 +38,8 @@ import { StatusBadge, type ReportStatus } from '@/components/StatusBadge';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { getAllReports, getReportDetail, getEvacuationCenters, getActiveHazards, getWeatherWithFallback, updateProfile, getAppConfig } from '@/services/api';
+import { socketService } from '@/services/socket';
+import { onNotificationReceived } from '@/services/notifications';
 import type { WeatherData } from '@/services/api';
 import type { Report as ApiReport, Hazard } from '@/types';
 import { HeatmapZoneSummary } from '@/components/HeatmapZoneSummary';
@@ -137,10 +139,10 @@ const FLOOD_HEATMAP: Record<Severity, Array<{ fill: string; stroke: string; radi
 };
 
 const FLOOD_DEPTH: Record<Severity, string> = {
-  low:      '~ 1 ft (ankle-deep)',
-  moderate: '~ 1.5–2 ft (knee-deep)',
-  high:     '~ 3 ft (waist-deep)',
-  critical: '> 4 ft — dangerous',
+  low:      '~ 1 ft — ankle level, can still walk',
+  moderate: '~ 2 ft — knee level, cars may stall',
+  high:     '~ 3 ft — waist level, unsafe to walk',
+  critical: '4+ ft — extremely dangerous',
 };
 
 const API_TYPE_TO_HAZARD: Record<string, Exclude<HazardType, 'all'>> = {
@@ -263,60 +265,56 @@ function buildAvoidanceWaypoints(
 }
 
 
-function HazardMarker({ report, small }: { report: Report; small?: boolean }) {
-  const meta     = report.hazardType !== 'all' ? HAZARD_META[report.hazardType] : null;
-  const color    = meta?.color ?? colors.brand[500];
-  const iconName = (meta?.icon ?? 'alert-circle') as keyof typeof Ionicons.glyphMap;
-  const isCrit   = report.severity === 'critical';
-  const sz = small ? 18 : 28;
-  const wr = small ? 24 : 36;
-
-  return (
-    <View style={{ width: wr, height: wr, alignItems: 'center', justifyContent: 'center' }}>
-      {isCrit && !small && <View style={[mk.pulse, { borderColor: color }]} />}
-      <View style={[mk.circle, { backgroundColor: color, width: sz, height: sz, borderRadius: sz / 2 }]}>
-        <Ionicons name={iconName} size={small ? 9 : 13} color={colors.white} />
-      </View>
-    </View>
-  );
+/* ── Stable hazard pin — auto-disables tracksViewChanges after bitmap capture ── */
+function useTrackOnce() {
+  const [track, setTrack] = useState(true);
+  useEffect(() => { const t = setTimeout(() => setTrack(false), 500); return () => clearTimeout(t); }, []);
+  return track;
 }
 
-const mk = StyleSheet.create({
-  pulse: {
-    position: 'absolute',
-    width: 36, height: 36, borderRadius: 18,
-    borderWidth: 2, opacity: 0.35,
-  },
-  circle: {
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: colors.white,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.28, shadowRadius: 4, elevation: 5,
-  },
+const HazardMarkerWrap = React.memo(function HazardMarkerWrap({ hz, hzColor, hzIcon, onPress }: {
+  hz: { id: string; latitude: number; longitude: number };
+  hzColor: string;
+  hzIcon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+}) {
+  const track = useTrackOnce();
+  return (
+    <Marker
+      coordinate={{ latitude: hz.latitude, longitude: hz.longitude }}
+      tracksViewChanges={track}
+      anchor={{ x: 0.5, y: 1 }}
+      zIndex={5}
+      onPress={onPress}
+    >
+      <HazardPinView icon={hzIcon} color={hzColor} />
+    </Marker>
+  );
 });
 
-function EvacuationMarker({ small }: { small?: boolean }) {
-  const size = small ? 20 : 30;
-  const iconSize = small ? 9 : 13;
-  const radius = small ? 7 : 10;
-  const border = small ? 1.5 : 2;
+const HazardPinView = React.memo(function HazardPinView({ icon, color }: { icon: keyof typeof Ionicons.glyphMap; color: string }) {
   return (
-    <View style={{ width: size + 6, height: size + 6, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ alignItems: 'center' }}>
       <View style={{
-        width: size, height: size, borderRadius: radius,
-        backgroundColor: EVAC_COLOR,
-        borderWidth: border, borderColor: colors.white,
+        width: 32, height: 32, borderRadius: 16,
+        backgroundColor: color,
+        borderWidth: 2.5, borderColor: '#fff',
         alignItems: 'center', justifyContent: 'center',
-        shadowColor: EVAC_COLOR,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.4, shadowRadius: 4, elevation: 5,
+        shadowOpacity: 0.3, shadowRadius: 4, elevation: 5,
       }}>
-        <Ionicons name="shield-checkmark" size={iconSize} color={colors.white} />
+        <Ionicons name={icon} size={14} color="#fff" />
       </View>
+      <View style={{
+        width: 0, height: 0,
+        borderLeftWidth: 5, borderRightWidth: 5, borderTopWidth: 7,
+        borderLeftColor: 'transparent', borderRightColor: 'transparent',
+        borderTopColor: color, marginTop: -1,
+      }} />
     </View>
   );
-}
+});
 
 function MapTypeModal({
   visible,
@@ -820,8 +818,8 @@ function SearchPinSheet({
       <View style={[spSheet.sheet, { backgroundColor: bg, paddingBottom: Math.max(bottomInset, 12) + 8 }]}>
         <View style={spSheet.handle} />
         <View style={[spSheet.header, { marginBottom: 6 }]}>
-          <View style={[spSheet.compactIcon, { backgroundColor: '#4A6CF7' + '18' }]}>
-            <Ionicons name="location" size={16} color="#4A6CF7" />
+          <View style={[spSheet.compactIcon, { backgroundColor: colors.brand[500] + '18' }]}>
+            <Ionicons name="location" size={16} color={colors.brand[500]} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[spSheet.title, { color: textMain, fontSize: 15 }]} numberOfLines={1}>
@@ -849,7 +847,7 @@ function SearchPinSheet({
 
       <View style={spSheet.header}>
         <LinearGradient
-          colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+          colors={colors.gradients.hero}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={spSheet.iconWrap}
@@ -914,7 +912,7 @@ function SearchPinSheet({
           accessibilityLabel="Get directions"
         >
           <LinearGradient
-            colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+            colors={colors.gradients.hero}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={spSheet.dirBtn}
@@ -1073,7 +1071,7 @@ function HazardSheet({
   bottomInset: number;
 }) {
   const meta      = HAZARD_MARKER_META[hazard.type];
-  const hzColor   = meta?.color ?? colors.severity[hazard.severity];
+  const hzColor   = meta?.color ?? colors.brand[500];
   const bg        = isDark ? colors.slate[900] : colors.white;
   const textMain  = isDark ? colors.white      : colors.slate[900];
   const textSub   = isDark ? colors.slate[400] : colors.slate[500];
@@ -1118,12 +1116,6 @@ function HazardSheet({
       <View style={[hzs.divider, { backgroundColor: sepColor }]} />
 
       <View style={hzs.chips}>
-        <View style={[hzs.chip, { backgroundColor: colors.severity[hazard.severity] + '18' }]}>
-          <View style={[hzs.chipDot, { backgroundColor: colors.severity[hazard.severity] }]} />
-          <Text style={[hzs.chipText, { color: colors.severity[hazard.severity] }]}>
-            {hazard.severity.charAt(0).toUpperCase() + hazard.severity.slice(1)}
-          </Text>
-        </View>
         <View style={[hzs.chip, { backgroundColor: hzColor + '18' }]}>
           <Ionicons name={meta?.icon ?? 'alert'} size={12} color={hzColor} />
           <Text style={[hzs.chipText, { color: hzColor }]}>{typeLabel}</Text>
@@ -1324,9 +1316,9 @@ function WeatherStrip({
             </View>
             {today && (
               <>
-                <View style={[ws.tile, { backgroundColor: isDark ? '#1E1E3A' : '#EDE9FE', borderColor: isDark ? '#312E81' : '#C4B5FD' }]}>
-                  <View style={[ws.tileIcon, { backgroundColor: isDark ? '#312E81' : '#C4B5FD' }]}>
-                    <Ionicons name="trending-down" size={15} color={isDark ? '#A78BFA' : '#7C3AED'} />
+                <View style={[ws.tile, { backgroundColor: isDark ? colors.brand[900] : colors.brand[50], borderColor: isDark ? colors.brand[700] : colors.brand[200] }]}>
+                  <View style={[ws.tileIcon, { backgroundColor: isDark ? colors.brand[700] : colors.brand[200] }]}>
+                    <Ionicons name="trending-down" size={15} color={isDark ? colors.brand[300] : colors.brand[500]} />
                   </View>
                   <Text style={[ws.tileValue, { color: textMain }]}>{Math.round(today.tempMin)}°C</Text>
                   <Text style={[ws.tileLabel, { color: textSub }]}>Low</Text>
@@ -1644,6 +1636,7 @@ export default function MapScreen() {
   const [reports,            setReports]            = useState<Report[]>([]);
   const [adminHazards,       setAdminHazards]       = useState<Hazard[]>([]);
   const [evacCenters,        setEvacCenters]        = useState<EvacCenter[]>([]);
+  const activeHazards = useMemo(() => adminHazards.filter(hz => hz.active), [adminHazards]);
   const filter: HazardType = 'all';
   const [mapTypeKey,         setMapTypeKey]          = useState<MapTypeKey>('standard');
   const [selected,           setSelected]           = useState<Report | null>(null);
@@ -2018,7 +2011,7 @@ export default function MapScreen() {
           setUserLocation(coords);
           if (!hasPannedToUser.current) {
             hasPannedToUser.current = true;
-            mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 700);
+            mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 800);
           }
         }
         locationSub = await Location.watchPositionAsync(
@@ -2028,7 +2021,7 @@ export default function MapScreen() {
             setUserLocation(coords);
             if (!hasPannedToUser.current) {
               hasPannedToUser.current = true;
-              mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 700);
+              mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 800);
             }
           },
         );
@@ -2055,10 +2048,50 @@ export default function MapScreen() {
   useEffect(() => {
     const interval = setInterval(refreshWeather, 15 * 60 * 1000);
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') refreshWeather();
+      if (state === 'active') {
+        refreshWeather();
+        socketService.reconnect();
+      }
     });
     return () => { clearInterval(interval); sub.remove(); };
   }, [refreshWeather]);
+
+  // Real-time updates via socket
+  useEffect(() => {
+    if (!token) return;
+    const refreshReports = () => {
+      getAllReports(token)
+        .then(data => setReports(
+          data
+            .filter(r => r.status !== 'pending' && r.status !== 'rejected')
+            .map(fromApiReport),
+        ))
+        .catch(() => {});
+    };
+    const refreshHazards = () => {
+      getActiveHazards(token).then(setAdminHazards).catch(() => {});
+    };
+    const refreshEvac = () => {
+      getEvacuationCenters(token).then(setEvacCenters).catch(() => {});
+    };
+
+    const lid1 = socketService.on('report-status', refreshReports);
+    const lid2 = socketService.on('new-report', refreshReports);
+    const lid3 = socketService.on('new-notification', refreshReports);
+    const lid4 = socketService.on('new-alert', refreshReports);
+    const lid5 = socketService.on('hazard-updated', refreshHazards);
+    const lid6 = socketService.on('evacuation-updated', refreshEvac);
+    const pushSub = onNotificationReceived(() => { refreshReports(); refreshHazards(); });
+    return () => {
+      socketService.off(lid1);
+      socketService.off(lid2);
+      socketService.off(lid3);
+      socketService.off(lid4);
+      socketService.off(lid5);
+      socketService.off(lid6);
+      pushSub?.remove();
+    };
+  }, [token]);
 
   const filtered = filter === 'all'
     ? reports
@@ -2114,7 +2147,7 @@ export default function MapScreen() {
         longitude:      coords.longitude,
         latitudeDelta:  0.008,
         longitudeDelta: 0.008,
-      }, 600);
+      }, 800);
     } finally {
       setLocating(false);
     }
@@ -2211,6 +2244,9 @@ export default function MapScreen() {
         showsMyLocationButton={false}
         showsCompass={false}
         showsScale={false}
+        loadingEnabled={false}
+        moveOnMarkerPress={false}
+        rotateEnabled={false}
         onRegionChangeComplete={(r: any) => { setZoomedOut(r.latitudeDelta > 0.05); setMapZoom(r.latitudeDelta); }}
         onPress={(e: any) => {
           setSelected(null);
@@ -2256,56 +2292,18 @@ export default function MapScreen() {
           );
         })()}
 
-        {/* Current-location pin */}
-        {showMyPin && userLocation && (
-          <Marker
-            coordinate={userLocation}
-            tracksViewChanges={true}
-            anchor={{ x: 0.5, y: 1 }}
-            zIndex={20}
-            title="My Location"
-            onPress={() => setShowMyPin(false)}
-          >
-            <View style={{ alignItems: 'center', width: 40, height: 48 }}>
-              <View style={{
-                backgroundColor: colors.brand[500],
-                borderRadius: 18,
-                width: 36,
-                height: 36,
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderWidth: 3,
-                borderColor: '#FFFFFF',
-                elevation: 6,
-              }}>
-                <Ionicons name="person" size={18} color="#FFFFFF" />
-              </View>
-              <View style={{
-                width: 0,
-                height: 0,
-                borderLeftWidth: 6,
-                borderRightWidth: 6,
-                borderTopWidth: 8,
-                borderLeftColor: 'transparent',
-                borderRightColor: 'transparent',
-                borderTopColor: colors.brand[500],
-                marginTop: -1,
-              }} />
-            </View>
-          </Marker>
-        )}
 
-        {/* Admin-created hazard markers */}
-        {adminHazards.map(hz => {
+        {/* Admin-created hazard markers (active only) */}
+        {activeHazards.map(hz => {
           const meta = HAZARD_MARKER_META[hz.type];
-          const hzColor = meta?.color ?? colors.severity[hz.severity];
+          const hzColor = meta?.color ?? colors.brand[500];
+          const hzIcon = meta?.icon ?? 'alert';
           return (
-            <Marker
+            <HazardMarkerWrap
               key={`hz-${hz.id}`}
-              coordinate={{ latitude: hz.latitude, longitude: hz.longitude }}
-              tracksViewChanges={true}
-              anchor={{ x: 0.5, y: 1 }}
-              zIndex={5}
+              hz={hz}
+              hzColor={hzColor}
+              hzIcon={hzIcon}
               onPress={() => {
                 setSelectedHazard(hz);
                 setSelected(null);
@@ -2318,37 +2316,32 @@ export default function MapScreen() {
                   longitudeDelta: 0.03,
                 }, 450);
               }}
-            >
-              <View style={{ alignItems: 'center' }}>
-                <View style={[s.hazardPin, { backgroundColor: hzColor }, zoomedOut && { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5 }]}>
-                  <Ionicons name={meta?.icon ?? 'alert'} size={zoomedOut ? 9 : 14} color="#fff" />
-                </View>
-                {!zoomedOut && <View style={[s.hazardPinTail, { borderTopColor: hzColor }]} />}
-              </View>
-            </Marker>
+            />
           );
         })}
 
+        {/* Evacuation center pin — shown when selected via search */}
         {selectedEvac && (
           <Marker
-            key={selectedEvac.id}
+            key={`evac-${selectedEvac.id}`}
             coordinate={{ latitude: selectedEvac.latitude, longitude: selectedEvac.longitude }}
             tracksViewChanges={true}
-            anchor={{ x: 0.5, y: 0.5 }}
+            anchor={{ x: 0.5, y: 1 }}
             zIndex={10}
-          >
-            <EvacuationMarker small={zoomedOut} />
-          </Marker>
+            pinColor={EVAC_COLOR}
+            title={selectedEvac.name}
+          />
         )}
 
         {searchPin && (
           <Marker
-            key={`search-pin-${searchPin.name}`}
+            key={`search-pin-${searchPin.latitude}-${searchPin.longitude}`}
             coordinate={{ latitude: searchPin.latitude, longitude: searchPin.longitude }}
             tracksViewChanges={true}
             anchor={{ x: 0.5, y: 1 }}
             zIndex={12}
-            pinColor="red"
+            title={searchPin.name}
+            description={searchPin.secondary}
           />
         )}
 
@@ -2365,7 +2358,7 @@ export default function MapScreen() {
             <Polyline
               coordinates={routeCoords}
               strokeWidth={4}
-              strokeColor="#4A6CF7"
+              strokeColor={colors.brand[500]}
             />
           </>
         )}
@@ -2408,7 +2401,7 @@ export default function MapScreen() {
         </View>
       )}
 
-      <View
+      {routeCoords.length === 0 && <View
         style={[s.topCard, { paddingTop: insets.top + 8, backgroundColor: cardBg }]}
         onLayout={e => setTopCardHeight(e.nativeEvent.layout.height)}
       >
@@ -2497,6 +2490,18 @@ export default function MapScreen() {
             )}
           </Animated.View>
 
+          {/* Map type toggle */}
+          <Pressable
+            style={[s.layersBtn, isDark && { backgroundColor: colors.dark.card, borderColor: colors.slate[700] }]}
+            onPress={() => setLayersVisible(true)}
+            accessibilityLabel="Map layers"
+          >
+            <Ionicons
+              name="layers-outline"
+              size={20}
+              color={mapTypeKey !== 'standard' ? colors.brand[500] : (isDark ? colors.slate[300] : colors.slate[700])}
+            />
+          </Pressable>
         </View>
 
         {!searchFocused && (
@@ -2508,7 +2513,7 @@ export default function MapScreen() {
             onExpand={() => setLegendVisible(false)}
           />
         )}
-      </View>
+      </View>}
 
       {/* ── Flood mode overlay: unified card (rendered after topCard for correct z-order) ── */}
       {showFloodHeatmap && (
@@ -2823,7 +2828,7 @@ export default function MapScreen() {
           <Pressable
             style={({ pressed }) => [
               s.ctrlBtn,
-              { bottom: tabClear + 122, right: 12, backgroundColor: ctrlBg },
+              { bottom: tabClear + 68, right: 12, backgroundColor: ctrlBg },
               pressed && { opacity: 0.8 },
             ]}
             onPress={() => setLegendVisible(v => !v)}
@@ -2836,21 +2841,6 @@ export default function MapScreen() {
             />
           </Pressable>
 
-          <Pressable
-            style={({ pressed }) => [
-              s.ctrlBtn,
-              { bottom: tabClear + 68, right: 12, backgroundColor: ctrlBg },
-              pressed && { opacity: 0.8 },
-            ]}
-            onPress={() => setLayersVisible(true)}
-            accessibilityLabel="Map layers"
-          >
-            <Ionicons
-              name="layers-outline"
-              size={22}
-              color={mapTypeKey !== 'standard' ? colors.brand[500] : (isDark ? colors.slate[300] : colors.slate[700])}
-            />
-          </Pressable>
 
           <Pressable
             style={({ pressed }) => [
@@ -3053,8 +3043,18 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   searchRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 12, paddingBottom: 10,
+  },
+  layersBtn: {
+    width: 42, height: 42,
+    borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.slate[50],
+    borderWidth: 1, borderColor: colors.slate[200],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
   },
   searchBar: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -3192,30 +3192,6 @@ const s = StyleSheet.create({
   },
   advisoryText: { flex: 1, fontSize: 12, fontWeight: '600', color: '#fff' },
 
-  hazardPin: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2.5,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  hazardPinTail: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderTopWidth: 7,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    marginTop: -1,
-  },
   routeBanner: {
     position: 'absolute',
     left: 16, right: 16,
@@ -3231,7 +3207,7 @@ const s = StyleSheet.create({
   },
   routeBannerAccent: {
     width: 4,
-    backgroundColor: '#4A6CF7',
+    backgroundColor: colors.brand[500],
   },
   routeBannerBody: {
     flex: 1,
@@ -3248,7 +3224,7 @@ const s = StyleSheet.create({
   },
   routeBannerIcon: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: '#4A6CF7',
+    backgroundColor: colors.brand[500],
     alignItems: 'center', justifyContent: 'center',
   },
   routeBannerDuration: {

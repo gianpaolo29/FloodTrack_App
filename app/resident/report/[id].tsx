@@ -31,6 +31,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
 import { getReportDetail, updateReport, deleteReportMedia, withdrawReport, getUnreadCount } from '@/services/api';
 import { socketService } from '@/services/socket';
+import { onNotificationReceived } from '@/services/notifications';
 import type { ReportDetail, MediaItem } from '@/types';
 import { inferSeverityFromNotes, severityMatches, severityLabel, severityRank } from '@/utils/ai-severity';
 
@@ -773,8 +774,25 @@ export default function ReportDetailScreen() {
     const handleStatus = (data: { reportId: number | string }) => {
       if (String(data.reportId) === id) load();
     };
-    socketService.on('report-status', handleStatus);
-    return () => socketService.off('report-status', handleStatus);
+    const handleNotification = (data: { reportId?: number | string }) => {
+      if (String(data.reportId) === id) load();
+    };
+    const handleMemberUpdate = (data: { report_id?: number | string }) => {
+      if (String(data?.report_id) === id) load();
+    };
+    const lid1 = socketService.on('report-status', handleStatus);
+    const lid2 = socketService.on('new-notification', handleNotification);
+    const lid3 = socketService.on('member-status-updated', handleMemberUpdate);
+    const pushSub = onNotificationReceived((notification: any) => {
+      const data = notification?.request?.content?.data;
+      if (String(data?.reportId) === String(id)) load();
+    });
+    return () => {
+      socketService.off(lid1);
+      socketService.off(lid2);
+      socketService.off(lid3);
+      pushSub?.remove();
+    };
   }, [id, load]);
 
   useEffect(() => {
@@ -785,10 +803,10 @@ export default function ReportDetailScreen() {
         setChatUnread(c => c + 1);
       }
     };
-    socketService.on('new-message', handleNewMessage);
+    const lid = socketService.on('new-message', handleNewMessage);
     return () => {
       socketService.leaveReport(id);
-      socketService.off('new-message', handleNewMessage);
+      socketService.off(lid);
     };
   }, [id, token]);
 
@@ -796,7 +814,7 @@ export default function ReportDetailScreen() {
     <View style={[s.root, { backgroundColor: screenBg }]}>
       {/* ── Hero Header ── */}
       <LinearGradient
-        colors={['#00D2FF', '#4A6CF7', '#7C3AED']}
+        colors={colors.gradients.hero}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[s.header, { paddingTop: insets.top + 16 }]}
@@ -876,7 +894,7 @@ export default function ReportDetailScreen() {
       {/* Wave transition */}
       <View style={[s.waveWrap, { backgroundColor: screenBg }]}>
         <LinearGradient
-          colors={['#5E52EF', '#7C3AED']}
+          colors={colors.gradients.wave}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={StyleSheet.absoluteFillObject}
@@ -1071,6 +1089,9 @@ export default function ReportDetailScreen() {
               <View style={{ gap: 14 }}>
                 <MetaRow icon="person-outline" label="Reported by" value={report.reportedBy} isDark={isDark} />
                 <MetaRow icon="speedometer-outline" label="Severity" value={report.severity.charAt(0).toUpperCase() + report.severity.slice(1)} isDark={isDark} />
+                {report.depthFt != null && (
+                  <MetaRow icon="water-outline" label="Flood Depth" value={`${report.depthFt} ft`} isDark={isDark} />
+                )}
                 <MetaRow icon="location-outline" label="Location" value={report.address} isDark={isDark} />
                 <MetaRow icon="time-outline" label="Reported at" value={report.reportedAt} isDark={isDark} />
                 {report.description ? (
